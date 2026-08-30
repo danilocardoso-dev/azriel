@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AZRIEL // Personal P&D Command System</title>
+<style>
+:root{
+  --bg:#02070b;
+  --bg2:#041019;
+  --panel:rgba(4,17,26,.72);
+  --panel2:rgba(5,25,36,.62);
+  --cyan:#46e9ff;
+  --cyan2:#00a8c7;
+  --blue:#1e75ff;
+  --green:#77ffbd;
+  --amber:#ffb64b;
+  --orange:#ff7a45;
+  --red:#ff5a6b;
+  --text:#dff9ff;
+  --muted:#6f9baa;
+  --grid:rgba(76,220,255,.055);
+  --line:rgba(70,233,255,.22);
+  --line2:rgba(70,233,255,.09);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;
+  color:var(--text);
+  background:
+    radial-gradient(circle at 50% -10%, rgba(0,174,220,.13), transparent 32%),
+    radial-gradient(circle at 12% 34%, rgba(0,120,220,.08), transparent 20%),
+    linear-gradient(180deg,#010508,#031018 48%,#02070b);
+  font-family: "Segoe UI", Inter, ui-sans-serif, system-ui, sans-serif;
+  min-height:100vh;
+  overflow-x:hidden;
+}
+body:before{
+  content:"";
+  position:fixed; inset:0; pointer-events:none; z-index:-1;
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg,var(--grid) 1px, transparent 1px);
+  background-size:28px 28px;
+  mask-image:linear-gradient(to bottom,#000 0%,rgba(0,0,0,.45) 70%,transparent);
+}
+body:after{
+  content:"";
+  position:fixed; inset:0; z-index:9999; pointer-events:none;
+  background:repeating-linear-gradient(to bottom,rgba(255,255,255,.012) 0 1px,transparent 1px 4px);
+  opacity:.35;
+}
+button{font:inherit}
+.shell{width:min(1880px,97vw);margin:auto;padding:14px 0 42px}
+.micro{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;font-size:10px;color:var(--muted)}
+.topbar{
+  height:58px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+  border-bottom:1px solid var(--line);position:sticky;top:0;z-index:30;
+  background:linear-gradient(180deg,rgba(1,7,11,.96),rgba(1,7,11,.72));
+  backdrop-filter:blur(14px);
+}
+.brand{display:flex;align-items:center;gap:13px;font-weight:700;letter-spacing:.35em;font-size:13px}
+.brandmark{width:28px;height:28px;position:relative;border:1px solid var(--cyan);transform:rotate(45deg);box-shadow:0 0 16px rgba(70,233,255,.18)}
+.brandmark:before,.brandmark:after{content:"";position:absolute;inset:5px;border:1px solid rgba(70,233,255,.52)}
+.brandmark:after{inset:10px;background:var(--cyan);box-shadow:0 0 10px var(--cyan)}
+.topcenter{color:var(--cyan);font:11px ui-monospace,monospace;letter-spacing:.18em}
+.sys{justify-self:end;display:flex;align-items:center;gap:9px}
+.pulse{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 12px var(--green);animation:pulse 1.8s infinite}
+@keyframes pulse{50%{opacity:.25}}
+
+.layout{
+  display:grid;grid-template-columns:290px minmax(560px,1fr) 330px;gap:10px;margin-top:10px;
+}
+.panel{
+  position:relative;border:1px solid var(--line2);background:
+    linear-gradient(145deg,rgba(6,28,40,.62),rgba(2,10,16,.78));
+  min-width:0;overflow:hidden;
+}
+.panel:before{
+  content:"";position:absolute;left:0;top:0;width:34px;height:1px;background:var(--cyan);
+  box-shadow:0 0 9px rgba(70,233,255,.5);
+}
+.panel:after{
+  content:"";position:absolute;right:0;bottom:0;width:18px;height:18px;
+  border-right:1px solid rgba(70,233,255,.34);border-bottom:1px solid rgba(70,233,255,.34);
+}
+.panel-head{
+  height:38px;display:flex;align-items:center;justify-content:space-between;
+  padding:0 12px;border-bottom:1px solid var(--line2);background:rgba(0,0,0,.12);
+}
+.panel-title{font:700 10px ui-monospace,monospace;letter-spacing:.18em;color:#9defff;text-transform:uppercase}
+.code{font:9px ui-monospace,monospace;color:#3f7282}
+
+/* LEFT */
+.left{display:grid;gap:10px;align-content:start}
+.identity{padding:16px}
+.azriel-title{font-size:28px;letter-spacing:.18em;font-weight:300;margin:3px 0 1px}
+.azriel-sub{font:9px ui-monospace,monospace;color:var(--cyan);letter-spacing:.18em;text-transform:uppercase}
+.objective{font-size:12px;color:#9ab6c0;line-height:1.55;margin-top:14px}
+.statline{display:grid;grid-template-columns:1fr auto;gap:8px;margin:11px 0 5px;font:10px ui-monospace,monospace}
+.statline span:last-child{color:var(--cyan)}
+.track{height:4px;background:rgba(255,255,255,.045);overflow:hidden}
+.track i{display:block;height:100%;background:linear-gradient(90deg,var(--blue),var(--cyan));box-shadow:0 0 8px var(--cyan)}
+.quicklist{padding:8px 12px 13px}
+.quickrow{padding:9px 0;border-bottom:1px solid rgba(70,233,255,.07);display:grid;grid-template-columns:34px 1fr auto;gap:8px;align-items:center}
+.quickrow:last-child{border-bottom:0}
+.qid{font:9px ui-monospace,monospace;color:#477886}
+.qname{font-size:11px}
+.qstate{font:8px ui-monospace,monospace;color:var(--green);letter-spacing:.08em}
+.qstate.hold{color:var(--amber)}
+.qstate.plan{color:#77a9ff}
+
+/* CENTER HERO */
+.center{display:grid;gap:10px;align-content:start}
+.command{
+  min-height:540px;position:relative;background:
+    radial-gradient(circle at 50% 46%,rgba(0,201,255,.09),transparent 31%),
+    linear-gradient(180deg,rgba(1,11,17,.62),rgba(2,11,16,.85));
+}
+.command:before{
+  width:100%;height:100%;left:0;top:0;box-shadow:none;background:
+    linear-gradient(90deg,transparent 49.8%,rgba(70,233,255,.06) 50%,transparent 50.2%),
+    linear-gradient(transparent 49.8%,rgba(70,233,255,.06) 50%,transparent 50.2%);
+}
+.hud-corner{position:absolute;width:74px;height:74px;border-color:rgba(70,233,255,.22)}
+.hud-corner.tl{left:12px;top:12px;border-left:1px solid;border-top:1px solid}
+.hud-corner.tr{right:12px;top:12px;border-right:1px solid;border-top:1px solid}
+.hud-corner.bl{left:12px;bottom:12px;border-left:1px solid;border-bottom:1px solid}
+.hud-corner.br{right:12px;bottom:12px;border-right:1px solid;border-bottom:1px solid}
+.corewrap{position:absolute;inset:54px 0 90px;display:grid;place-items:center}
+.core{
+  width:min(390px,52vw);aspect-ratio:1;border-radius:50%;position:relative;display:grid;place-items:center;
+  background:radial-gradient(circle,rgba(70,233,255,.13) 0 4%,transparent 5% 22%,rgba(70,233,255,.025) 23% 52%,transparent 53%);
+  filter:drop-shadow(0 0 12px rgba(0,205,255,.12));
+}
+.ring{position:absolute;border-radius:50%;border:1px solid rgba(70,233,255,.31)}
+.r1{inset:0;border-style:dashed;animation:spin 28s linear infinite}
+.r2{inset:8%;border-color:rgba(70,233,255,.16);animation:spin 17s linear reverse infinite}
+.r3{inset:18%;border:2px dotted rgba(70,233,255,.4);animation:spin 8s linear infinite}
+.r4{inset:29%;border-color:rgba(70,233,255,.23)}
+.r5{inset:38%;border:1px solid var(--cyan);box-shadow:0 0 32px rgba(70,233,255,.14),inset 0 0 18px rgba(70,233,255,.09)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tickring{position:absolute;inset:3%;border-radius:50%;background:repeating-conic-gradient(from 0deg,rgba(70,233,255,.43) 0 1deg,transparent 1deg 10deg);mask:radial-gradient(circle,transparent 0 92%,#000 92% 100%)}
+.coretext{text-align:center;z-index:3}
+.coretext strong{display:block;font-size:34px;font-weight:200;letter-spacing:.12em;text-shadow:0 0 16px rgba(70,233,255,.35)}
+.coretext span{font:9px ui-monospace,monospace;color:var(--cyan);letter-spacing:.18em}
+.satellite{position:absolute;font:8px ui-monospace,monospace;color:#72aec0;letter-spacing:.09em}
+.s1{left:5%;top:18%}.s2{right:3%;top:27%}.s3{left:1%;bottom:23%}.s4{right:7%;bottom:17%}
+.core-metrics{
+  position:absolute;left:18px;right:18px;bottom:18px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;
+}
+.cmetric{border-top:1px solid rgba(70,233,255,.16);padding:10px 8px 0}
+.cmetric b{display:block;font-size:20px;font-weight:300}
+.cmetric span{font:8px ui-monospace,monospace;color:var(--muted);letter-spacing:.1em;text-transform:uppercase}
+
+/* RIGHT */
+.right{display:grid;gap:10px;align-content:start}
+.clockbox{padding:15px}
+.bigtime{font:300 34px ui-monospace,monospace;letter-spacing:.06em}
+.date{font:9px ui-monospace,monospace;color:var(--cyan);letter-spacing:.13em}
+.focus{padding:12px}
+.focus-item{padding:10px;border-left:1px solid rgba(70,233,255,.18);margin:7px 0;background:linear-gradient(90deg,rgba(70,233,255,.035),transparent)}
+.focus-item b{font-size:11px}.focus-item p{margin:3px 0 0;color:var(--muted);font-size:10px;line-height:1.45}
+.focus-item .pct{float:right;color:var(--cyan);font:9px ui-monospace,monospace}
+.alert{color:var(--amber)!important}
+
+/* CHART */
+.chart-panel{min-height:460px}
+.chart-wrap{padding:18px 14px 18px;overflow:auto}
+.legend{display:flex;gap:18px;margin-bottom:16px;font:9px ui-monospace,monospace;color:var(--muted)}
+.legend i{display:inline-block;width:16px;height:3px;margin-right:6px;vertical-align:middle}
+.legend .cov{background:var(--cyan)} .legend .dep{background:var(--amber)}
+.chart-row{display:grid;grid-template-columns:150px 1fr 42px 1fr 42px;gap:7px;align-items:center;margin:7px 0}
+.chart-label{font:9px ui-monospace,monospace;color:#97c0cf;text-transform:uppercase}
+.mini-track{height:6px;background:rgba(255,255,255,.04);position:relative}
+.mini-track span{display:block;height:100%}
+.mini-track .cov{background:linear-gradient(90deg,#08758a,var(--cyan));box-shadow:0 0 8px rgba(70,233,255,.25)}
+.mini-track .dep{background:linear-gradient(90deg,#8e5b15,var(--amber))}
+.val{font:9px ui-monospace,monospace;text-align:right;color:#8eb5c2}
+
+/* BOTTOM MATRIX */
+.bottom{display:grid;grid-template-columns:1.22fr .78fr;gap:10px;margin-top:10px}
+.matrix{padding:12px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.domain{border:1px solid rgba(70,233,255,.08);background:rgba(4,15,22,.55);padding:10px;min-height:145px}
+.domain h4{margin:0 0 9px;font:700 9px ui-monospace,monospace;color:var(--cyan);letter-spacing:.12em;text-transform:uppercase}
+.item{display:flex;justify-content:space-between;gap:8px;border-top:1px solid rgba(70,233,255,.055);padding:6px 0;font-size:10px;color:#9cb9c4}
+.item:first-of-type{border-top:0}
+.item small{font:8px ui-monospace,monospace;color:#4f8292}
+.item .active{color:var(--green)} .item .study{color:#74a7ff}.item .hold{color:var(--amber)}
+.timeline{padding:13px}
+.trow{display:grid;grid-template-columns:78px 14px 1fr;min-height:65px}
+.tyear{font:9px ui-monospace,monospace;color:var(--cyan);padding-top:4px}
+.tline{position:relative;border-left:1px solid rgba(70,233,255,.2)}
+.tline:before{content:"";position:absolute;left:-4px;top:4px;width:7px;height:7px;border-radius:50%;background:#06161f;border:1px solid var(--cyan);box-shadow:0 0 8px rgba(70,233,255,.28)}
+.tdesc{padding:0 0 12px 10px}
+.tdesc b{font-size:11px}.tdesc p{margin:4px 0;color:var(--muted);font-size:9px;line-height:1.4}
+
+/* PESQUISA / TASK TABLE */
+.full{margin-top:10px}
+.tablewrap{overflow:auto;padding:0 10px 10px}
+table{width:100%;border-collapse:collapse;min-width:900px}
+th,td{text-align:left;padding:8px 9px;border-bottom:1px solid rgba(70,233,255,.06);font-size:10px}
+th{font:8px ui-monospace,monospace;color:#5e91a1;letter-spacing:.11em;text-transform:uppercase}
+td:first-child{font-family:ui-monospace,monospace;color:#5f93a4}
+.statuspill{display:inline-block;padding:2px 6px;border:1px solid rgba(70,233,255,.18);font:8px ui-monospace,monospace;color:var(--cyan)}
+.statuspill.green{color:var(--green);border-color:rgba(119,255,189,.23)}
+.statuspill.amber{color:var(--amber);border-color:rgba(255,182,75,.23)}
+
+.footer{display:flex;justify-content:space-between;padding:12px 2px 0;font:8px ui-monospace,monospace;color:#345e6c;letter-spacing:.11em;text-transform:uppercase}
+
+@media(max-width:1250px){
+ .layout{grid-template-columns:240px 1fr}.right{grid-column:1/-1;grid-template-columns:1fr 1fr}
+ .bottom{grid-template-columns:1fr}.matrix{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:820px){
+ .topcenter{display:none}.topbar{grid-template-columns:1fr auto}
+ .layout{grid-template-columns:1fr}.left,.right{grid-template-columns:1fr}.command{min-height:520px}
+ .matrix{grid-template-columns:1fr}.chart-row{grid-template-columns:110px 1fr 35px 1fr 35px}
+ .satellite{display:none}.core-metrics{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+<header class="topbar">
+  <div class="brand"><span class="brandmark"></span><span>AZRIEL</span></div>
+  <div class="topcenter">SISTEMA PESSOAL DE PESQUISA & DESENVOLVIMENTO // AZ-01</div>
+  <div class="sys micro"><span class="pulse"></span> SISTEMA ONLINE</div>
+</header>
+
+<section class="layout">
+  <aside class="left">
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Perfil do Operador</span><span class="code">ID/AZ</span></div>
+      <div class="identity">
+        <div class="micro">Operador principal</div>
+        <div class="azriel-title">AZRIEL</div>
+        <div class="azriel-sub">Conhecimento • Engenharia • Impacto</div>
+        <div class="objective">Missão: ampliar capacidade interdisciplinar, eliminar lacunas técnicas e transformar conhecimento em soluções úteis.</div>
+        <div class="statline"><span>COBERTURA</span><span>35%</span></div><div class="track"><i style="width:35%"></i></div>
+        <div class="statline"><span>PROFUNDIDADE</span><span>28%</span></div><div class="track"><i style="width:28%"></i></div>
+        <div class="statline"><span>INTEGRAÇÃO</span><span>22%</span></div><div class="track"><i style="width:22%"></i></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Registro de Projetos</span><span class="code">08 NÚCLEOS</span></div>
+      <div class="quicklist">
+        <div class="quickrow"><span class="qid">P-01</span><span class="qname">Jarvis</span><span class="qstate">ATIVO</span></div>
+        <div class="quickrow"><span class="qid">P-02</span><span class="qname">ArcCore</span><span class="qstate">P&D</span></div>
+        <div class="quickrow"><span class="qid">P-03</span><span class="qname">Mendel Lab</span><span class="qstate">BIO</span></div>
+        <div class="quickrow"><span class="qid">P-04</span><span class="qname">Gene Expression Explorer</span><span class="qstate">BIO</span></div>
+        <div class="quickrow"><span class="qid">P-05</span><span class="qname">PCR Simulator</span><span class="qstate">BIO</span></div>
+        <div class="quickrow"><span class="qid">P-06</span><span class="qname">GeneScope</span><span class="qstate">BIO</span></div>
+        <div class="quickrow"><span class="qid">P-07</span><span class="qname">Atlas3D</span><span class="qstate hold">PAUSADO</span></div>
+        <div class="quickrow"><span class="qid">P-08</span><span class="qname">Azriel</span><span class="qstate">ATIVO</span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Formação Acadêmica</span><span class="code">ROTEIRO</span></div>
+      <div class="quicklist">
+        <div class="quickrow"><span class="qid">F-01</span><span class="qname">Cyber / Software</span><span class="qstate">BASE</span></div>
+        <div class="quickrow"><span class="qid">PG-01</span><span class="qname">Pós · Biotecnologia</span><span class="qstate">NOV/26</span></div>
+        <div class="quickrow"><span class="qid">PG-02</span><span class="qname">Pós · IoT</span><span class="qstate">NOV/26</span></div>
+        <div class="quickrow"><span class="qid">PG-03</span><span class="qname">Pós · Big Data Analytics</span><span class="qstate">NOV/26</span></div>
+        <div class="quickrow"><span class="qid">F-02</span><span class="qname">Biomedicina</span><span class="qstate plan">2027</span></div>
+        <div class="quickrow"><span class="qid">F-03</span><span class="qname">Mecatrônica</span><span class="qstate plan">SEGUINTE</span></div>
+        <div class="quickrow"><span class="qid">F-04</span><span class="qname">Mestrado</span><span class="qstate plan">FUTURO</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="center">
+    <section class="panel command">
+      <i class="hud-corner tl"></i><i class="hud-corner tr"></i><i class="hud-corner bl"></i><i class="hud-corner br"></i>
+      <div class="panel-head"><span class="panel-title">Núcleo Central de Conhecimento</span><span class="code">MODELO ATIVO / V0.3</span></div>
+      <span class="satellite s1">BIOSSISTEMAS<br>SINCRONIA 42%</span>
+      <span class="satellite s2">ENGENHARIA<br>LACUNA ALTA</span>
+      <span class="satellite s3">IA / SOFTWARE<br>NÚCLEO ESTÁVEL</span>
+      <span class="satellite s4">ENERGIA<br>P&D EM FILA</span>
+      <div class="corewrap">
+        <div class="core">
+          <div class="tickring"></div><div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div><div class="ring r4"></div><div class="ring r5"></div>
+          <div class="coretext"><strong>AZRIEL</strong><span>NÚCLEO ADAPTATIVO DE CONHECIMENTO</span></div>
+        </div>
+      </div>
+      <div class="core-metrics">
+        <div class="cmetric"><b>13</b><span>Domínios</span></div>
+        <div class="cmetric"><b>8</b><span>Projetos registrados</span></div>
+        <div class="cmetric"><b>12+</b><span>Frentes de estudo</span></div>
+        <div class="cmetric"><b>03</b><span>Lacunas críticas</span></div>
+      </div>
+    </section>
+
+    <section class="panel chart-panel">
+      <div class="panel-head"><span class="panel-title">Mapa Stark // Cobertura × Profundidade</span><span class="code">LINHA DE BASE</span></div>
+      <div class="chart-wrap">
+        <div class="legend"><span><i class="cov"></i>COBERTURA</span><span><i class="dep"></i>PROFUNDIDADE</span></div>
+        <div id="chart"></div>
+      </div>
+    </section>
+  </main>
+
+  <aside class="right">
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Relógio do Sistema</span><span class="code">LOCAL</span></div>
+      <div class="clockbox"><div class="bigtime" id="clock">--:--:--</div><div class="date" id="date">---</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Fila de Prioridades</span><span class="code">PRÓXIMA AÇÃO</span></div>
+      <div class="focus">
+        <div class="focus-item"><span class="pct">ALTA</span><b>Matemática + Física</b><p>Construir a base necessária antes da Mecatrônica.</p></div>
+        <div class="focus-item"><span class="pct">ALTA</span><b>Eletrônica</b><p>Circuitos, instrumentação, microcontroladores e bancada.</p></div>
+        <div class="focus-item"><span class="pct">ATIVO</span><b>Biologia Molecular</b><p>Transformar estudo teórico em domínio científico aplicado.</p></div>
+        <div class="focus-item"><span class="pct">CONSTRUIR</span><b>Jarvis</b><p>Converter software e IA em automação pessoal real.</p></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">Diagnóstico de Lacunas</span><span class="code">ANÁLISE</span></div>
+      <div class="focus">
+        <div class="focus-item"><span class="pct alert">CRÍTICA</span><b>Engenharia elétrica</b><p>Profundidade ainda baixa. Priorizar prática.</p></div>
+        <div class="focus-item"><span class="pct alert">CRÍTICA</span><b>Engenharia mecânica</b><p>Materiais, estruturas, termodinâmica e fabricação.</p></div>
+        <div class="focus-item"><span class="pct">MÉDIA</span><b>Robótica / Controle</b><p>Subirá com embarcados, sensores e PID.</p></div>
+      </div>
+    </div>
+  </aside>
+</section>
+
+<section class="bottom">
+  <div class="panel">
+    <div class="panel-head"><span class="panel-title">Matriz P&D // Projetos + Frentes</span><span class="code">MULTIDOMÍNIO</span></div>
+    <div class="matrix">
+      <div class="domain">
+        <h4>IA / Software</h4>
+        <div class="item"><span>Jarvis Core</span><small class="active">ATIVO</small></div>
+        <div class="item"><span>Memória SQLite</span><small class="active">V0.2</small></div>
+        <div class="item"><span>Automação local</span><small class="study">CONSTRUIR</small></div>
+        <div class="item"><span>IA local / Ollama</span><small class="active">ATIVO</small></div>
+        <div class="item"><span>Arquitetura providers</span><small class="active">CONCLUÍDO</small></div>
+      </div>
+      <div class="domain">
+        <h4>Biomedicina</h4>
+        <div class="item"><span>Genética</span><small class="study">ESTUDO</small></div>
+        <div class="item"><span>Biologia molecular</span><small class="study">ESTUDO</small></div>
+        <div class="item"><span>Citogenética</span><small class="study">ESTUDO</small></div>
+        <div class="item"><span>Bioquímica</span><small class="study">FILA</small></div>
+        <div class="item"><span>Fisiologia</span><small class="study">FILA</small></div>
+      </div>
+      <div class="domain">
+        <h4>Bioinformática / Projetos</h4>
+        <div class="item"><span>Mendel Lab</span><small class="active">GENÉTICA</small></div>
+        <div class="item"><span>Gene Expression Explorer</span><small class="active">EXPRESSÃO</small></div>
+        <div class="item"><span>PCR Simulator</span><small class="active">PCR</small></div>
+        <div class="item"><span>GeneScope</span><small class="active">VARIANTES</small></div>
+        <div class="item"><span>Bioinformática</span><small class="study">PONTE</small></div>
+      </div>
+      <div class="domain">
+        <h4>Engenharia</h4>
+        <div class="item"><span>Eletrônica</span><small class="study">PRIORIDADE</small></div>
+        <div class="item"><span>Microcontroladores</span><small class="study">PRÓXIMO</small></div>
+        <div class="item"><span>Controle / PID</span><small class="study">FUTURO</small></div>
+        <div class="item"><span>Robótica</span><small class="study">FUTURO</small></div>
+        <div class="item"><span>Materiais</span><small class="study">GAP</small></div>
+      </div>
+      <div class="domain">
+        <h4>Energia</h4>
+        <div class="item"><span>ArcCore</span><small class="active">P&D</small></div>
+        <div class="item"><span>Armazenamento</span><small class="study">PESQUISA</small></div>
+        <div class="item"><span>Solar</span><small class="study">PESQUISA</small></div>
+        <div class="item"><span>Gestão inteligente</span><small class="study">PROJETO</small></div>
+      </div>
+      <div class="domain">
+        <h4>Cibersegurança</h4>
+        <div class="item"><span>Cibersegurançasecurity</span><small class="active">NÚCLEO</small></div>
+        <div class="item"><span>Forense digital</span><small class="active">NÚCLEO</small></div>
+        <div class="item"><span>Segurança de IA</span><small class="study">PONTE</small></div>
+        <div class="item"><span>IoT security</span><small class="study">FUTURO</small></div>
+      </div>
+      <div class="domain">
+        <h4>Visualização</h4>
+        <div class="item"><span>Atlas3D</span><small class="hold">PAUSADO</small></div>
+        <div class="item"><span>Modelos biológicos 3D</span><small class="study">IDEIA</small></div>
+        <div class="item"><span>HUD / Azriel</span><small class="active">ATIVO</small></div>
+      </div>
+      <div class="domain">
+        <h4>Física / Fundamentos</h4>
+        <div class="item"><span>Cálculo</span><small class="study">PRIORIDADE</small></div>
+        <div class="item"><span>Mecânica</span><small class="study">PRIORIDADE</small></div>
+        <div class="item"><span>Eletricidade</span><small class="study">PRIORIDADE</small></div>
+        <div class="item"><span>Termodinâmica</span><small class="study">PRÓXIMO</small></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><span class="panel-title">Trajetória Acadêmica</span><span class="code">2027+</span></div>
+    <div class="timeline">
+      <div class="trow"><div class="tyear">ATÉ NOV/26</div><div class="tline"></div><div class="tdesc"><b>3 Pós-graduações</b><p>Biotecnologia + IoT + Big Data Analytics. Conclusão prevista para novembro de 2026.</p></div></div>
+      <div class="trow"><div class="tyear">2026</div><div class="tline"></div><div class="tdesc"><b>Preparação</b><p>Biologia, matemática, física, programação científica e projetos.</p></div></div>
+      <div class="trow"><div class="tyear">2027–31</div><div class="tline"></div><div class="tdesc"><b>Biomedicina</b><p>Genética, molecular, fisiologia, bioquímica, laboratório e pesquisa.</p></div></div>
+      <div class="trow"><div class="tyear">PARALELO</div><div class="tline"></div><div class="tdesc"><b>Engenharia base</b><p>Eletrônica, cálculo, física, sensores, ESP32 e projetos físicos.</p></div></div>
+      <div class="trow"><div class="tyear">~2031–36</div><div class="tline"></div><div class="tdesc"><b>Mecatrônica</b><p>Mecânica + eletrônica + controle + robótica + embarcados.</p></div></div>
+      <div class="trow"><div class="tyear">~2036–38</div><div class="tline"></div><div class="tdesc"><b>Mestrado interdisciplinar</b><p>Escolha orientada por problema real: biomédica, robótica, energia ou IA aplicada.</p></div></div>
+      <div class="trow"><div class="tyear">OPCIONAL</div><div class="tline"></div><div class="tdesc"><b>Doutorado</b><p>Somente se uma pergunta científica ou tecnológica exigir profundidade de pesquisa.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="panel full">
+  <div class="panel-head"><span class="panel-title">Operações de Pesquisa & Estudo</span><span class="code">FILA ATIVA DE CONHECIMENTO</span></div>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>ID</th><th>Frente</th><th>Domínio</th><th>Objetivo</th><th>Status</th><th>Impacto esperado</th></tr></thead>
+    <tbody>
+      <tr><td>BIO-P01</td><td>Mendel Lab</td><td>Genética + Software</td><td>Simular cruzamentos, gametas, genótipos, fenótipos e probabilidades</td><td><span class="statuspill green">PROJETO</span></td><td>Genética educacional</td></tr>
+      <tr><td>BIO-P02</td><td>Gene Expression Explorer</td><td>Bioinformática</td><td>Visualizar e comparar dados de expressão gênica entre amostras e condições</td><td><span class="statuspill green">PROJETO</span></td><td>Transcriptômica + dados</td></tr>
+      <tr><td>BIO-P03</td><td>PCR Simulator</td><td>Biologia Molecular</td><td>Simular primers, amplicon, ciclos e etapas conceituais da PCR</td><td><span class="statuspill green">PROJETO</span></td><td>Molecular + software</td></tr>
+      <tr><td>BIO-P04</td><td>GeneScope</td><td>Bioinformática</td><td>Comparar DNA e explorar substituições, inserções, deleções, códons e aminoácidos</td><td><span class="statuspill green">PROJETO</span></td><td>Variantes genéticas</td></tr>
+      <tr><td>PG-01</td><td>Pós em Biotecnologia</td><td>Formação</td><td>Consolidar base biotecnológica</td><td><span class="statuspill amber">ATÉ NOV/26</span></td><td>Cobertura biomédica</td></tr>
+      <tr><td>PG-02</td><td>Pós em IoT</td><td>Formação</td><td>Conectar software, sensores, redes e sistemas físicos</td><td><span class="statuspill amber">ATÉ NOV/26</span></td><td>Ponte para engenharia</td></tr>
+      <tr><td>PG-03</td><td>Pós em Big Data Analytics</td><td>Formação</td><td>Análise de grandes volumes de dados</td><td><span class="statuspill amber">ATÉ NOV/26</span></td><td>Dados + bioinformática</td></tr>
+      <tr><td>AI-01</td><td>Jarvis</td><td>IA / Software</td><td>IA local, memória persistente e automação pessoal</td><td><span class="statuspill green">ATIVO</span></td><td>Profundidade em IA</td></tr>
+      <tr><td>ENE-01</td><td>ArcCore</td><td>Energia</td><td>Plataforma portátil realista de captura, armazenamento e gestão de energia</td><td><span class="statuspill green">P&D</span></td><td>Projeto integrador</td></tr>
+      <tr><td>AZ-01</td><td>Azriel</td><td>Sistema pessoal</td><td>Orquestrar formação, projetos, lacunas e evolução interdisciplinar</td><td><span class="statuspill green">ATIVO</span></td><td>Coordenação estratégica</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<div class="footer"><span>AZRIEL // Construir conhecimento. Integrar disciplinas. Resolver problemas reais.</span><span>CONSOLE P&D V0.3</span></div>
+</div>
+
+<script>
+const domains = [
+["Cibersegurança",90,80],["Programação",80,65],["IA / software",60,40],
+["Biologia / genética",45,30],["Biomedicina / biotech",35,20],["Física aplicada",30,20],
+["Energia",25,15],["Robótica",20,10],["Eletrônica",20,10],["Controle / automação",20,10],
+["Materiais",15,8],["Eng. elétrica",15,5],["Eng. mecânica",15,5]
+];
+document.getElementById("chart").innerHTML = domains.map(d=>`
+<div class="chart-row">
+  <div class="chart-label">${d[0]}</div>
+  <div class="mini-track"><span class="cov" style="width:${d[1]}%"></span></div><div class="val">${d[1]}%</div>
+  <div class="mini-track"><span class="dep" style="width:${d[2]}%"></span></div><div class="val">${d[2]}%</div>
+</div>`).join("");
+
+function tick(){
+  const n=new Date();
+  document.getElementById("clock").textContent=n.toLocaleTimeString("pt-BR",{hour12:false});
+  document.getElementById("date").textContent=n.toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long",year:"numeric"}).toUpperCase();
+}
+tick(); setInterval(tick,1000);
+</script>
+</body>
+</html>
