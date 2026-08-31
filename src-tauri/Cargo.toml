@@ -1,0 +1,16 @@
+[package]
+name = "azriel"
+version = "0.4.0"
+description = "Azriel Personal Intelligence System"
+authors = ["Danilo"]
+edition = "2021"
+
+[lib]
+name = "azriel_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
