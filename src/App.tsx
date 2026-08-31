@@ -8,6 +8,7 @@ import { ResearchPage } from "./pages/ResearchPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { StarkMapPage } from "./pages/StarkMapPage";
 import { SystemPage } from "./pages/SystemPage";
+import { DailyOperationsPage } from "./pages/DailyOperationsPage";
 import type { AzrielState, ModuleId } from "./types";
 import { useAzrielData } from "./contexts/useAzrielData";
 import { DataState } from "./components/layout/DataState";
@@ -36,13 +37,14 @@ function App() {
     }
     switch (activeModule) {
       case "projects": return <ProjectsPage />;
+      case "daily": return <DailyOperationsPage />;
       case "knowledge": return <KnowledgePage />;
       case "stark": return <StarkMapPage />;
       case "education": return <EducationPage />;
       case "research": return <ResearchPage />;
       case "system": return <SystemPage coreState={coreState} />;
       case "settings": return <SettingsPage />;
-      default: return <CommandCenter coreState={coreState} setCoreState={setCoreState} />;
+      default: return <CommandCenter coreState={coreState} setCoreState={setCoreState} onOpenDaily={() => setActiveModule("daily")} />;
     }
   };
 
@@ -53,7 +55,7 @@ function App() {
           <span className="brand__mark"><i /></span><strong>AZRIEL</strong><small>PERSONAL INTELLIGENCE SYSTEM</small>
         </button>
         <div className="topbar__context"><span>{currentModule.code}</span>{currentModule.description}</div>
-        <div className="topbar__status"><span className="live-dot" /><div><strong>SISTEMA ONLINE</strong><small>HUD V0.5 / SQLite {databaseInfo ? `S${databaseInfo.schemaVersion}` : ""}</small></div></div>
+        <div className="topbar__status"><span className="live-dot" /><div><strong>SISTEMA ONLINE</strong><small>HUD V0.5.1 / SQLite {databaseInfo ? `S${databaseInfo.schemaVersion}` : ""}</small></div></div>
       </header>
 
       <aside className="sidebar">

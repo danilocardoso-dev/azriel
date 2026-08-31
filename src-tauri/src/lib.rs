@@ -1,4 +1,5 @@
 mod commands;
+mod daily_commands;
 mod database;
 
 use database::DatabaseState;
@@ -29,6 +30,21 @@ pub fn run() {
             commands::list_education,
             commands::save_education,
             commands::delete_education,
+            daily_commands::list_tasks,
+            daily_commands::get_task,
+            daily_commands::save_task,
+            daily_commands::complete_task,
+            daily_commands::delete_task,
+            daily_commands::list_today_tasks,
+            daily_commands::list_upcoming_tasks,
+            daily_commands::list_inbox_tasks,
+            daily_commands::list_completed_tasks,
+            daily_commands::list_notes,
+            daily_commands::get_note,
+            daily_commands::save_note,
+            daily_commands::archive_note,
+            daily_commands::delete_note,
+            daily_commands::daily_counters,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao executar o Azriel");

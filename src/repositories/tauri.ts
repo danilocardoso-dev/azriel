@@ -4,7 +4,7 @@ export async function invokeDatabase<T>(command: string, args?: Record<string, u
   try { return await invoke<T>(command, args); }
   catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(message.includes("__TAURI_INTERNALS__")
+    throw new Error(message.includes("__TAURI_INTERNALS__") || message.includes("reading 'invoke'")
       ? "O banco local está disponível apenas no aplicativo Azriel. Execute npm run tauri dev."
       : message, { cause: error });
   }

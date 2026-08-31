@@ -9,21 +9,24 @@ import { ModuleIntro } from "../components/layout/ModuleIntro";
 import { useAzrielData } from "../contexts/useAzrielData";
 import { azrielStates, modules } from "../data/system";
 import type { AzrielState } from "../types";
+import { useDailyOperations } from "../contexts/useDailyOperations";
 
 interface CommandCenterProps {
   coreState: AzrielState;
   setCoreState: (state: AzrielState) => void;
+  onOpenDaily: () => void;
 }
 
-export function CommandCenter({ coreState, setCoreState }: CommandCenterProps) {
+export function CommandCenter({ coreState, setCoreState, onOpenDaily }: CommandCenterProps) {
   const { knowledgeAreas, projects, databaseInfo } = useAzrielData();
+  const { counters, loading: dailyLoading, error: dailyError } = useDailyOperations();
   const [coreOpen, setCoreOpen] = useState(false);
   const average = (field: "coverage" | "depth") => knowledgeAreas.length
     ? Math.round(knowledgeAreas.reduce((total, area) => total + area[field], 0) / knowledgeAreas.length) : 0;
 
   return (
     <>
-      <ModuleIntro code="CMD-01" title="Command Center" description="Leitura consolidada da formação, dos projetos e das lacunas do operador." metric="V0.5 // SQLITE LOCAL" />
+      <ModuleIntro code="CMD-01" title="Command Center" description="Leitura consolidada da formação, dos projetos e das lacunas do operador." metric="V0.5.1 // OPERAÇÕES DIÁRIAS" />
       <div className="command-grid">
         <div className="command-grid__left">
           <HudPanel title="Perfil do operador" code="ID/AZ">
@@ -83,6 +86,16 @@ export function CommandCenter({ coreState, setCoreState }: CommandCenterProps) {
           <HudPanel title="Diagnóstico de lacunas" code="ANÁLISE">
             <GapDiagnostics />
           </HudPanel>
+          <HudPanel title="Operações Diárias" code="AGORA">
+            <button className="daily-command-summary" onClick={onOpenDaily}>
+              {dailyError ? <span>OPERAÇÕES INDISPONÍVEIS</span> : dailyLoading ? <span>SINCRONIZANDO...</span> : <>
+                <span><strong>{counters.today}</strong>TAREFAS HOJE</span>
+                <span><strong>{counters.overdue}</strong>ATRASADAS</span>
+                <span><strong>{counters.priority}</strong>ALTA / CRÍTICA</span>
+              </>}
+              <i>ABRIR CENTRAL →</i>
+            </button>
+          </HudPanel>
         </div>
       </div>
 
@@ -91,9 +104,9 @@ export function CommandCenter({ coreState, setCoreState }: CommandCenterProps) {
       </HudPanel>
 
       {coreOpen && (
-        <DetailsDrawer eyebrow="AZRIEL CORE // V0.4" title={azrielStates[coreState].label} onClose={() => setCoreOpen(false)}>
+        <DetailsDrawer eyebrow="AZRIEL CORE // V0.5.1" title={azrielStates[coreState].label} onClose={() => setCoreOpen(false)}>
           <p className="drawer-lead">{azrielStates[coreState].message}</p>
-          <div className="drawer-kpis"><span><strong>8</strong>MÓDULOS</span><span><strong>{projects.length}</strong>PROJETOS</span><span><strong>{knowledgeAreas.length}</strong>ÁREAS</span></div>
+          <div className="drawer-kpis"><span><strong>9</strong>MÓDULOS</span><span><strong>{projects.length}</strong>PROJETOS</span><span><strong>{knowledgeAreas.length}</strong>ÁREAS</span></div>
           <h3>Estado dos módulos</h3>
           <div className="module-status-list">
             {modules.map((module) => <div key={module.id}><span>{module.code}</span><strong>{module.label}</strong><i>DISPONÍVEL</i></div>)}

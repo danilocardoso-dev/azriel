@@ -9,9 +9,9 @@ Versões podem ser ajustadas conforme novas necessidades técnicas surgirem.
 
 ## Estado atual
 
-Versão concluída mais recente: **v0.5 — Knowledge Core**
+Versão concluída mais recente: **v0.5.1 — Operações Diárias**
 
-Próxima versão planejada: **v0.6 — AI Core**
+Próxima versão principal planejada: **v0.6 — AI Core**
 
 ---
 
@@ -68,6 +68,32 @@ Dar memória estrutural ao Azriel.
 Resultado esperado:
 
 O dashboard deixa de utilizar dados mockados.
+
+---
+
+# v0.5.1 — Operações Diárias
+
+Status: ✅ Concluída em 31 de agosto de 2026
+
+Objetivo:
+Transformar o Azriel em uma central operacional de uso cotidiano antes da
+introdução da AI Core.
+
+### Entregas
+
+- tarefas persistentes
+- notas rápidas persistentes
+- prioridades e prazos
+- visões Hoje, Caixa de Entrada, Próximas, Concluídas e Notas
+- vínculos com projetos e conhecimentos
+- integração compacta com o Command Center
+- modal visual próprio para exclusões definitivas
+- validação funcional e de persistência aprovada
+
+Resultado esperado:
+
+O operador consegue registrar e organizar o que precisa fazer e lembrar sem
+depender de um aplicativo externo de notas rápidas.
 
 ---
 

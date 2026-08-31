@@ -1,6 +1,6 @@
 [package]
 name = "azriel"
-version = "0.5.0"
+version = "0.5.1"
 description = "Azriel Personal Intelligence System"
 authors = ["Danilo"]
 edition = "2021"

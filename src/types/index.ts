@@ -1,4 +1,4 @@
-export type ModuleId = "command" | "projects" | "knowledge" | "stark" | "education" | "research" | "system" | "settings";
+export type ModuleId = "command" | "daily" | "projects" | "knowledge" | "stark" | "education" | "research" | "system" | "settings";
 export type AzrielState = "idle" | "processing" | "alert" | "offline";
 export type ProjectStatus = "active" | "research" | "paused" | "planned" | "completed";
 export type Priority = "critical" | "high" | "medium" | "low";
@@ -28,6 +28,23 @@ export interface EducationItem {
 }
 export type EducationInput = Omit<EducationItem, "createdAt" | "updatedAt">;
 export interface DatabaseInfo { path: string; schemaVersion: number; integrationValue: number }
+
+export type TaskStatus = "inbox" | "pending" | "in_progress" | "completed" | "cancelled";
+export type TaskPriority = "low" | "medium" | "high" | "critical";
+export type DailyView = "today" | "inbox" | "upcoming" | "completed" | "notes";
+export interface Task {
+  id: string; title: string; description: string; status: TaskStatus; priority: TaskPriority;
+  dueDate: string | null; projectId: string | null; knowledgeAreaId: string | null;
+  createdAt: string; updatedAt: string; completedAt: string | null;
+}
+export type TaskInput = Omit<Task, "createdAt" | "updatedAt" | "completedAt">;
+export type NoteStatus = "active" | "archived";
+export interface Note {
+  id: string; title: string | null; content: string; status: NoteStatus;
+  projectId: string | null; knowledgeAreaId: string | null; createdAt: string; updatedAt: string;
+}
+export type NoteInput = Omit<Note, "createdAt" | "updatedAt">;
+export interface DailyCounters { pending: number; today: number; overdue: number; priority: number; notes: number }
 
 export interface ResearchItem {
   id: string; title: string; domain: string; objective: string;
