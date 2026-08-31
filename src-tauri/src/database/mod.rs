@@ -4,6 +4,8 @@ pub mod daily_models;
 pub mod daily_repository;
 pub mod ai_models;
 pub mod ai_repository;
+pub mod system_models;
+pub mod system_repository;
 
 use rusqlite::{params, Connection};
 use std::{fs, path::{Path, PathBuf}, sync::Mutex};
@@ -19,6 +21,7 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
     (3, "seed_registry", include_str!("../../migrations/0003_seed_registry.sql")),
     (4, "daily_operations", include_str!("../../migrations/0004_daily_operations.sql")),
     (5, "ai_core", include_str!("../../migrations/0005_ai_core.sql")),
+    (6, "system_core", include_str!("../../migrations/0006_system_core.sql")),
 ];
 
 pub fn open(path: &Path) -> Result<Connection, String> {
@@ -120,5 +123,20 @@ mod tests {
         assert_eq!(connection.query_row("SELECT COUNT(*) FROM notes WHERE id='keep-note'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
         assert_eq!(connection.query_row("SELECT model FROM ai_settings WHERE id=1", [], |row| row.get::<_, String>(0)).unwrap(), "qwen2.5:0.5b");
         assert_eq!(connection.query_row("SELECT COUNT(*) FROM conversations", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+    }
+
+    #[test]
+    fn migration_six_preserves_ai_core_data() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 5).unwrap();
+        repository::seed(&mut connection).unwrap();
+        connection.execute("INSERT INTO conversations(id,title) VALUES ('keep-chat','Preservar')", []).unwrap();
+
+        apply_migrations_through(&mut connection, 6).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 6);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM conversations WHERE id='keep-chat'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM workspaces", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
     }
 }

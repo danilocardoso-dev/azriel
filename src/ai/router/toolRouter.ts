@@ -16,8 +16,17 @@ export function routeIntent(query: string): RoutedIntent {
   const term = termFrom(query);
   if (!value) return { intent: "empty", scope: "general", tools: [] };
   if (value === "situacao" || value.includes("azriel situacao") || value.includes("resumo da situacao")) {
-    return { intent: "situation", scope: "azriel", tools: ["get_daily_operations_summary", "get_today_tasks", "get_overdue_tasks", "list_projects", "get_knowledge_gaps", "get_current_education"] };
+    return { intent: "situation", scope: "azriel", tools: ["get_daily_operations_summary", "get_today_tasks", "get_overdue_tasks", "list_projects", "get_knowledge_gaps", "get_current_education", "get_system_status", "list_workspaces", "get_ollama_status"] };
   }
+  if (value.includes("process")) return { intent: "processes", scope: "azriel", tools: ["get_process_summary"] };
+  if (value.includes("cpu") || value.includes("processador")) return { intent: "cpu", scope: "azriel", tools: ["get_cpu_status"] };
+  if (value.includes("memoria") || value.includes(" ram")) return { intent: "memory", scope: "azriel", tools: ["get_memory_status"] };
+  if (value.includes("disco") || value.includes("armazenamento") || value.includes("espaco livre")) return { intent: "storage", scope: "azriel", tools: ["get_storage_status"] };
+  if (value.includes("rede") || value.includes("network")) return { intent: "network", scope: "azriel", tools: ["get_network_status"] };
+  if (value.includes("ollama")) return { intent: "ollama", scope: "azriel", tools: ["get_ollama_status"] };
+  if (value.includes("commit")) return { intent: "git_commits", scope: "azriel", term: value, tools: ["list_workspaces", "get_recent_commits"] };
+  if (value.includes("git") || value.includes("repositorio")) return { intent: "git", scope: "azriel", term: value, tools: ["list_workspaces", "get_git_status"] };
+  if (value.includes("workspace") || value.includes("pasta autorizada")) return { intent: "workspaces", scope: "azriel", term: value, tools: ["list_workspaces", "get_workspace_status"] };
   if (value.includes("projet") && value.includes("lacuna")) return { intent: "projects_for_gaps", scope: "azriel", tools: ["list_projects", "list_knowledge_areas", "get_knowledge_gaps"] };
   if ((value.includes("fazendo") || value.includes("atividade") || value.includes("trabalhando")) && term) {
     return { intent: "cross_domain_activity", scope: "azriel", term, tools: ["list_projects", "list_knowledge_areas", "get_today_tasks", "get_upcoming_tasks", "get_recent_notes"] };

@@ -16,10 +16,11 @@ import { DataState } from "./components/layout/DataState";
 import { useAI } from "./contexts/useAI";
 
 function App() {
-  const { loading, error, reload, databaseInfo, projects, knowledgeAreas, education } = useAzrielData();
+  const { loading, error, reload, databaseInfo, knowledgeAreas } = useAzrielData();
   const { coreState, status: aiStatus } = useAI();
   const [activeModule, setActiveModule] = useState<ModuleId>("command");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [moduleAction, setModuleAction] = useState<"new-project" | "new-task" | "new-note" | null>(null);
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -30,35 +31,32 @@ function App() {
   const currentModule = useMemo(() => modules.find((module) => module.id === activeModule)!, [activeModule]);
 
   const renderModule = () => {
-    const empty = activeModule === "projects" ? projects.length === 0
-      : activeModule === "education" ? education.length === 0
-      : ["knowledge", "stark"].includes(activeModule) ? knowledgeAreas.length === 0
-      : activeModule === "command" ? projects.length === 0 && knowledgeAreas.length === 0 : false;
+    const empty = activeModule === "stark" && knowledgeAreas.length === 0;
     if (["command", "projects", "knowledge", "stark", "education"].includes(activeModule) && (loading || error || empty)) {
       return <DataState loading={loading} error={error} empty={empty} onRetry={() => void reload()} />;
     }
     switch (activeModule) {
-      case "projects": return <ProjectsPage />;
+      case "projects": return <ProjectsPage openCreate={moduleAction === "new-project"} />;
       case "ai": return <AICorePage />;
-      case "daily": return <DailyOperationsPage />;
+      case "daily": return <DailyOperationsPage initialCapture={moduleAction === "new-task" ? "task" : moduleAction === "new-note" ? "note" : undefined} />;
       case "knowledge": return <KnowledgePage />;
       case "stark": return <StarkMapPage />;
       case "education": return <EducationPage />;
       case "research": return <ResearchPage />;
       case "system": return <SystemPage coreState={coreState} onOpenAI={() => setActiveModule("ai")} />;
       case "settings": return <SettingsPage />;
-      default: return <CommandCenter coreState={coreState} onOpenAI={() => setActiveModule("ai")} onOpenDaily={() => setActiveModule("daily")} />;
+      default: return <CommandCenter coreState={coreState} onOpenAI={() => { setModuleAction(null); setActiveModule("ai"); }} onOpenDaily={() => { setModuleAction(null); setActiveModule("daily"); }} onNewProject={() => { setModuleAction("new-project"); setActiveModule("projects"); }} onNewTask={() => { setModuleAction("new-task"); setActiveModule("daily"); }} onNewNote={() => { setModuleAction("new-note"); setActiveModule("daily"); }} />;
     }
   };
 
   return (
     <div className={`app-shell app-shell--${coreState} ${sidebarCollapsed ? "app-shell--sidebar-collapsed" : ""}`}>
       <header className="topbar">
-        <button className="brand" onClick={() => setActiveModule("command")} aria-label="Abrir Command Center">
+        <button className="brand" onClick={() => { setModuleAction(null); setActiveModule("command"); }} aria-label="Abrir Command Center">
           <span className="brand__mark"><i /></span><strong>AZRIEL</strong><small>PERSONAL INTELLIGENCE SYSTEM</small>
         </button>
         <div className="topbar__context"><span>{currentModule.code}</span>{currentModule.description}</div>
-        <div className="topbar__status"><span className="live-dot" /><div><strong>SISTEMA ONLINE</strong><small>HUD V0.6 / SQLite {databaseInfo ? `S${databaseInfo.schemaVersion}` : ""}</small></div></div>
+        <div className="topbar__status"><span className="live-dot" /><div><strong>SISTEMA ONLINE</strong><small>HUD V0.7.1 / SQLite {databaseInfo ? `S${databaseInfo.schemaVersion}` : ""}</small></div></div>
       </header>
 
       <aside className="sidebar">
@@ -76,7 +74,7 @@ function App() {
         </div>
         <nav aria-label="Módulos principais">
           {modules.map((module, index) => (
-            <button className={activeModule === module.id ? "active" : ""} onClick={() => setActiveModule(module.id)} key={module.id} title={sidebarCollapsed ? module.label : undefined}>
+            <button className={activeModule === module.id ? "active" : ""} onClick={() => { setModuleAction(null); setActiveModule(module.id); }} key={module.id} title={sidebarCollapsed ? module.label : undefined}>
               <span>{String(index + 1).padStart(2, "0")}</span><i>{module.code}</i><strong>{module.label}</strong>
             </button>
           ))}

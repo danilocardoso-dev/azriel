@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 type DeleteConfirmationDialogProps = {
-  kind: "tarefa" | "anotação" | "conversa";
+  kind: "tarefa" | "anotação" | "conversa" | "workspace" | "projeto" | "conhecimento" | "formação";
   title: string;
   description?: string;
   busy: boolean;

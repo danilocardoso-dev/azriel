@@ -5,12 +5,15 @@ import { StarkChart } from "../components/knowledge/StarkChart";
 import { ModuleIntro } from "../components/layout/ModuleIntro";
 import { HudPanel } from "../components/hud/HudPanel";
 import { KnowledgeMetrics } from "../components/knowledge/KnowledgeMetrics";
+import { KnowledgeEditor } from "../components/core/KnowledgeEditor";
 import { useAzrielData } from "../contexts/useAzrielData";
-import type { KnowledgeArea } from "../types";
+import type { KnowledgeArea, KnowledgeInput } from "../types";
 
 export function StarkMapPage() {
-  const { knowledgeAreas, projects } = useAzrielData();
+  const { knowledgeAreas, projects, saveKnowledge } = useAzrielData();
   const [selected, setSelected] = useState<KnowledgeArea | null>(null);
+  const [editing, setEditing] = useState<KnowledgeArea | null>(null);
+  async function save(input: KnowledgeInput) { await saveKnowledge(input); setEditing(null); setSelected(null); }
   return (
     <>
       <ModuleIntro code="STK-04" title="Mapa Stark" description="Comparação interativa entre território conhecido e capacidade prática." metric="COBERTURA × PROFUNDIDADE" />
@@ -20,12 +23,14 @@ export function StarkMapPage() {
       </div>
       {selected && (
         <DetailsDrawer eyebrow={`MAPA STARK // ${selected.category}`} title={selected.name} onClose={() => setSelected(null)}>
+          <div className="drawer-actions"><button onClick={() => setEditing(selected)}>EDITAR CONHECIMENTO</button></div>
           <KnowledgeMetrics key={selected.id} area={selected} onUpdated={setSelected} />
           <div className="gap-index"><strong>{selected.coverage - selected.depth}</strong><span>PONTOS ENTRE COBERTURA E PROFUNDIDADE</span></div>
           <h3>Prioridade</h3><p className={`priority-text priority-text--${selected.priority}`}>{selected.priority.toUpperCase()}</p>
           <h3>Projetos relacionados</h3><div className="related-list">{selected.projectIds.length ? selected.projectIds.map((id) => <span key={id}>{projects.find((project) => project.id === id)?.name ?? id}</span>) : <span>Projeto prático ainda necessário</span>}</div>
         </DetailsDrawer>
       )}
+      {editing && <KnowledgeEditor area={editing} onCancel={() => setEditing(null)} onSave={save} />}
     </>
   );
 }

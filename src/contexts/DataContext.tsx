@@ -5,6 +5,7 @@ import { knowledgeService } from "../services/knowledgeService";
 import { projectService } from "../services/projectService";
 import type { DatabaseInfo, EducationItem, KnowledgeArea, Project } from "../types";
 import { DataContext, type DataContextValue } from "./data-context";
+import { notifyDataRelationsChanged } from "./dataEvents";
 const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export function DataProvider({ children }: { children: ReactNode }) {
@@ -40,9 +41,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
     },
     loadHistory: knowledgeService.history,
     saveKnowledge: async (input) => setKnowledgeAreas(await knowledgeService.save(input)),
-    deleteKnowledge: async (id) => setKnowledgeAreas(await knowledgeService.remove(id)),
-    saveProject: async (input) => setProjects(await projectService.save(input)),
-    deleteProject: async (id) => setProjects(await projectService.remove(id)),
+    deleteKnowledge: async (id) => {
+      const nextKnowledge = await knowledgeService.remove(id);
+      const nextProjects = await projectService.list();
+      setKnowledgeAreas(nextKnowledge); setProjects(nextProjects); notifyDataRelationsChanged();
+    },
+    saveProject: async (input) => {
+      const nextProjects = await projectService.save(input);
+      const nextKnowledge = await knowledgeService.list();
+      setProjects(nextProjects); setKnowledgeAreas(nextKnowledge); notifyDataRelationsChanged();
+    },
+    deleteProject: async (id) => {
+      const nextProjects = await projectService.remove(id);
+      const nextKnowledge = await knowledgeService.list();
+      setProjects(nextProjects); setKnowledgeAreas(nextKnowledge); notifyDataRelationsChanged();
+    },
     saveEducation: async (input) => setEducation(await educationService.save(input)),
     deleteEducation: async (id) => setEducation(await educationService.remove(id)),
   }), [projects, knowledgeAreas, education, databaseInfo, loading, error, reload]);

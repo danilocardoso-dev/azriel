@@ -9,9 +9,9 @@ Versões podem ser ajustadas conforme novas necessidades técnicas surgirem.
 
 ## Estado atual
 
-Versão atual concluída: **v0.6 — AI Core**
+Versão atual concluída: **v0.7.1 — Autonomia dos Núcleos**
 
-Próxima versão principal planejada: **v0.7 — System Core**
+Próxima versão principal planejada: **v0.8 — Automation Core**
 
 ---
 
@@ -123,21 +123,51 @@ Exemplo:
 
 # v0.7 — System Core
 
-Status: ⏳ Planejado
+Status: ✅ Concluída em 31 de agosto de 2026
 
 Objetivo:
 Conectar Azriel ao computador.
 
 ### Entregas
 
-- CPU
-- RAM
-- armazenamento
-- processos
-- arquivos
-- projetos locais
-- Git
-- telemetria
+- CPU, memória, armazenamento, rede e uptime nativos
+- monitor de processos somente leitura
+- workspaces autorizados persistidos no SQLite
+- relação opcional entre workspace e projeto
+- Git Monitor somente leitura
+- telemetria real no Command Center
+- ferramentas do System Core no AI Core
+
+Validação automatizada, visual e operacional concluída.
+
+---
+
+# v0.7.1 — Autonomia dos Núcleos
+
+Status: ✅ Concluída em 31 de agosto de 2026
+
+Objetivo:
+Permitir que o operador crie, edite, organize e remova seus próprios dados nas
+telas que já possuem persistência, sem antecipar as ações de sistema da v0.8.
+
+### Entregas
+
+- CRUD completo de projetos
+- CRUD completo de áreas de conhecimento
+- CRUD completo de formação
+- consulta e restauração de notas arquivadas
+- editor de conhecimento compartilhado com o Mapa Stark
+- atalhos operacionais no Command Center
+- confirmações de exclusão específicas e tratamento consistente de erros
+
+Validação automatizada, visual e operacional concluída.
+
+### Limites
+
+- Research Core permanece sem CRUD até possuir persistência própria
+- AI Core permanece somente leitura sobre os dados dos núcleos
+- processos, arquivos e Git permanecem sem ações destrutivas
+- Automation Core continua reservada para a v0.8
 
 ---
 

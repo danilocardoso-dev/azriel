@@ -3,6 +3,7 @@ import { noteService } from "../services/noteService";
 import { taskService } from "../services/taskService";
 import type { DailyView, Note, Task } from "../types";
 import { DailyContext, emptyDailyCounters, type DailyContextValue } from "./daily-context";
+import { DATA_RELATIONS_CHANGED } from "./dataEvents";
 
 const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error);
 
@@ -19,8 +20,9 @@ export function DailyOperationsProvider({ children }: { children: ReactNode }) {
     try {
       const counts = await taskService.counters();
       setCounters(counts);
-      if (view === "notes") {
-        setNotes(await noteService.list(false)); setTasks([]);
+      if (view === "notes" || view === "archived_notes") {
+        const listed = await noteService.list(view === "archived_notes");
+        setNotes(view === "archived_notes" ? listed.filter((note) => note.status === "archived") : listed); setTasks([]);
       } else {
         const loaders = { today: taskService.today, inbox: taskService.inbox, upcoming: taskService.upcoming, completed: taskService.completed };
         setTasks(await loaders[view]()); setNotes([]);
@@ -32,6 +34,12 @@ export function DailyOperationsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const initialization = window.setTimeout(() => void reload(), 0);
     return () => window.clearTimeout(initialization);
+  }, [reload]);
+
+  useEffect(() => {
+    const refreshRelations = () => void reload();
+    window.addEventListener(DATA_RELATIONS_CHANGED, refreshRelations);
+    return () => window.removeEventListener(DATA_RELATIONS_CHANGED, refreshRelations);
   }, [reload]);
 
   const refreshAfter = useCallback(async <T,>(operation: Promise<T>) => {
@@ -48,6 +56,7 @@ export function DailyOperationsProvider({ children }: { children: ReactNode }) {
     deleteTask: (id) => refreshAfter(taskService.remove(id)),
     saveNote: (input) => refreshAfter(noteService.save(input)),
     archiveNote: (id) => refreshAfter(noteService.archive(id)),
+    restoreNote: (id) => refreshAfter(noteService.restore(id)),
     deleteNote: (id) => refreshAfter(noteService.remove(id)),
   }), [view, tasks, notes, counters, loading, error, reload, refreshAfter]);
 

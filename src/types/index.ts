@@ -31,7 +31,7 @@ export interface DatabaseInfo { path: string; schemaVersion: number; integration
 
 export type TaskStatus = "inbox" | "pending" | "in_progress" | "completed" | "cancelled";
 export type TaskPriority = "low" | "medium" | "high" | "critical";
-export type DailyView = "today" | "inbox" | "upcoming" | "completed" | "notes";
+export type DailyView = "today" | "inbox" | "upcoming" | "completed" | "notes" | "archived_notes";
 export interface Task {
   id: string; title: string; description: string; status: TaskStatus; priority: TaskPriority;
   dueDate: string | null; projectId: string | null; knowledgeAreaId: string | null;
@@ -60,13 +60,27 @@ export type AIGenerationProfile = "standard" | "repetition-retry";
 export interface AIRequest { model: string; messages: ProviderMessage[]; timeoutSeconds: number; generationProfile?: AIGenerationProfile }
 export interface AIResponse { content: string; model: string; truncated: boolean }
 export interface OllamaStatus { available: boolean; models: string[]; error: string | null }
+export interface SystemDetails { osName: string | null; osVersion: string | null; kernelVersion: string | null; architecture: string; hostname: string | null; logicalCores: number; physicalCores: number | null; uptimeSeconds: number }
+export interface CpuSnapshot { usagePercent: number; cores: number[] }
+export interface MemorySnapshot { totalBytes: number; usedBytes: number; availableBytes: number; swapTotalBytes: number; swapUsedBytes: number }
+export interface StorageSnapshot { name: string; mountPoint: string; fileSystem: string; totalBytes: number; availableBytes: number; removable: boolean }
+export interface NetworkSnapshot { interfaceName: string; receivedBytes: number; transmittedBytes: number; receivedBytesTotal: number; transmittedBytesTotal: number }
+export interface ProcessSnapshot { pid: number; name: string; cpuPercent: number; memoryBytes: number }
+export interface SystemSnapshot { collectedAt: number; details: SystemDetails; cpu: CpuSnapshot; memory: MemorySnapshot; storage: StorageSnapshot[]; network: NetworkSnapshot[]; errors: string[] }
+export interface Workspace { id: string; name: string; path: string; projectId: string | null; enabled: boolean; createdAt: string; updatedAt: string }
+export type WorkspaceInput = Omit<Workspace, "createdAt" | "updatedAt">;
+export interface GitCommit { hash: string; shortHash: string; subject: string; date: string; author: string }
+export interface GitStatus { available: boolean; repository: boolean; branch: string | null; clean: boolean; modified: string[]; added: string[]; removed: string[]; untracked: string[]; lastCommit: GitCommit | null; recentCommits: GitCommit[]; error: string | null }
+export interface WorkspaceStatus { workspace: Workspace; pathAvailable: boolean; entryCount: number | null; git: GitStatus | null; error: string | null }
 export type AIToolName =
   | "get_today_tasks" | "get_overdue_tasks" | "get_upcoming_tasks" | "get_recent_notes" | "get_daily_operations_summary"
   | "list_projects" | "get_project" | "get_project_tasks" | "get_project_knowledge"
   | "list_knowledge_areas" | "get_knowledge_area" | "get_knowledge_gaps" | "get_stark_map" | "get_knowledge_history"
   | "get_education" | "get_current_education" | "get_planned_education"
+  | "get_system_status" | "get_cpu_status" | "get_memory_status" | "get_storage_status" | "get_network_status" | "get_process_summary"
+  | "list_workspaces" | "get_workspace_status" | "get_git_status" | "get_recent_commits" | "get_ollama_status"
   | "get_azriel_status" | "get_azriel_version";
-export interface AIToolInput { query: string; term?: string; entityId?: string }
+export interface AIToolInput { query: string; term?: string; entityId?: string; workspaceId?: string }
 export interface AIToolResult { name: AIToolName; domain: string; data: unknown; empty: boolean }
 export interface RoutedIntent { intent: string; scope: "azriel" | "general"; tools: AIToolName[]; term?: string }
 

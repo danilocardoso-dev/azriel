@@ -12,6 +12,7 @@ export interface DailyContextValue {
   deleteTask: (id: string) => Promise<void>;
   saveNote: (input: NoteInput) => Promise<Note>;
   archiveNote: (id: string) => Promise<Note>;
+  restoreNote: (id: string) => Promise<Note>;
   deleteNote: (id: string) => Promise<void>;
 }
 

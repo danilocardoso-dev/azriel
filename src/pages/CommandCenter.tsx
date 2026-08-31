@@ -9,23 +9,31 @@ import { azrielStates } from "../data/system";
 import type { AzrielState } from "../types";
 import { useDailyOperations } from "../contexts/useDailyOperations";
 import { useAI } from "../contexts/useAI";
+import { useSystem } from "../contexts/useSystem";
+import { formatBytes } from "../services/systemService";
 
 interface CommandCenterProps {
   coreState: AzrielState;
   onOpenAI: () => void;
   onOpenDaily: () => void;
+  onNewProject: () => void;
+  onNewTask: () => void;
+  onNewNote: () => void;
 }
 
-export function CommandCenter({ coreState, onOpenAI, onOpenDaily }: CommandCenterProps) {
+export function CommandCenter({ coreState, onOpenAI, onOpenDaily, onNewProject, onNewTask, onNewNote }: CommandCenterProps) {
   const { knowledgeAreas, projects, databaseInfo } = useAzrielData();
   const { counters, loading: dailyLoading, error: dailyError } = useDailyOperations();
   const { status: aiStatus, phase: aiPhase } = useAI();
+  const { snapshot, workspaces } = useSystem();
+  const memoryPercent = snapshot && snapshot.memory.totalBytes > 0 ? Math.round(snapshot.memory.usedBytes / snapshot.memory.totalBytes * 100) : 0;
   const average = (field: "coverage" | "depth") => knowledgeAreas.length
     ? Math.round(knowledgeAreas.reduce((total, area) => total + area[field], 0) / knowledgeAreas.length) : 0;
 
   return (
     <>
-      <ModuleIntro code="CMD-01" title="Command Center" description="Leitura consolidada da formação, dos projetos e das lacunas do operador." metric="V0.6 // AI CORE LOCAL" />
+      <ModuleIntro code="CMD-01" title="Command Center" description="Leitura consolidada da formação, dos projetos e das lacunas do operador." metric="V0.7.1 // AUTONOMIA OPERACIONAL" />
+      <nav className="command-quick-actions" aria-label="Ações rápidas"><span>CAPTURA OPERACIONAL</span><button onClick={onNewProject}>＋ NOVO PROJETO</button><button onClick={onNewTask}>＋ NOVA TAREFA</button><button onClick={onNewNote}>＋ NOVA NOTA</button></nav>
       <div className="command-grid">
         <div className="command-grid__left">
           <HudPanel title="Perfil do operador" code="ID/AZ">
@@ -66,6 +74,14 @@ export function CommandCenter({ coreState, onOpenAI, onOpenDaily }: CommandCente
         </HudPanel>
 
         <div className="command-grid__right">
+          <HudPanel title="System Core" code="TELEMETRIA REAL">
+            <div className="system-command-summary">
+              <span><strong>{snapshot ? `${snapshot.cpu.usagePercent.toFixed(0)}%` : "—"}</strong>CPU</span>
+              <span><strong>{snapshot ? `${memoryPercent}%` : "—"}</strong>MEMÓRIA</span>
+              <span><strong>{snapshot ? formatBytes(snapshot.memory.availableBytes) : "—"}</strong>RAM LIVRE</span>
+              <span><strong>{workspaces.filter((workspace) => workspace.enabled).length}</strong>WORKSPACES</span>
+            </div>
+          </HudPanel>
           <HudPanel title="AI Core" code="OLLAMA LOCAL">
             <button className="ai-command-summary" onClick={onOpenAI}>
               <span><strong>{aiStatus?.available ? "ONLINE" : "OFFLINE"}</strong>{aiStatus?.available ? aiStatus.models.join(" / ") : "Verifique o Ollama"}</span>

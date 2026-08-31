@@ -10,6 +10,11 @@ describe("Tool Router", () => {
     ["Como está meu Mapa Stark?", "get_stark_map"],
     ["Como está minha formação?", "get_current_education"],
     ["Azriel, situação.", "get_daily_operations_summary"],
+    ["Quais processos estão consumindo mais memória?", "get_process_summary"],
+    ["Como está o uso da CPU?", "get_cpu_status"],
+    ["Quais workspaces estão cadastrados?", "list_workspaces"],
+    ["Quais projetos Git possuem alterações?", "get_git_status"],
+    ["O Ollama está disponível?", "get_ollama_status"],
   ])("roteia %s para %s", (query, tool) => expect(routeIntent(query).tools).toContain(tool));
 
   it("combina domínios relacionados a bioinformática", () => {

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useDailyOperations } from "../../contexts/useDailyOperations";
 
-export function QuickCapture() {
+export function QuickCapture({ initialKind, autoFocus = false }: { initialKind?: "task" | "note"; autoFocus?: boolean }) {
   const { createQuickTask, createQuickNote, setView } = useDailyOperations();
-  const [kind, setKind] = useState<"task" | "note">("task");
+  const [kind, setKind] = useState<"task" | "note">(initialKind ?? "task");
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -16,6 +16,8 @@ export function QuickCapture() {
     window.addEventListener("keydown", shortcut);
     return () => window.removeEventListener("keydown", shortcut);
   }, []);
+
+  useEffect(() => { if (autoFocus) inputRef.current?.focus(); }, [autoFocus]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();

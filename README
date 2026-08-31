@@ -765,16 +765,40 @@ Azriel começa a compreender o próprio sistema.
 
 Integração com o computador.
 
+Estado: concluída e validada em 31 de agosto de 2026.
+
 Objetivos:
 
 * CPU;
 * RAM;
 * armazenamento;
 * processos;
-* arquivos;
-* Git;
-* projetos locais;
-* telemetria.
+* workspaces autorizados;
+* Git somente leitura;
+* telemetria compartilhada com o Command Center;
+* consultas do AI Core sem acesso arbitrário ao computador.
+
+Limite: a v0.7 observa o ambiente, mas não encerra processos, altera arquivos, executa shell livre ou modifica repositórios Git.
+
+---
+
+## Azriel v0.7.1 — Autonomia dos Núcleos
+
+Ampliação da autonomia operacional sobre os dados persistentes do Azriel.
+
+Estado: concluída e validada em 31 de agosto de 2026.
+
+Objetivos:
+
+* criar, editar e excluir projetos;
+* criar, editar e excluir conhecimentos;
+* criar, editar e excluir formações;
+* consultar e restaurar notas arquivadas;
+* compartilhar a edição de conhecimentos com o Mapa Stark;
+* oferecer atalhos operacionais no Command Center;
+* manter confirmações explícitas para exclusões definitivas.
+
+Limite: a v0.7.1 administra dados do próprio Azriel, mas não executa ações destrutivas no computador e não concede escrita autônoma ao AI Core.
 
 ---
 

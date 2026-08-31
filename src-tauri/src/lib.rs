@@ -3,6 +3,9 @@ mod daily_commands;
 mod database;
 mod ai_commands;
 mod ollama;
+mod system_commands;
+mod system_monitor;
+mod git_monitor;
 
 use database::DatabaseState;
 use tauri::Manager;
@@ -10,6 +13,8 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .manage(system_monitor::SystemMonitorState(std::sync::Mutex::new(system_monitor::SystemMonitor::new())))
         .setup(|app| {
             let database_path = app.path().app_data_dir()?.join("azriel.db");
             let connection = database::open(&database_path)
@@ -56,6 +61,12 @@ pub fn run() {
             ai_commands::add_message,
             ai_commands::ollama_status,
             ai_commands::ollama_chat,
+            system_commands::system_snapshot,
+            system_commands::list_processes,
+            system_commands::list_workspaces,
+            system_commands::save_workspace,
+            system_commands::delete_workspace,
+            system_commands::get_workspace_status,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao executar o Azriel");

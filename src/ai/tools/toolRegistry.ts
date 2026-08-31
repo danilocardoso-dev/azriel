@@ -5,7 +5,9 @@ import { noteService } from "../../services/noteService";
 import { projectService } from "../../services/projectService";
 import { taskService } from "../../services/taskService";
 import { localDateKey } from "../../services/dateService";
-import type { AIToolInput, AIToolName, AIToolResult, DailyCounters, EducationItem, KnowledgeArea, KnowledgeHistory, Note, Project, Task } from "../../types";
+import { systemService } from "../../services/systemService";
+import { aiRepository } from "../../repositories/aiRepository";
+import type { AISettings, AIToolInput, AIToolName, AIToolResult, DailyCounters, EducationItem, KnowledgeArea, KnowledgeHistory, Note, OllamaStatus, ProcessSnapshot, Project, SystemSnapshot, Task, Workspace, WorkspaceStatus } from "../../types";
 
 export interface AzrielTool {
   name: AIToolName;
@@ -22,6 +24,8 @@ export interface ToolDependencies {
   knowledge: { list(): Promise<KnowledgeArea[]>; get(id: string): Promise<KnowledgeArea | null>; history(id: string): Promise<KnowledgeHistory[]> };
   education: { list(): Promise<EducationItem[]> };
   databaseInfo(): Promise<{ schemaVersion: number; integrationValue: number }>;
+  system: { snapshot(): Promise<SystemSnapshot>; processes(): Promise<ProcessSnapshot[]>; listWorkspaces(): Promise<Workspace[]>; workspaceStatus(id: string): Promise<WorkspaceStatus> };
+  ollama: { settings(): Promise<AISettings>; status(endpoint: string, timeoutSeconds: number): Promise<OllamaStatus> };
 }
 
 const productionDependencies: ToolDependencies = {
@@ -31,6 +35,8 @@ const productionDependencies: ToolDependencies = {
   knowledge: knowledgeService,
   education: educationService,
   databaseInfo: getDatabaseInfo,
+  system: systemService,
+  ollama: { settings: aiRepository.getSettings, status: aiRepository.status },
 };
 
 const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -44,6 +50,11 @@ const findKnowledge = async (dependencies: ToolDependencies, input: AIToolInput)
   const areas = await dependencies.knowledge.list();
   const needle = normalize(input.entityId || input.term || input.query);
   return areas.find((area) => area.id === input.entityId || normalize(area.name).includes(needle) || needle.includes(normalize(area.name))) ?? null;
+};
+const findWorkspace = async (dependencies: ToolDependencies, input: AIToolInput) => {
+  const workspaces = (await dependencies.system.listWorkspaces()).filter((workspace) => workspace.enabled);
+  const needle = normalize(input.workspaceId || input.entityId || input.term || input.query);
+  return workspaces.find((workspace) => workspace.id === input.workspaceId || workspace.id === input.entityId || normalize(workspace.name).includes(needle) || needle.includes(normalize(workspace.name))) ?? null;
 };
 
 function createTools(dependencies: ToolDependencies): AzrielTool[] {
@@ -65,8 +76,19 @@ function createTools(dependencies: ToolDependencies): AzrielTool[] {
     { name: "get_education", domain: "Formação", description: "Formação completa", readonly: true, execute: () => dependencies.education.list() },
     { name: "get_current_education", domain: "Formação", description: "Formação atual", readonly: true, execute: async () => (await dependencies.education.list()).filter((item) => item.status === "in_progress") },
     { name: "get_planned_education", domain: "Formação", description: "Formação planejada", readonly: true, execute: async () => (await dependencies.education.list()).filter((item) => item.status === "planned") },
-    { name: "get_azriel_status", domain: "Azriel", description: "Estado interno persistente do Azriel", readonly: true, execute: async () => { const [database, daily] = await Promise.all([dependencies.databaseInfo(), dependencies.tasks.counters()]); return { version: "0.6.0", database, daily, aiCore: "online quando Ollama disponível", writeAccess: false }; } },
-    { name: "get_azriel_version", domain: "Azriel", description: "Versão atual", readonly: true, execute: async () => ({ version: "0.6.0", name: "AI Core" }) },
+    { name: "get_system_status", domain: "System Core", description: "Resumo do sistema operacional e da telemetria local", readonly: true, execute: async () => { const snapshot = await dependencies.system.snapshot(); return { collectedAt: snapshot.collectedAt, details: snapshot.details, cpuUsagePercent: snapshot.cpu.usagePercent, memory: snapshot.memory, storage: snapshot.storage.map((disk) => ({ name: disk.name, mountPoint: disk.mountPoint, totalBytes: disk.totalBytes, availableBytes: disk.availableBytes })), network: { interfaces: snapshot.network.length, receivedBytes: snapshot.network.reduce((sum, item) => sum + item.receivedBytes, 0), transmittedBytes: snapshot.network.reduce((sum, item) => sum + item.transmittedBytes, 0) }, errors: snapshot.errors }; } },
+    { name: "get_cpu_status", domain: "System Core", description: "Uso atual de CPU", readonly: true, execute: async () => (await dependencies.system.snapshot()).cpu },
+    { name: "get_memory_status", domain: "System Core", description: "Uso atual de memória e swap", readonly: true, execute: async () => (await dependencies.system.snapshot()).memory },
+    { name: "get_storage_status", domain: "System Core", description: "Volumes e espaço disponível", readonly: true, execute: async () => (await dependencies.system.snapshot()).storage },
+    { name: "get_network_status", domain: "System Core", description: "Interfaces e tráfego da amostra mais recente", readonly: true, execute: async () => (await dependencies.system.snapshot()).network },
+    { name: "get_process_summary", domain: "System Core", description: "Até dez processos com maior consumo, sem argumentos ou caminhos sensíveis", readonly: true, execute: async (input) => { const processes = await dependencies.system.processes(); const byCpu = normalize(input.query).includes("cpu"); return [...processes].sort((a, b) => byCpu ? b.cpuPercent - a.cpuPercent : b.memoryBytes - a.memoryBytes).slice(0, 10); } },
+    { name: "list_workspaces", domain: "System Core", description: "Workspaces atualmente autorizados e habilitados", readonly: true, execute: async () => (await dependencies.system.listWorkspaces()).filter((workspace) => workspace.enabled).map(({ id, name, projectId, enabled }) => ({ id, name, projectId, enabled })) },
+    { name: "get_workspace_status", domain: "System Core", description: "Estado de um workspace autorizado identificado internamente", readonly: true, execute: async (input) => { const workspace = await findWorkspace(dependencies, input); return workspace ? dependencies.system.workspaceStatus(workspace.id) : null; } },
+    { name: "get_git_status", domain: "System Core", description: "Estado Git dos workspaces autorizados", readonly: true, execute: async (input) => { const workspace = await findWorkspace(dependencies, input); if (workspace) return dependencies.system.workspaceStatus(workspace.id); const enabled = (await dependencies.system.listWorkspaces()).filter((item) => item.enabled); return Promise.all(enabled.slice(0, 20).map(async (item) => { const status = await dependencies.system.workspaceStatus(item.id); return { workspace: item.name, git: status.git }; })); } },
+    { name: "get_recent_commits", domain: "System Core", description: "Commits recentes de um workspace autorizado", readonly: true, execute: async (input) => { const workspace = await findWorkspace(dependencies, input); if (!workspace) return []; return (await dependencies.system.workspaceStatus(workspace.id)).git?.recentCommits ?? []; } },
+    { name: "get_ollama_status", domain: "System Core", description: "Estado do Ollama e modelos locais usando as configurações existentes", readonly: true, execute: async () => { const settings = await dependencies.ollama.settings(); return dependencies.ollama.status(settings.endpoint, Math.min(settings.timeoutSeconds, 8)); } },
+    { name: "get_azriel_status", domain: "Azriel", description: "Estado consolidado do Azriel", readonly: true, execute: async () => { const [database, daily, system, workspaces] = await Promise.all([dependencies.databaseInfo(), dependencies.tasks.counters(), dependencies.system.snapshot(), dependencies.system.listWorkspaces()]); return { version: "0.7.1", database, daily, system: { cpuUsagePercent: system.cpu.usagePercent, memory: system.memory, errors: system.errors }, workspaces: { enabled: workspaces.filter((item) => item.enabled).length, total: workspaces.length }, aiCore: "online quando Ollama disponível", writeAccess: false }; } },
+    { name: "get_azriel_version", domain: "Azriel", description: "Versão atual", readonly: true, execute: async () => ({ version: "0.7.1", name: "Autonomia dos Núcleos" }) },
   ];
 }
 
