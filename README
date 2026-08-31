@@ -802,18 +802,23 @@ Limite: a v0.7.1 administra dados do próprio Azriel, mas não executa ações d
 
 ---
 
-## Azriel v0.8 — Automation Core
+## Azriel v0.8.0 — Automation Core / Safe Actions
 
-Azriel começa a executar ações.
+Status: concluída em 31 de agosto de 2026.
+
+Azriel começa a executar ações locais dentro de registros explicitamente autorizados pelo operador.
 
 Objetivos:
 
-* abrir aplicações;
-* abrir projetos;
-* executar rotinas;
-* preparar ambientes;
-* automatizar tarefas;
-* interagir com ferramentas locais.
+* cadastrar aplicativos e URLs autorizados;
+* abrir aplicações, workspaces e projetos registrados;
+* revelar um workspace no Explorador;
+* abrir uma URL registrada;
+* classificar ações por permissão no Policy Engine;
+* registrar sucessos, recusas e falhas no Action History;
+* aceitar somente intenções imperativas explícitas no AI Core.
+
+Limite: não existe executor de shell genérico. O LLM fornece somente IDs resolvidos a partir dos registros autorizados; caminhos, executáveis e URLs permanecem internos ao Automation Core em Rust.
 
 ---
 

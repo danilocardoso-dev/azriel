@@ -17,7 +17,7 @@ export function SettingsPage() {
           <label><span><strong>Densidade elevada</strong><small>Prioriza dados e painéis compactos</small></span><input type="checkbox" checked={dense} onChange={(event) => setDense(event.target.checked)} /></label>
           <label><span><strong>Telemetria visual</strong><small>Exibe códigos e indicadores simulados</small></span><input type="checkbox" checked={telemetry} onChange={(event) => setTelemetry(event.target.checked)} /></label>
         </section>
-        <section><header><span>SISTEMA</span><i>V0.7.1</i></header><div className="config-readout"><span>Tema<strong>AZRIEL DARK</strong></span><span>Cor primária<strong>CYAN / #46E9FF</strong></span><span>Dados<strong>SQLITE LOCAL</strong></span><span>Persistência<strong>ATIVA / SCHEMA {databaseInfo?.schemaVersion ?? "-"}</strong></span><span>Arquivo<strong>{databaseInfo?.path ?? "Conectando..."}</strong></span></div></section>
+        <section><header><span>SISTEMA</span><i>V0.8.0</i></header><div className="config-readout"><span>Tema<strong>AZRIEL DARK</strong></span><span>Cor primária<strong>CYAN / #46E9FF</strong></span><span>Dados<strong>SQLITE LOCAL</strong></span><span>Persistência<strong>ATIVA / SCHEMA {databaseInfo?.schemaVersion ?? "-"}</strong></span><span>Arquivo<strong>{databaseInfo?.path ?? "Conectando..."}</strong></span></div></section>
         <AISettingsPanel />
       </div>
       <p className="settings-note">Os dados dos núcleos são persistentes. As três preferências visuais acima permanecem válidas apenas durante a sessão atual.</p>

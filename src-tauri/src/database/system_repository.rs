@@ -3,7 +3,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 pub fn list_workspaces(connection: &Connection) -> Result<Vec<Workspace>, String> {
     let mut statement = connection.prepare(
-        "SELECT id,name,path,project_id,enabled,created_at,updated_at FROM workspaces ORDER BY enabled DESC,name COLLATE NOCASE"
+        "SELECT id,name,path,project_id,application_id,enabled,created_at,updated_at FROM workspaces ORDER BY enabled DESC,name COLLATE NOCASE"
     ).map_err(err)?;
     let rows = statement.query_map([], map_workspace).map_err(err)?;
     rows.collect::<Result<Vec<_>, _>>().map_err(err)
@@ -11,7 +11,7 @@ pub fn list_workspaces(connection: &Connection) -> Result<Vec<Workspace>, String
 
 pub fn get_workspace(connection: &Connection, id: &str) -> Result<Option<Workspace>, String> {
     connection.query_row(
-        "SELECT id,name,path,project_id,enabled,created_at,updated_at FROM workspaces WHERE id=?1",
+        "SELECT id,name,path,project_id,application_id,enabled,created_at,updated_at FROM workspaces WHERE id=?1",
         [id], map_workspace,
     ).optional().map_err(err)
 }
@@ -51,10 +51,22 @@ pub fn save_workspace(
             return Err("O projeto relacionado não existe".into());
         }
     }
+    if let Some(application_id) = input.application_id.as_deref() {
+        let exists = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM applications WHERE id=?1)",
+                [application_id],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(err)?;
+        if !exists {
+            return Err("O aplicativo relacionado não existe".into());
+        }
+    }
     connection.execute(
-        "INSERT INTO workspaces(id,name,path,project_id,enabled) VALUES (?1,?2,?3,?4,?5)
-         ON CONFLICT(id) DO UPDATE SET name=excluded.name,path=excluded.path,project_id=excluded.project_id,enabled=excluded.enabled,updated_at=CURRENT_TIMESTAMP",
-        params![input.id, name, normalized_path, input.project_id, input.enabled],
+        "INSERT INTO workspaces(id,name,path,project_id,application_id,enabled) VALUES (?1,?2,?3,?4,?5,?6)
+         ON CONFLICT(id) DO UPDATE SET name=excluded.name,path=excluded.path,project_id=excluded.project_id,application_id=excluded.application_id,enabled=excluded.enabled,updated_at=CURRENT_TIMESTAMP",
+        params![input.id, name, normalized_path, input.project_id, input.application_id, input.enabled],
     ).map_err(|error| match error {
         rusqlite::Error::SqliteFailure(_, Some(message)) if message.contains("workspaces.path") => "Esta pasta já está cadastrada".into(),
         other => other.to_string(),
@@ -76,9 +88,10 @@ fn map_workspace(row: &rusqlite::Row<'_>) -> rusqlite::Result<Workspace> {
         name: row.get(1)?,
         path: row.get(2)?,
         project_id: row.get(3)?,
-        enabled: row.get(4)?,
-        created_at: row.get(5)?,
-        updated_at: row.get(6)?,
+        application_id: row.get(4)?,
+        enabled: row.get(5)?,
+        created_at: row.get(6)?,
+        updated_at: row.get(7)?,
     })
 }
 
@@ -125,6 +138,7 @@ mod tests {
                 name: "Teste".into(),
                 path: path.display().to_string(),
                 project_id: None,
+                application_id: None,
                 enabled: true,
             },
         )
@@ -146,6 +160,7 @@ mod tests {
                 name: "Ausente".into(),
                 path: "Z:\\azriel-path-that-does-not-exist".into(),
                 project_id: None,
+                application_id: None,
                 enabled: true,
             },
         );

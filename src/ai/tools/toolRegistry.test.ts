@@ -16,17 +16,44 @@ const dependencies: ToolDependencies = {
   system: {
     snapshot: async () => ({ collectedAt: 0, details: { osName: "Windows", osVersion: "11", kernelVersion: "", architecture: "x86_64", hostname: "azriel", logicalCores: 8, physicalCores: 4, uptimeSeconds: 100 }, cpu: { usagePercent: 10, cores: [10] }, memory: { totalBytes: 1000, usedBytes: 500, availableBytes: 500, swapTotalBytes: 0, swapUsedBytes: 0 }, storage: [], network: [], errors: [] }),
     processes: async () => [{ pid: 1, name: "ollama", cpuPercent: 5, memoryBytes: 100 }],
-    listWorkspaces: async () => [{ id: "w1", name: "Azriel", path: "C:\\azriel", projectId: "p1", enabled: true, createdAt: "", updatedAt: "" }],
-    workspaceStatus: async () => ({ workspace: { id: "w1", name: "Azriel", path: "C:\\azriel", projectId: "p1", enabled: true, createdAt: "", updatedAt: "" }, pathAvailable: true, entryCount: 10, git: null, error: null }),
+    listWorkspaces: async () => [{ id: "w1", name: "Azriel", path: "C:\\azriel", projectId: "p1", applicationId: "code", enabled: true, createdAt: "", updatedAt: "" }],
+    workspaceStatus: async () => ({ workspace: { id: "w1", name: "Azriel", path: "C:\\azriel", projectId: "p1", applicationId: "code", enabled: true, createdAt: "", updatedAt: "" }, pathAvailable: true, entryCount: 10, git: null, error: null }),
   },
   ollama: { settings: async () => ({ provider: "ollama", endpoint: "http://localhost:11434", model: "qwen", contextMessageLimit: 6, timeoutSeconds: 30, updatedAt: "" }), status: async () => ({ available: true, models: ["qwen"], error: null }) },
+  automation: {
+    listApplications: async () => [{ id: "code", name: "Visual Studio Code", path: "C:\\Code.exe", enabled: true, createdAt: "", updatedAt: "" }],
+    listUrls: async () => [{ id: "github", name: "GitHub do Azriel", url: "https://example.com", enabled: true, createdAt: "", updatedAt: "" }],
+    execute: async (request) => ({ success: true, message: "ok", errorCode: null, actionId: request.actionId, targetName: "alvo", historyId: 1, confirmation: null }),
+  },
 };
 
 describe("Tool Registry", () => {
-  it("expõe as 30 tools somente como read-only", () => {
+  it("expõe 30 consultas e somente as cinco safe actions", () => {
     const tools = new ToolRegistry(dependencies).list();
-    expect(tools).toHaveLength(30);
-    expect(tools.every((tool) => tool.readonly)).toBe(true);
+    expect(tools).toHaveLength(35);
+    expect(tools.filter((tool) => !tool.readonly).map((tool) => tool.name)).toEqual(["open_application", "open_workspace", "open_project", "reveal_workspace", "open_registered_url"]);
+    expect(tools.filter((tool) => !tool.readonly).every((tool) => tool.permission === "safe_write")).toBe(true);
+  });
+  it("resolve ações por ID e não envia caminho ou URL no request", async () => {
+    const calls: unknown[] = [];
+    const registry = new ToolRegistry({ ...dependencies, automation: { ...dependencies.automation, execute: async (request) => { calls.push(request); return { success: true, message: "ok", errorCode: null, actionId: request.actionId, targetName: "alvo", historyId: 1, confirmation: null }; } } });
+    await registry.execute("open_application", { query: "Abra o Visual Studio Code." });
+    await registry.execute("open_registered_url", { query: "Abra o GitHub do Azriel." });
+    expect(calls).toEqual([
+      { actionId: "open_application", source: "ai", targetId: "code" },
+      { actionId: "open_registered_url", source: "ai", targetId: "github" },
+    ]);
+    expect(JSON.stringify(calls)).not.toContain("Code.exe");
+    expect(JSON.stringify(calls)).not.toContain("https://");
+  });
+  it("não escolhe silenciosamente entre dois alvos diferentes", async () => {
+    const calls: unknown[] = [];
+    const registry = new ToolRegistry({ ...dependencies, automation: { ...dependencies.automation, listApplications: async () => [
+      { id: "code", name: "Visual Studio Code", path: "C:\\Code.exe", enabled: true, createdAt: "", updatedAt: "" },
+      { id: "chrome", name: "Chrome", path: "C:\\Chrome.exe", enabled: true, createdAt: "", updatedAt: "" },
+    ], execute: async (request) => { calls.push(request); return { success: false, message: "alvo não resolvido", errorCode: "TARGET_NOT_FOUND", actionId: request.actionId, targetName: null, historyId: 2, confirmation: null }; } } });
+    await registry.execute("open_application", { query: "Abra Visual Studio Code e Chrome" });
+    expect(calls).toEqual([{ actionId: "open_application", source: "ai", targetId: "unregistered" }]);
   });
   it("calcula tarefas atrasadas sem delegar ao modelo", async () => {
     const result = await new ToolRegistry(dependencies).execute("get_overdue_tasks", { query: "atrasadas" });

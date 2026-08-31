@@ -14,6 +14,7 @@ const dependencies: ToolDependencies = {
     processes: async () => [], listWorkspaces: async () => [], workspaceStatus: async () => { throw new Error("workspace ausente"); },
   },
   ollama: { settings: async () => settings, status: async () => ({ available: true, models: [settings.model], error: null }) },
+  automation: { listApplications: async () => [], listUrls: async () => [], execute: async (request) => ({ success: false, message: "não registrado", errorCode: "TARGET_NOT_FOUND", actionId: request.actionId, targetName: null, historyId: 1, confirmation: null }) },
 };
 
 class MemoryConversations implements ConversationGateway {

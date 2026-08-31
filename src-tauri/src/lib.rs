@@ -1,11 +1,14 @@
+mod ai_commands;
+mod automation_commands;
+mod automation_executor;
+mod automation_policy;
 mod commands;
 mod daily_commands;
 mod database;
-mod ai_commands;
+mod git_monitor;
 mod ollama;
 mod system_commands;
 mod system_monitor;
-mod git_monitor;
 
 use database::DatabaseState;
 use tauri::Manager;
@@ -14,12 +17,17 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(system_monitor::SystemMonitorState(std::sync::Mutex::new(system_monitor::SystemMonitor::new())))
+        .manage(system_monitor::SystemMonitorState(std::sync::Mutex::new(
+            system_monitor::SystemMonitor::new(),
+        )))
         .setup(|app| {
             let database_path = app.path().app_data_dir()?.join("azriel.db");
             let connection = database::open(&database_path)
                 .map_err(|error| format!("erro ao iniciar o banco de dados: {error}"))?;
-            app.manage(DatabaseState { connection: std::sync::Mutex::new(connection), path: database_path });
+            app.manage(DatabaseState {
+                connection: std::sync::Mutex::new(connection),
+                path: database_path,
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -67,6 +75,15 @@ pub fn run() {
             system_commands::save_workspace,
             system_commands::delete_workspace,
             system_commands::get_workspace_status,
+            automation_commands::list_registered_actions,
+            automation_commands::list_applications,
+            automation_commands::save_application,
+            automation_commands::delete_application,
+            automation_commands::list_registered_urls,
+            automation_commands::save_registered_url,
+            automation_commands::delete_registered_url,
+            automation_commands::list_action_history,
+            automation_commands::execute_automation_action,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao executar o Azriel");

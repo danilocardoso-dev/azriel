@@ -10,6 +10,7 @@ export const modules: Array<{ id: ModuleId; label: string; code: string; descrip
   { id: "education", label: "Formação", code: "EDU", description: "Trajetória acadêmica" },
   { id: "research", label: "Pesquisa", code: "R&D", description: "Fila de pesquisa e estudo" },
   { id: "system", label: "Sistema", code: "SYS", description: "Estado simulado dos núcleos" },
+  { id: "automation", label: "Automação", code: "AUT", description: "Ações locais autorizadas" },
   { id: "settings", label: "Configurações", code: "CFG", description: "Preferências da interface" },
 ];
 
@@ -17,6 +18,7 @@ export const azrielStates: Record<AzrielState, { label: string; message: string 
   idle: { label: "ONLINE", message: "Núcleo disponível. Aguardando comando." },
   processing: { label: "PROCESSANDO", message: "Organizando relações entre módulos." },
   tool: { label: "CONSULTANDO", message: "Recuperando dados estruturados dos núcleos." },
+  executing: { label: "EXECUTANDO AÇÃO", message: "Executando uma ação previamente autorizada." },
   alert: { label: "ALERTA", message: "Lacunas críticas requerem atenção." },
   offline: { label: "OFFLINE", message: "Ollama local indisponível; demais núcleos continuam ativos." },
 };
@@ -29,6 +31,6 @@ export const systemNodes = [
   { name: "Memory Core", state: "online", detail: "SQLite / schema versionado" },
   { name: "AI Core", state: "online", detail: "Ollama local / tools read-only" },
   { name: "System Core", state: "simulated", detail: "Integração real na v0.7" },
-  { name: "Automation Core", state: "standby", detail: "Previsto para v0.8" },
+  { name: "Automation Core", state: "online", detail: "Policy Engine / Safe Actions" },
   { name: "IoT Core", state: "standby", detail: "Previsto para v0.9" },
 ];

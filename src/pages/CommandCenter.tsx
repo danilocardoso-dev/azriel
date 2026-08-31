@@ -11,6 +11,7 @@ import { useDailyOperations } from "../contexts/useDailyOperations";
 import { useAI } from "../contexts/useAI";
 import { useSystem } from "../contexts/useSystem";
 import { formatBytes } from "../services/systemService";
+import { useAutomation } from "../contexts/useAutomation";
 
 interface CommandCenterProps {
   coreState: AzrielState;
@@ -26,13 +27,14 @@ export function CommandCenter({ coreState, onOpenAI, onOpenDaily, onNewProject, 
   const { counters, loading: dailyLoading, error: dailyError } = useDailyOperations();
   const { status: aiStatus, phase: aiPhase } = useAI();
   const { snapshot, workspaces } = useSystem();
+  const { state: automationState, actions, applications } = useAutomation();
   const memoryPercent = snapshot && snapshot.memory.totalBytes > 0 ? Math.round(snapshot.memory.usedBytes / snapshot.memory.totalBytes * 100) : 0;
   const average = (field: "coverage" | "depth") => knowledgeAreas.length
     ? Math.round(knowledgeAreas.reduce((total, area) => total + area[field], 0) / knowledgeAreas.length) : 0;
 
   return (
     <>
-      <ModuleIntro code="CMD-01" title="Command Center" description="Leitura consolidada da formação, dos projetos e das lacunas do operador." metric="V0.7.1 // AUTONOMIA OPERACIONAL" />
+      <ModuleIntro code="CMD-01" title="Command Center" description="Leitura consolidada da formação, dos projetos e das lacunas do operador." metric="V0.8.0 // SAFE ACTIONS" />
       <nav className="command-quick-actions" aria-label="Ações rápidas"><span>CAPTURA OPERACIONAL</span><button onClick={onNewProject}>＋ NOVO PROJETO</button><button onClick={onNewTask}>＋ NOVA TAREFA</button><button onClick={onNewNote}>＋ NOVA NOTA</button></nav>
       <div className="command-grid">
         <div className="command-grid__left">
@@ -87,6 +89,13 @@ export function CommandCenter({ coreState, onOpenAI, onOpenDaily, onNewProject, 
               <span><strong>{aiStatus?.available ? "ONLINE" : "OFFLINE"}</strong>{aiStatus?.available ? aiStatus.models.join(" / ") : "Verifique o Ollama"}</span>
               <small>{aiPhase}</small><i>ABRIR AI CORE →</i>
             </button>
+          </HudPanel>
+          <HudPanel title="Automation Core" code="SAFE MODE">
+            <div className="automation-command-summary">
+              <span><strong>{automationState === "error" || automationState === "offline" ? "OFFLINE" : "ONLINE"}</strong>POLICY ENGINE</span>
+              <span><strong>{actions.length.toString().padStart(2, "0")}</strong>AÇÕES</span>
+              <span><strong>{applications.filter((item) => item.enabled).length.toString().padStart(2, "0")}</strong>APLICATIVOS</span>
+            </div>
           </HudPanel>
           <HudPanel title="Fila de prioridades" code="PRÓXIMA AÇÃO">
             <div className="priority-queue">

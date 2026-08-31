@@ -10,14 +10,18 @@ import { StarkMapPage } from "./pages/StarkMapPage";
 import { SystemPage } from "./pages/SystemPage";
 import { DailyOperationsPage } from "./pages/DailyOperationsPage";
 import { AICorePage } from "./pages/AICorePage";
+import { AutomationPage } from "./pages/AutomationPage";
 import type { ModuleId } from "./types";
 import { useAzrielData } from "./contexts/useAzrielData";
 import { DataState } from "./components/layout/DataState";
 import { useAI } from "./contexts/useAI";
+import { useAutomation } from "./contexts/useAutomation";
 
 function App() {
   const { loading, error, reload, databaseInfo, knowledgeAreas } = useAzrielData();
   const { coreState, status: aiStatus } = useAI();
+  const { state: automationState } = useAutomation();
+  const displayState = automationState === "executing" ? "executing" : coreState;
   const [activeModule, setActiveModule] = useState<ModuleId>("command");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [moduleAction, setModuleAction] = useState<"new-project" | "new-task" | "new-note" | null>(null);
@@ -44,19 +48,20 @@ function App() {
       case "education": return <EducationPage />;
       case "research": return <ResearchPage />;
       case "system": return <SystemPage coreState={coreState} onOpenAI={() => setActiveModule("ai")} />;
+      case "automation": return <AutomationPage />;
       case "settings": return <SettingsPage />;
-      default: return <CommandCenter coreState={coreState} onOpenAI={() => { setModuleAction(null); setActiveModule("ai"); }} onOpenDaily={() => { setModuleAction(null); setActiveModule("daily"); }} onNewProject={() => { setModuleAction("new-project"); setActiveModule("projects"); }} onNewTask={() => { setModuleAction("new-task"); setActiveModule("daily"); }} onNewNote={() => { setModuleAction("new-note"); setActiveModule("daily"); }} />;
+      default: return <CommandCenter coreState={displayState} onOpenAI={() => { setModuleAction(null); setActiveModule("ai"); }} onOpenDaily={() => { setModuleAction(null); setActiveModule("daily"); }} onNewProject={() => { setModuleAction("new-project"); setActiveModule("projects"); }} onNewTask={() => { setModuleAction("new-task"); setActiveModule("daily"); }} onNewNote={() => { setModuleAction("new-note"); setActiveModule("daily"); }} />;
     }
   };
 
   return (
-    <div className={`app-shell app-shell--${coreState} ${sidebarCollapsed ? "app-shell--sidebar-collapsed" : ""}`}>
+    <div className={`app-shell app-shell--${displayState} ${sidebarCollapsed ? "app-shell--sidebar-collapsed" : ""}`}>
       <header className="topbar">
         <button className="brand" onClick={() => { setModuleAction(null); setActiveModule("command"); }} aria-label="Abrir Command Center">
           <span className="brand__mark"><i /></span><strong>AZRIEL</strong><small>PERSONAL INTELLIGENCE SYSTEM</small>
         </button>
         <div className="topbar__context"><span>{currentModule.code}</span>{currentModule.description}</div>
-        <div className="topbar__status"><span className="live-dot" /><div><strong>SISTEMA ONLINE</strong><small>HUD V0.7.1 / SQLite {databaseInfo ? `S${databaseInfo.schemaVersion}` : ""}</small></div></div>
+        <div className="topbar__status"><span className="live-dot" /><div><strong>SISTEMA ONLINE</strong><small>HUD V0.8.0 / SQLite {databaseInfo ? `S${databaseInfo.schemaVersion}` : ""}</small></div></div>
       </header>
 
       <aside className="sidebar">
@@ -83,7 +88,7 @@ function App() {
           <span>SESSION</span><strong>LOCAL / SQLITE</strong>
           <span>DATABASE</span><strong>{databaseInfo ? `SCHEMA ${databaseInfo.schemaVersion}` : "CONECTANDO"}</strong>
           <span>AI CORE</span><strong>{aiStatus?.available ? "OLLAMA ONLINE" : "OFFLINE"}</strong>
-          <span>SECURITY</span><strong>READ ONLY TOOLS</strong>
+          <span>SECURITY</span><strong>SAFE ACTIONS</strong>
         </div>
       </aside>
 

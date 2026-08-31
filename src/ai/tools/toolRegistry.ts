@@ -7,13 +7,15 @@ import { taskService } from "../../services/taskService";
 import { localDateKey } from "../../services/dateService";
 import { systemService } from "../../services/systemService";
 import { aiRepository } from "../../repositories/aiRepository";
-import type { AISettings, AIToolInput, AIToolName, AIToolResult, DailyCounters, EducationItem, KnowledgeArea, KnowledgeHistory, Note, OllamaStatus, ProcessSnapshot, Project, SystemSnapshot, Task, Workspace, WorkspaceStatus } from "../../types";
+import { automationService } from "../../services/automationService";
+import type { ActionPermission, ActionRequest, ActionResult, AISettings, AIToolInput, AIToolName, AIToolResult, Application, DailyCounters, EducationItem, KnowledgeArea, KnowledgeHistory, Note, OllamaStatus, ProcessSnapshot, Project, RegisteredUrl, SystemSnapshot, Task, Workspace, WorkspaceStatus } from "../../types";
 
 export interface AzrielTool {
   name: AIToolName;
   description: string;
   domain: string;
-  readonly: true;
+  readonly: boolean;
+  permission?: ActionPermission;
   execute(input: AIToolInput): Promise<unknown>;
 }
 
@@ -26,6 +28,7 @@ export interface ToolDependencies {
   databaseInfo(): Promise<{ schemaVersion: number; integrationValue: number }>;
   system: { snapshot(): Promise<SystemSnapshot>; processes(): Promise<ProcessSnapshot[]>; listWorkspaces(): Promise<Workspace[]>; workspaceStatus(id: string): Promise<WorkspaceStatus> };
   ollama: { settings(): Promise<AISettings>; status(endpoint: string, timeoutSeconds: number): Promise<OllamaStatus> };
+  automation: { listApplications(): Promise<Application[]>; listUrls(): Promise<RegisteredUrl[]>; execute(request: ActionRequest): Promise<ActionResult> };
 }
 
 const productionDependencies: ToolDependencies = {
@@ -37,6 +40,7 @@ const productionDependencies: ToolDependencies = {
   databaseInfo: getDatabaseInfo,
   system: systemService,
   ollama: { settings: aiRepository.getSettings, status: aiRepository.status },
+  automation: automationService,
 };
 
 const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -56,6 +60,20 @@ const findWorkspace = async (dependencies: ToolDependencies, input: AIToolInput)
   const needle = normalize(input.workspaceId || input.entityId || input.term || input.query);
   return workspaces.find((workspace) => workspace.id === input.workspaceId || workspace.id === input.entityId || normalize(workspace.name).includes(needle) || needle.includes(normalize(workspace.name))) ?? null;
 };
+const bestNamedMatch = <T extends { id: string; name: string; enabled: boolean }>(items: T[], query: string) => {
+  const value = normalize(query);
+  const matches = items.filter((item) => item.enabled && value.includes(normalize(item.name))).sort((a, b) => b.name.length - a.name.length);
+  const best = matches[0];
+  if (!best) return null;
+  const bestName = normalize(best.name);
+  const ambiguous = matches.slice(1).some((item) => {
+    const candidate = normalize(item.name);
+    return candidate === bestName || (!bestName.includes(candidate) && !candidate.includes(bestName));
+  });
+  return ambiguous ? null : best;
+};
+const executeAction = async (dependencies: ToolDependencies, actionId: ActionRequest["actionId"], targetId: string | undefined) =>
+  dependencies.automation.execute({ actionId, source: "ai", targetId: targetId ?? "unregistered" });
 
 function createTools(dependencies: ToolDependencies): AzrielTool[] {
   return [
@@ -87,8 +105,13 @@ function createTools(dependencies: ToolDependencies): AzrielTool[] {
     { name: "get_git_status", domain: "System Core", description: "Estado Git dos workspaces autorizados", readonly: true, execute: async (input) => { const workspace = await findWorkspace(dependencies, input); if (workspace) return dependencies.system.workspaceStatus(workspace.id); const enabled = (await dependencies.system.listWorkspaces()).filter((item) => item.enabled); return Promise.all(enabled.slice(0, 20).map(async (item) => { const status = await dependencies.system.workspaceStatus(item.id); return { workspace: item.name, git: status.git }; })); } },
     { name: "get_recent_commits", domain: "System Core", description: "Commits recentes de um workspace autorizado", readonly: true, execute: async (input) => { const workspace = await findWorkspace(dependencies, input); if (!workspace) return []; return (await dependencies.system.workspaceStatus(workspace.id)).git?.recentCommits ?? []; } },
     { name: "get_ollama_status", domain: "System Core", description: "Estado do Ollama e modelos locais usando as configurações existentes", readonly: true, execute: async () => { const settings = await dependencies.ollama.settings(); return dependencies.ollama.status(settings.endpoint, Math.min(settings.timeoutSeconds, 8)); } },
-    { name: "get_azriel_status", domain: "Azriel", description: "Estado consolidado do Azriel", readonly: true, execute: async () => { const [database, daily, system, workspaces] = await Promise.all([dependencies.databaseInfo(), dependencies.tasks.counters(), dependencies.system.snapshot(), dependencies.system.listWorkspaces()]); return { version: "0.7.1", database, daily, system: { cpuUsagePercent: system.cpu.usagePercent, memory: system.memory, errors: system.errors }, workspaces: { enabled: workspaces.filter((item) => item.enabled).length, total: workspaces.length }, aiCore: "online quando Ollama disponível", writeAccess: false }; } },
-    { name: "get_azriel_version", domain: "Azriel", description: "Versão atual", readonly: true, execute: async () => ({ version: "0.7.1", name: "Autonomia dos Núcleos" }) },
+    { name: "get_azriel_status", domain: "Azriel", description: "Estado consolidado do Azriel", readonly: true, execute: async () => { const [database, daily, system, workspaces] = await Promise.all([dependencies.databaseInfo(), dependencies.tasks.counters(), dependencies.system.snapshot(), dependencies.system.listWorkspaces()]); return { version: "0.8.0", database, daily, system: { cpuUsagePercent: system.cpu.usagePercent, memory: system.memory, errors: system.errors }, workspaces: { enabled: workspaces.filter((item) => item.enabled).length, total: workspaces.length }, aiCore: "online quando Ollama disponível", automationCore: "safe mode", writeAccess: "somente ações previamente autorizadas" }; } },
+    { name: "get_azriel_version", domain: "Azriel", description: "Versão atual", readonly: true, execute: async () => ({ version: "0.8.0", name: "Automation Core / Safe Actions" }) },
+    { name: "open_application", domain: "Automation Core", description: "Abre somente um aplicativo autorizado identificado pelo nome", readonly: false, permission: "safe_write", execute: async (input) => { const target = bestNamedMatch(await dependencies.automation.listApplications(), input.query); return executeAction(dependencies, "open_application", target?.id); } },
+    { name: "open_workspace", domain: "Automation Core", description: "Abre somente um workspace autorizado identificado pelo nome", readonly: false, permission: "safe_write", execute: async (input) => { const target = bestNamedMatch(await dependencies.system.listWorkspaces(), input.query); return executeAction(dependencies, "open_workspace", target?.id); } },
+    { name: "open_project", domain: "Automation Core", description: "Abre um projeto registrado por seu workspace autorizado", readonly: false, permission: "safe_write", execute: async (input) => { const target = bestNamedMatch((await dependencies.projects.list()).map((project) => ({ ...project, enabled: true })), input.query); return executeAction(dependencies, "open_project", target?.id); } },
+    { name: "reveal_workspace", domain: "Automation Core", description: "Revela somente a pasta de um workspace autorizado", readonly: false, permission: "safe_write", execute: async (input) => { const target = bestNamedMatch(await dependencies.system.listWorkspaces(), input.query); return executeAction(dependencies, "reveal_workspace", target?.id); } },
+    { name: "open_registered_url", domain: "Automation Core", description: "Abre somente uma URL previamente cadastrada", readonly: false, permission: "safe_write", execute: async (input) => { const target = bestNamedMatch(await dependencies.automation.listUrls(), input.query); return executeAction(dependencies, "open_registered_url", target?.id); } },
   ];
 }
 

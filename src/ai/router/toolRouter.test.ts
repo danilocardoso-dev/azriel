@@ -38,4 +38,22 @@ describe("Tool Router", () => {
   it("só consulta o estado interno quando o Azriel é mencionado", () => {
     expect(routeIntent("Qual é o status do Azriel?")).toMatchObject({ scope: "azriel", intent: "azriel_status" });
   });
+
+  it.each([
+    ["Azriel, abra o Visual Studio Code.", "open_application"],
+    ["Abra o workspace do Azriel.", "open_workspace"],
+    ["Abra o GeneScope.", "open_project"],
+    ["Mostre a pasta do ArcCore.", "reveal_workspace"],
+    ["Abra o GitHub do Azriel.", "open_registered_url"],
+  ])("aceita intenção explícita: %s", (query, tool) => {
+    expect(routeIntent(query).tools).toEqual([tool]);
+  });
+
+  it.each([
+    "Talvez eu trabalhe no GeneScope hoje.",
+    "Eu poderia abrir o Visual Studio Code depois.",
+    "O GitHub do Azriel é importante.",
+  ])("não executa intenção vaga: %s", (query) => {
+    expect(routeIntent(query).tools.some((tool) => tool.startsWith("open_") || tool === "reveal_workspace")).toBe(false);
+  });
 });

@@ -5,6 +5,7 @@ import { ModuleIntro } from "../components/layout/ModuleIntro";
 import { useAI } from "../contexts/useAI";
 import { useAzrielData } from "../contexts/useAzrielData";
 import { useSystem } from "../contexts/useSystem";
+import { useAutomation } from "../contexts/useAutomation";
 import { filterAndSortProcesses, formatBytes, type ProcessSort } from "../services/systemService";
 import type { AzrielState, Workspace, WorkspaceInput } from "../types";
 
@@ -17,10 +18,11 @@ const formatUptime = (seconds: number) => {
   const minutes = Math.floor((seconds % 3600) / 60);
   return `${days}d ${hours}h ${minutes}m`;
 };
-const blankWorkspace = (): WorkspaceInput => ({ id: crypto.randomUUID(), name: "", path: "", projectId: null, enabled: true });
+const blankWorkspace = (): WorkspaceInput => ({ id: crypto.randomUUID(), name: "", path: "", projectId: null, applicationId: null, enabled: true });
 
 export function SystemPage({ coreState, onOpenAI }: SystemPageProps) {
   const { projects } = useAzrielData();
+  const { applications } = useAutomation();
   const { status: ollamaStatus, settings } = useAI();
   const { snapshot, processes, workspaces, selectedWorkspace, loading, processLoading, error, refreshProcesses, inspectWorkspace, saveWorkspace, deleteWorkspace, selectDirectory } = useSystem();
   const [query, setQuery] = useState("");
@@ -54,7 +56,7 @@ export function SystemPage({ coreState, onOpenAI }: SystemPageProps) {
     finally { setSavingWorkspace(false); }
   };
   const toggleWorkspace = async (workspace: Workspace) => {
-    await saveWorkspace({ id: workspace.id, name: workspace.name, path: workspace.path, projectId: workspace.projectId, enabled: !workspace.enabled });
+    await saveWorkspace({ id: workspace.id, name: workspace.name, path: workspace.path, projectId: workspace.projectId, applicationId: workspace.applicationId, enabled: !workspace.enabled });
   };
 
   return (
@@ -105,7 +107,7 @@ export function SystemPage({ coreState, onOpenAI }: SystemPageProps) {
           <div className="workspace-toolbar"><button onClick={() => { setWorkspaceDraft(blankWorkspace()); setWorkspaceError(null); }}>+ AUTORIZAR WORKSPACE</button></div>
           <div className="workspace-list">{workspaces.map((workspace) => <article key={workspace.id} data-disabled={!workspace.enabled}>
             <button className="workspace-main" onClick={() => workspace.enabled && void inspectWorkspace(workspace.id)} disabled={!workspace.enabled}><strong>{workspace.name}</strong><span>{workspace.path}</span><small>{workspace.enabled ? "ATIVO" : "DESABILITADO"}</small></button>
-            <div><button onClick={() => setWorkspaceDraft({ id: workspace.id, name: workspace.name, path: workspace.path, projectId: workspace.projectId, enabled: workspace.enabled })}>EDITAR</button><button onClick={() => void toggleWorkspace(workspace)}>{workspace.enabled ? "DESABILITAR" : "HABILITAR"}</button><button className="danger-link" onClick={() => setDeleteTarget(workspace)}>REMOVER</button></div>
+            <div><button onClick={() => setWorkspaceDraft({ id: workspace.id, name: workspace.name, path: workspace.path, projectId: workspace.projectId, applicationId: workspace.applicationId, enabled: workspace.enabled })}>EDITAR</button><button onClick={() => void toggleWorkspace(workspace)}>{workspace.enabled ? "DESABILITAR" : "HABILITAR"}</button><button className="danger-link" onClick={() => setDeleteTarget(workspace)}>REMOVER</button></div>
           </article>)}</div>
           {!workspaces.length && <p className="system-empty">Nenhuma pasta autorizada. O Azriel não inspeciona o computador inteiro.</p>}
         </HudPanel>
@@ -120,7 +122,7 @@ export function SystemPage({ coreState, onOpenAI }: SystemPageProps) {
         </HudPanel>
       </div>
 
-      {workspaceDraft && <div className="workspace-editor"><form onSubmit={submitWorkspace}><header><span>REGISTRO DE ACESSO</span><strong>WORKSPACE AUTORIZADO</strong></header><label>Nome<input value={workspaceDraft.name} maxLength={100} required onChange={(event) => setWorkspaceDraft({ ...workspaceDraft, name: event.target.value })} /></label><label>Pasta<div className="workspace-path"><input value={workspaceDraft.path} readOnly required placeholder="Selecione uma pasta" /><button type="button" onClick={() => void chooseDirectory()}>SELECIONAR</button></div></label><label>Projeto relacionado<select value={workspaceDraft.projectId ?? ""} onChange={(event) => setWorkspaceDraft({ ...workspaceDraft, projectId: event.target.value || null })}><option value="">Nenhum projeto</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select></label><label className="workspace-check"><input type="checkbox" checked={workspaceDraft.enabled} onChange={(event) => setWorkspaceDraft({ ...workspaceDraft, enabled: event.target.checked })} /> Workspace habilitado</label>{workspaceError && <p className="form-error">{workspaceError}</p>}<footer><button type="button" onClick={() => setWorkspaceDraft(null)} disabled={savingWorkspace}>CANCELAR</button><button type="submit" disabled={savingWorkspace || !workspaceDraft.path}>{savingWorkspace ? "SALVANDO..." : "SALVAR AUTORIZAÇÃO"}</button></footer></form></div>}
+      {workspaceDraft && <div className="workspace-editor"><form onSubmit={submitWorkspace}><header><span>REGISTRO DE ACESSO</span><strong>WORKSPACE AUTORIZADO</strong></header><label>Nome<input value={workspaceDraft.name} maxLength={100} required onChange={(event) => setWorkspaceDraft({ ...workspaceDraft, name: event.target.value })} /></label><label>Pasta<div className="workspace-path"><input value={workspaceDraft.path} readOnly required placeholder="Selecione uma pasta" /><button type="button" onClick={() => void chooseDirectory()}>SELECIONAR</button></div></label><label>Projeto relacionado<select value={workspaceDraft.projectId ?? ""} onChange={(event) => setWorkspaceDraft({ ...workspaceDraft, projectId: event.target.value || null })}><option value="">Nenhum projeto</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select></label><label>Aplicativo de abertura<select value={workspaceDraft.applicationId ?? ""} onChange={(event) => setWorkspaceDraft({ ...workspaceDraft, applicationId: event.target.value || null })}><option value="">Nenhum aplicativo</option>{applications.map((application) => <option value={application.id} key={application.id} disabled={!application.enabled}>{application.name}{application.enabled ? "" : " (desativado)"}</option>)}</select></label><label className="workspace-check"><input type="checkbox" checked={workspaceDraft.enabled} onChange={(event) => setWorkspaceDraft({ ...workspaceDraft, enabled: event.target.checked })} /> Workspace habilitado</label>{workspaceError && <p className="form-error">{workspaceError}</p>}<footer><button type="button" onClick={() => setWorkspaceDraft(null)} disabled={savingWorkspace}>CANCELAR</button><button type="submit" disabled={savingWorkspace || !workspaceDraft.path}>{savingWorkspace ? "SALVANDO..." : "SALVAR AUTORIZAÇÃO"}</button></footer></form></div>}
       {deleteTarget && <DeleteConfirmationDialog kind="workspace" title={deleteTarget.name} description="Remove apenas a autorização e os metadados locais. Nenhuma pasta ou arquivo será apagado do computador." busy={false} onCancel={() => setDeleteTarget(null)} onConfirm={() => void deleteWorkspace(deleteTarget.id).then(() => setDeleteTarget(null))} />}
     </>
   );

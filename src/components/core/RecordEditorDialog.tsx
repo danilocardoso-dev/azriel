@@ -16,6 +16,9 @@ export function RecordEditorDialog({ eyebrow, title, busy, error, onCancel, onSu
 
   useEffect(() => {
     dialogRef.current?.querySelector<HTMLElement>("input, select, textarea")?.focus();
+  }, []);
+
+  useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape" && !busy) onCancel();
     }

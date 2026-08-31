@@ -15,6 +15,13 @@ export function routeIntent(query: string): RoutedIntent {
   const value = normalize(query);
   const term = termFrom(query);
   if (!value) return { intent: "empty", scope: "general", tools: [] };
+  const explicitOpen = /^(?:azriel\s+)?(?:abra|abrir)\b/.test(value);
+  const explicitReveal = /^(?:azriel\s+)?(?:mostre|mostrar|revele|revelar)\b/.test(value) && value.includes("pasta");
+  if (explicitReveal) return { intent: "reveal_workspace", scope: "azriel", term: value, tools: ["reveal_workspace"] };
+  if (explicitOpen && value.includes("workspace")) return { intent: "open_workspace", scope: "azriel", term: value, tools: ["open_workspace"] };
+  if (explicitOpen && /(github|url|site|pagina|link)\b/.test(value)) return { intent: "open_registered_url", scope: "azriel", term: value, tools: ["open_registered_url"] };
+  if (explicitOpen && /(aplicativo|programa|visual studio code|vscode|photoshop|chrome|ollama)\b/.test(value)) return { intent: "open_application", scope: "azriel", term: value, tools: ["open_application"] };
+  if (explicitOpen) return { intent: "open_project", scope: "azriel", term: value, tools: ["open_project"] };
   if (value === "situacao" || value.includes("azriel situacao") || value.includes("resumo da situacao")) {
     return { intent: "situation", scope: "azriel", tools: ["get_daily_operations_summary", "get_today_tasks", "get_overdue_tasks", "list_projects", "get_knowledge_gaps", "get_current_education", "get_system_status", "list_workspaces", "get_ollama_status"] };
   }

@@ -7,6 +7,7 @@ pub struct Workspace {
     pub name: String,
     pub path: String,
     pub project_id: Option<String>,
+    pub application_id: Option<String>,
     pub enabled: bool,
     pub created_at: String,
     pub updated_at: String,
@@ -19,5 +20,6 @@ pub struct WorkspaceInput {
     pub name: String,
     pub path: String,
     pub project_id: Option<String>,
+    pub application_id: Option<String>,
     pub enabled: bool,
 }

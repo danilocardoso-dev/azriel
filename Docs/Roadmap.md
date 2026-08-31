@@ -9,9 +9,9 @@ Versões podem ser ajustadas conforme novas necessidades técnicas surgirem.
 
 ## Estado atual
 
-Versão atual concluída: **v0.7.1 — Autonomia dos Núcleos**
+Versão atual concluída: **v0.8.0 — Automation Core / Safe Actions**
 
-Próxima versão principal planejada: **v0.8 — Automation Core**
+Próxima versão principal planejada: **v0.9 — IoT Core**
 
 ---
 
@@ -171,25 +171,37 @@ Validação automatizada, visual e operacional concluída.
 
 ---
 
-# v0.8 — Automation Core
+# v0.8.0 — Automation Core / Safe Actions
 
-Status: ⏳ Planejado
+Status: ✅ Concluída em 31 de agosto de 2026
 
 Objetivo:
-Permitir que Azriel execute ações.
+Permitir que Azriel execute ações locais de baixo risco, somente sobre recursos previamente registrados e autorizados.
 
 ### Entregas
 
-- abrir programas
-- abrir projetos
-- executar comandos autorizados
-- preparar ambientes
-- executar rotinas
-- automações pessoais
+- Application Registry e URL Registry persistentes
+- Action Registry com cinco ações específicas
+- Policy Engine independente do LLM
+- Confirmation Gate preparado para a v0.8.1
+- abrir aplicativo, workspace e projeto autorizados
+- revelar workspace no Explorador
+- abrir URL registrada
+- auditoria completa no Action History
+- integração controlada com o AI Core
+
+### Limites
+
+- nenhum shell, PowerShell ou cmd genérico
+- nenhuma edição, movimentação ou exclusão de arquivos
+- nenhuma ação destrutiva em processos ou Git
+- paths, URLs e executáveis nunca são escolhidos pelo LLM
 
 Exemplo:
 
 "Azriel, abra o GeneScope."
+
+Validação automatizada, visual e operacional concluída.
 
 ---
 
