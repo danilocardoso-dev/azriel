@@ -1,32 +1,31 @@
-import { useState } from "react";
 import { AzrielCore } from "../components/azriel/AzrielCore";
-import { DetailsDrawer } from "../components/hud/DetailsDrawer";
 import { HudPanel } from "../components/hud/HudPanel";
 import { Meter } from "../components/hud/Meter";
 import { GapDiagnostics } from "../components/knowledge/GapDiagnostics";
 import { StarkChart } from "../components/knowledge/StarkChart";
 import { ModuleIntro } from "../components/layout/ModuleIntro";
 import { useAzrielData } from "../contexts/useAzrielData";
-import { azrielStates, modules } from "../data/system";
+import { azrielStates } from "../data/system";
 import type { AzrielState } from "../types";
 import { useDailyOperations } from "../contexts/useDailyOperations";
+import { useAI } from "../contexts/useAI";
 
 interface CommandCenterProps {
   coreState: AzrielState;
-  setCoreState: (state: AzrielState) => void;
+  onOpenAI: () => void;
   onOpenDaily: () => void;
 }
 
-export function CommandCenter({ coreState, setCoreState, onOpenDaily }: CommandCenterProps) {
+export function CommandCenter({ coreState, onOpenAI, onOpenDaily }: CommandCenterProps) {
   const { knowledgeAreas, projects, databaseInfo } = useAzrielData();
   const { counters, loading: dailyLoading, error: dailyError } = useDailyOperations();
-  const [coreOpen, setCoreOpen] = useState(false);
+  const { status: aiStatus, phase: aiPhase } = useAI();
   const average = (field: "coverage" | "depth") => knowledgeAreas.length
     ? Math.round(knowledgeAreas.reduce((total, area) => total + area[field], 0) / knowledgeAreas.length) : 0;
 
   return (
     <>
-      <ModuleIntro code="CMD-01" title="Command Center" description="Leitura consolidada da formação, dos projetos e das lacunas do operador." metric="V0.5.1 // OPERAÇÕES DIÁRIAS" />
+      <ModuleIntro code="CMD-01" title="Command Center" description="Leitura consolidada da formação, dos projetos e das lacunas do operador." metric="V0.6 // AI CORE LOCAL" />
       <div className="command-grid">
         <div className="command-grid__left">
           <HudPanel title="Perfil do operador" code="ID/AZ">
@@ -57,7 +56,7 @@ export function CommandCenter({ coreState, setCoreState, onOpenDaily }: CommandC
           <span className="satellite satellite--two">ENGENHARIA<br />LACUNA ALTA</span>
           <span className="satellite satellite--three">IA / SOFTWARE<br />NÚCLEO ESTÁVEL</span>
           <span className="satellite satellite--four">ENERGIA<br />P&D EM FILA</span>
-          <div className="core-stage__center"><AzrielCore state={coreState} onClick={() => setCoreOpen(true)} /></div>
+          <div className="core-stage__center"><AzrielCore state={coreState} onClick={onOpenAI} /></div>
           <div className="core-stage__metrics">
             <span><strong>{knowledgeAreas.length}</strong>DOMÍNIOS</span>
             <span><strong>{projects.length}</strong>PROJETOS</span>
@@ -67,13 +66,11 @@ export function CommandCenter({ coreState, setCoreState, onOpenDaily }: CommandC
         </HudPanel>
 
         <div className="command-grid__right">
-          <HudPanel title="Simulador de estado" code="CORE CTRL">
-            <div className="state-switcher">
-              {(Object.keys(azrielStates) as AzrielState[]).map((state) => (
-                <button className={coreState === state ? "active" : ""} onClick={() => setCoreState(state)} key={state}>{azrielStates[state].label}</button>
-              ))}
-            </div>
-            <p className="system-message">{azrielStates[coreState].message}</p>
+          <HudPanel title="AI Core" code="OLLAMA LOCAL">
+            <button className="ai-command-summary" onClick={onOpenAI}>
+              <span><strong>{aiStatus?.available ? "ONLINE" : "OFFLINE"}</strong>{aiStatus?.available ? aiStatus.models.join(" / ") : "Verifique o Ollama"}</span>
+              <small>{aiPhase}</small><i>ABRIR AI CORE →</i>
+            </button>
           </HudPanel>
           <HudPanel title="Fila de prioridades" code="PRÓXIMA AÇÃO">
             <div className="priority-queue">
@@ -103,17 +100,6 @@ export function CommandCenter({ coreState, setCoreState, onOpenDaily }: CommandC
         <StarkChart areas={knowledgeAreas} onSelect={() => undefined} />
       </HudPanel>
 
-      {coreOpen && (
-        <DetailsDrawer eyebrow="AZRIEL CORE // V0.5.1" title={azrielStates[coreState].label} onClose={() => setCoreOpen(false)}>
-          <p className="drawer-lead">{azrielStates[coreState].message}</p>
-          <div className="drawer-kpis"><span><strong>9</strong>MÓDULOS</span><span><strong>{projects.length}</strong>PROJETOS</span><span><strong>{knowledgeAreas.length}</strong>ÁREAS</span></div>
-          <h3>Estado dos módulos</h3>
-          <div className="module-status-list">
-            {modules.map((module) => <div key={module.id}><span>{module.code}</span><strong>{module.label}</strong><i>DISPONÍVEL</i></div>)}
-          </div>
-          <p className="drawer-note">Os estados são simulados nesta versão. Integração real com o computador entra no System Core v0.7.</p>
-        </DetailsDrawer>
-      )}
     </>
   );
 }

@@ -2,6 +2,7 @@ import type { AzrielState, ModuleId } from "../types";
 
 export const modules: Array<{ id: ModuleId; label: string; code: string; description: string }> = [
   { id: "command", label: "Command Center", code: "CMD", description: "Visão estratégica do sistema" },
+  { id: "ai", label: "AI Core", code: "AIC", description: "Conversa e consultas locais" },
   { id: "daily", label: "Operações Diárias", code: "OPS", description: "Tarefas, notas e prioridades" },
   { id: "projects", label: "Projetos", code: "PRJ", description: "Projetos e objetivos" },
   { id: "knowledge", label: "Conhecimento", code: "KNO", description: "Áreas e métricas" },
@@ -15,17 +16,18 @@ export const modules: Array<{ id: ModuleId; label: string; code: string; descrip
 export const azrielStates: Record<AzrielState, { label: string; message: string }> = {
   idle: { label: "ONLINE", message: "Núcleo disponível. Aguardando comando." },
   processing: { label: "PROCESSANDO", message: "Organizando relações entre módulos." },
+  tool: { label: "CONSULTANDO", message: "Recuperando dados estruturados dos núcleos." },
   alert: { label: "ALERTA", message: "Lacunas críticas requerem atenção." },
-  offline: { label: "OFFLINE", message: "Simulação de núcleo indisponível." },
+  offline: { label: "OFFLINE", message: "Ollama local indisponível; demais núcleos continuam ativos." },
 };
 
 export const systemNodes = [
-  { name: "Interface Core", state: "online", detail: "React / HUD v0.5.1" },
+  { name: "Interface Core", state: "online", detail: "React / HUD v0.6" },
   { name: "Project Core", state: "online", detail: "Projetos persistidos em SQLite" },
   { name: "Knowledge Core", state: "online", detail: "Domínios e histórico persistidos" },
   { name: "Daily Operations", state: "online", detail: "Tarefas e notas locais" },
   { name: "Memory Core", state: "online", detail: "SQLite / schema versionado" },
-  { name: "AI Core", state: "standby", detail: "Previsto para v0.6" },
+  { name: "AI Core", state: "online", detail: "Ollama local / tools read-only" },
   { name: "System Core", state: "simulated", detail: "Integração real na v0.7" },
   { name: "Automation Core", state: "standby", detail: "Previsto para v0.8" },
   { name: "IoT Core", state: "standby", detail: "Previsto para v0.9" },

@@ -1,5 +1,5 @@
-export type ModuleId = "command" | "daily" | "projects" | "knowledge" | "stark" | "education" | "research" | "system" | "settings";
-export type AzrielState = "idle" | "processing" | "alert" | "offline";
+export type ModuleId = "command" | "ai" | "daily" | "projects" | "knowledge" | "stark" | "education" | "research" | "system" | "settings";
+export type AzrielState = "idle" | "processing" | "tool" | "alert" | "offline";
 export type ProjectStatus = "active" | "research" | "paused" | "planned" | "completed";
 export type Priority = "critical" | "high" | "medium" | "low";
 export type EducationKind = "graduation" | "postgraduate" | "masters" | "doctorate" | "course" | "certification";
@@ -45,6 +45,30 @@ export interface Note {
 }
 export type NoteInput = Omit<Note, "createdAt" | "updatedAt">;
 export interface DailyCounters { pending: number; today: number; overdue: number; priority: number; notes: number }
+
+export interface AISettings {
+  provider: "ollama"; endpoint: string; model: string; contextMessageLimit: number;
+  timeoutSeconds: number; updatedAt: string;
+}
+export type AISettingsInput = Pick<AISettings, "endpoint" | "model" | "contextMessageLimit" | "timeoutSeconds">;
+export interface Conversation { id: string; title: string; createdAt: string; updatedAt: string }
+export type ConversationRole = "user" | "assistant" | "system";
+export interface ConversationMessage { id: string; conversationId: string; role: ConversationRole; content: string; createdAt: string }
+export interface ConversationMessageInput { id: string; conversationId: string; role: ConversationRole; content: string }
+export interface ProviderMessage { role: ConversationRole; content: string }
+export type AIGenerationProfile = "standard" | "repetition-retry";
+export interface AIRequest { model: string; messages: ProviderMessage[]; timeoutSeconds: number; generationProfile?: AIGenerationProfile }
+export interface AIResponse { content: string; model: string; truncated: boolean }
+export interface OllamaStatus { available: boolean; models: string[]; error: string | null }
+export type AIToolName =
+  | "get_today_tasks" | "get_overdue_tasks" | "get_upcoming_tasks" | "get_recent_notes" | "get_daily_operations_summary"
+  | "list_projects" | "get_project" | "get_project_tasks" | "get_project_knowledge"
+  | "list_knowledge_areas" | "get_knowledge_area" | "get_knowledge_gaps" | "get_stark_map" | "get_knowledge_history"
+  | "get_education" | "get_current_education" | "get_planned_education"
+  | "get_azriel_status" | "get_azriel_version";
+export interface AIToolInput { query: string; term?: string; entityId?: string }
+export interface AIToolResult { name: AIToolName; domain: string; data: unknown; empty: boolean }
+export interface RoutedIntent { intent: string; scope: "azriel" | "general"; tools: AIToolName[]; term?: string }
 
 export interface ResearchItem {
   id: string; title: string; domain: string; objective: string;

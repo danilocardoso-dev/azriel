@@ -9,9 +9,9 @@ Versões podem ser ajustadas conforme novas necessidades técnicas surgirem.
 
 ## Estado atual
 
-Versão concluída mais recente: **v0.5.1 — Operações Diárias**
+Versão atual concluída: **v0.6 — AI Core**
 
-Próxima versão principal planejada: **v0.6 — AI Core**
+Próxima versão principal planejada: **v0.7 — System Core**
 
 ---
 
@@ -99,20 +99,21 @@ depender de um aplicativo externo de notas rápidas.
 
 # v0.6 — AI Core
 
-Status: ⏳ Planejado
+Status: ✅ Concluída em 31 de agosto de 2026
 
 Objetivo:
 Permitir que Azriel compreenda e consulte seus próprios dados.
 
 ### Entregas
 
-- Ollama
-- IA local
-- Assistant
-- memória
-- contexto
-- acesso ao Knowledge Core
-- acesso ao Project Core
+- Ollama local e providers desacoplados
+- AI Core com perguntas gerais e consultas internas separadas
+- tools somente leitura
+- contexto controlado
+- acesso às Operações Diárias, Knowledge Core e Project Core
+- histórico persistente e exclusão de conversas
+- proteção contra repetição e respostas truncadas
+- modelos `qwen2.5:0.5b` e `qwen2.5:3b` validados
 
 Exemplo:
 

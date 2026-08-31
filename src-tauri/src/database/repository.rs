@@ -245,7 +245,7 @@ mod tests {
     fn seed_is_idempotent() {
         let mut connection = database();
         seed(&mut connection).unwrap();
-        assert_eq!(database::schema_version(&connection).unwrap(), 4);
+        assert_eq!(database::schema_version(&connection).unwrap(), 5);
         assert_eq!(connection.query_row("SELECT COUNT(*) FROM projects", [], |row| row.get::<_, i64>(0)).unwrap(), 7);
         assert_eq!(connection.query_row("SELECT COUNT(*) FROM education", [], |row| row.get::<_, i64>(0)).unwrap(), 7);
         assert_eq!(connection.query_row("SELECT COUNT(*) FROM knowledge_history", [], |row| row.get::<_, i64>(0)).unwrap(), KNOWLEDGE_SEED.len() as i64);

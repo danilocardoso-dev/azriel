@@ -2,6 +2,8 @@ pub mod models;
 pub mod repository;
 pub mod daily_models;
 pub mod daily_repository;
+pub mod ai_models;
+pub mod ai_repository;
 
 use rusqlite::{params, Connection};
 use std::{fs, path::{Path, PathBuf}, sync::Mutex};
@@ -16,6 +18,7 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
     (2, "education_contract", include_str!("../../migrations/0002_education_contract.sql")),
     (3, "seed_registry", include_str!("../../migrations/0003_seed_registry.sql")),
     (4, "daily_operations", include_str!("../../migrations/0004_daily_operations.sql")),
+    (5, "ai_core", include_str!("../../migrations/0005_ai_core.sql")),
 ];
 
 pub fn open(path: &Path) -> Result<Connection, String> {
@@ -99,5 +102,23 @@ mod tests {
         assert_eq!(schema_version(&connection).unwrap(), 4);
         assert_eq!(connection.query_row("SELECT COUNT(*) FROM tasks", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
         assert_eq!(connection.query_row("SELECT COUNT(*) FROM notes", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+    }
+
+    #[test]
+    fn migration_five_preserves_version_051_data() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 4).unwrap();
+        repository::seed(&mut connection).unwrap();
+        connection.execute("INSERT INTO tasks(id,title,status,priority) VALUES ('keep-task','Preservar','inbox','medium')", []).unwrap();
+        connection.execute("INSERT INTO notes(id,content,status) VALUES ('keep-note','Preservar','active')", []).unwrap();
+
+        apply_migrations_through(&mut connection, 5).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 5);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM tasks WHERE id='keep-task'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM notes WHERE id='keep-note'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(connection.query_row("SELECT model FROM ai_settings WHERE id=1", [], |row| row.get::<_, String>(0)).unwrap(), "qwen2.5:0.5b");
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM conversations", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
     }
 }

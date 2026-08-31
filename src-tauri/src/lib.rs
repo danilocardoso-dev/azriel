@@ -1,6 +1,8 @@
 mod commands;
 mod daily_commands;
 mod database;
+mod ai_commands;
+mod ollama;
 
 use database::DatabaseState;
 use tauri::Manager;
@@ -45,6 +47,15 @@ pub fn run() {
             daily_commands::archive_note,
             daily_commands::delete_note,
             daily_commands::daily_counters,
+            ai_commands::get_ai_settings,
+            ai_commands::update_ai_settings,
+            ai_commands::list_conversations,
+            ai_commands::create_conversation,
+            ai_commands::delete_conversation,
+            ai_commands::list_messages,
+            ai_commands::add_message,
+            ai_commands::ollama_status,
+            ai_commands::ollama_chat,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao executar o Azriel");

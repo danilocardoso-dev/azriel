@@ -2,8 +2,9 @@ import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 
 type DeleteConfirmationDialogProps = {
-  kind: "tarefa" | "anotação";
+  kind: "tarefa" | "anotação" | "conversa";
   title: string;
+  description?: string;
   busy: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -12,6 +13,7 @@ type DeleteConfirmationDialogProps = {
 export function DeleteConfirmationDialog({
   kind,
   title,
+  description,
   busy,
   onCancel,
   onConfirm,
@@ -52,7 +54,7 @@ export function DeleteConfirmationDialog({
           <div>
             <h2 id="delete-dialog-title">Excluir {kind}?</h2>
             <p id="delete-dialog-description">
-              Esta ação removerá definitivamente o registro do banco local e não poderá ser desfeita.
+              {description ?? "Esta ação removerá definitivamente o registro do banco local e não poderá ser desfeita."}
             </p>
           </div>
         </div>

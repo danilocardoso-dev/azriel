@@ -1,6 +1,6 @@
 [package]
 name = "azriel"
-version = "0.5.1"
+version = "0.6.0"
 description = "Azriel Personal Intelligence System"
 authors = ["Danilo"]
 edition = "2021"
@@ -16,3 +16,5 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

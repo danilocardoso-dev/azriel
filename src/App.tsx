@@ -9,14 +9,16 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { StarkMapPage } from "./pages/StarkMapPage";
 import { SystemPage } from "./pages/SystemPage";
 import { DailyOperationsPage } from "./pages/DailyOperationsPage";
-import type { AzrielState, ModuleId } from "./types";
+import { AICorePage } from "./pages/AICorePage";
+import type { ModuleId } from "./types";
 import { useAzrielData } from "./contexts/useAzrielData";
 import { DataState } from "./components/layout/DataState";
+import { useAI } from "./contexts/useAI";
 
 function App() {
   const { loading, error, reload, databaseInfo, projects, knowledgeAreas, education } = useAzrielData();
+  const { coreState, status: aiStatus } = useAI();
   const [activeModule, setActiveModule] = useState<ModuleId>("command");
-  const [coreState, setCoreState] = useState<AzrielState>("idle");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [now, setNow] = useState(() => new Date());
 
@@ -37,14 +39,15 @@ function App() {
     }
     switch (activeModule) {
       case "projects": return <ProjectsPage />;
+      case "ai": return <AICorePage />;
       case "daily": return <DailyOperationsPage />;
       case "knowledge": return <KnowledgePage />;
       case "stark": return <StarkMapPage />;
       case "education": return <EducationPage />;
       case "research": return <ResearchPage />;
-      case "system": return <SystemPage coreState={coreState} />;
+      case "system": return <SystemPage coreState={coreState} onOpenAI={() => setActiveModule("ai")} />;
       case "settings": return <SettingsPage />;
-      default: return <CommandCenter coreState={coreState} setCoreState={setCoreState} onOpenDaily={() => setActiveModule("daily")} />;
+      default: return <CommandCenter coreState={coreState} onOpenAI={() => setActiveModule("ai")} onOpenDaily={() => setActiveModule("daily")} />;
     }
   };
 
@@ -55,7 +58,7 @@ function App() {
           <span className="brand__mark"><i /></span><strong>AZRIEL</strong><small>PERSONAL INTELLIGENCE SYSTEM</small>
         </button>
         <div className="topbar__context"><span>{currentModule.code}</span>{currentModule.description}</div>
-        <div className="topbar__status"><span className="live-dot" /><div><strong>SISTEMA ONLINE</strong><small>HUD V0.5.1 / SQLite {databaseInfo ? `S${databaseInfo.schemaVersion}` : ""}</small></div></div>
+        <div className="topbar__status"><span className="live-dot" /><div><strong>SISTEMA ONLINE</strong><small>HUD V0.6 / SQLite {databaseInfo ? `S${databaseInfo.schemaVersion}` : ""}</small></div></div>
       </header>
 
       <aside className="sidebar">
@@ -81,8 +84,8 @@ function App() {
         <div className="sidebar__telemetry">
           <span>SESSION</span><strong>LOCAL / SQLITE</strong>
           <span>DATABASE</span><strong>{databaseInfo ? `SCHEMA ${databaseInfo.schemaVersion}` : "CONECTANDO"}</strong>
-          <span>AI CORE</span><strong>STANDBY</strong>
-          <span>SECURITY</span><strong>NO NATIVE I/O</strong>
+          <span>AI CORE</span><strong>{aiStatus?.available ? "OLLAMA ONLINE" : "OFFLINE"}</strong>
+          <span>SECURITY</span><strong>READ ONLY TOOLS</strong>
         </div>
       </aside>
 
