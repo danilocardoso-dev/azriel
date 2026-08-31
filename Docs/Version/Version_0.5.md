@@ -1,5 +1,7 @@
 # AZRIEL v0.5 — Knowledge Core
 
+**Status:** ✅ Concluída em 31 de agosto de 2026
+
 A versão **v0.4 — HUD Vivo** foi concluída.
 
 Agora implemente:
@@ -8,8 +10,8 @@ Agora implemente:
 
 Antes de modificar qualquer arquivo:
 
-1. leia completamente o `README.md`;
-2. leia `docs/roadmap.md`, se existir;
+1. leia completamente o `README`;
+2. leia `Docs/Roadmap.md`, se existir;
 3. leia a documentação da v0.4;
 4. examine a arquitetura atual;
 5. identifique componentes, tipos e mocks existentes;
@@ -809,9 +811,9 @@ Esse é um critério obrigatório da v0.5.
 
 # Documentação
 
-Criar:
+Manter atualizada a documentação desta versão em:
 
-`docs/versions/v0.5.md`
+`Docs/Version/Version_0.5.md`
 
 Documentar:
 
@@ -828,7 +830,7 @@ Documentar:
 
 Atualizar:
 
-`docs/roadmap.md`
+`Docs/Roadmap.md`
 
 marcando:
 
@@ -839,6 +841,130 @@ e:
 **v0.5 — em desenvolvimento**
 
 Não transformar o README em changelog.
+
+---
+
+# Implementação realizada
+
+## Arquitetura adotada
+
+O Knowledge Core usa comandos Tauri próprios sobre `rusqlite`, sem expor SQL à
+WebView. O fluxo implementado é:
+
+```text
+React / DataProvider
+        ↓
+Services TypeScript
+        ↓
+Repositories TypeScript / invoke
+        ↓
+Comandos Tauri em Rust
+        ↓
+Repositories Rust / transações
+        ↓
+SQLite local
+```
+
+A atualização de cobertura e profundidade e a criação do histórico acontecem
+na mesma transação Rust. Uma falha em qualquer etapa desfaz toda a operação.
+
+## Banco e migrations
+
+O arquivo do banco no Windows fica em:
+
+```text
+%APPDATA%\com.azriel.intelligence\azriel.db
+```
+
+No ambiente validado nesta versão, o caminho resolvido foi:
+
+```text
+C:\Users\Danilo\AppData\Roaming\com.azriel.intelligence\azriel.db
+```
+
+Para backup manual, o Azriel deve estar completamente fechado antes de copiar
+esse arquivo.
+
+As migrations aplicadas ficam registradas em `_azriel_migrations`:
+
+1. `0001_initial.sql`: tabelas, relacionamentos, restrições e índices iniciais;
+2. `0002_education_contract.sql`: normalização não destrutiva dos tipos, status e
+   datas da formação;
+3. `0003_seed_registry.sql`: registro permanente da execução do seed inicial,
+   para que itens removidos pelo operador não sejam recriados no reinício.
+
+Nunca editar uma migration já distribuída para corrigir bancos existentes;
+criar sempre uma nova migration versionada.
+
+## Seed
+
+O seed é executado uma única vez, dentro de uma transação, e sua conclusão fica
+registrada em `_azriel_seeds`. Ele usa chaves estáveis e contém:
+
+- 7 projetos;
+- 7 registros de formação;
+- 27 áreas atômicas de conhecimento;
+- relações N:N entre projetos e conhecimentos;
+- um único snapshot inicial por área, com o motivo `Seed inicial da v0.5`;
+- a métrica global de integração persistida separadamente, inicialmente em
+  zero, com a fórmula explicitamente adiada.
+
+Áreas sem valor correspondente na v0.4 receberam `0 / 0`, em vez de métricas
+inventadas. Áreas resultantes da separação de um nó composto preservaram a
+linha de base desse nó.
+
+## Regras e interface
+
+- `StarkMap`, `Projects`, `Knowledge`, `Education`, `CommandCenter` e
+  `GapDiagnostics` consomem o estado vindo do SQLite;
+- lacunas são derivadas somente de áreas com prioridade `critical` ou `high` e
+  exibem a diferença simples `coverage - depth`;
+- o drawer de conhecimento permite atualizar métricas e consultar o histórico;
+- loading, erro, vazio e sucesso possuem tratamento explícito;
+- a tela de configurações mostra schema e caminho real do banco;
+- os antigos mocks de projetos, conhecimentos e formação foram removidos da
+  aplicação principal.
+
+## Segurança e validação
+
+O banco é exclusivamente local, sem servidor, sincronização ou credenciais.
+Todas as queries com entrada usam parâmetros. IDs, enums, campos obrigatórios e
+percentuais de 0 a 100 são validados antes da persistência.
+
+## Validação automática
+
+Em 31 de agosto de 2026:
+
+- `npm.cmd test`: 3 testes TypeScript aprovados;
+- `npm.cmd run lint`: aprovado sem avisos;
+- `npm.cmd run build`: aprovado;
+- `cargo test`: 3 testes Rust aprovados;
+- `tauri dev`: inicialização nativa e criação/evolução do banco confirmadas.
+- `tauri build`: executável release, MSI e instalador NSIS gerados com sucesso.
+- teste manual de alteração, fechamento e reabertura: aprovado pelo operador;
+- métricas e histórico permaneceram persistidos após o reinício.
+
+Artefatos locais gerados:
+
+```text
+src-tauri/target/release/azriel.exe
+src-tauri/target/release/bundle/msi/Azriel_0.5.0_x64_en-US.msi
+src-tauri/target/release/bundle/nsis/Azriel_0.5.0_x64-setup.exe
+```
+
+Os testes cobrem cálculo de lacunas, validação de métricas, atualização atômica
+com histórico, relação projeto/conhecimento, seed idempotente e versão do
+schema.
+
+## Limitações desta entrega
+
+- a fórmula da integração global continua adiada;
+- preferências visuais ainda duram somente durante a sessão;
+- não há backup automático;
+- CRUD completo existe na API interna; a interface visual prioriza a operação
+  específica de métricas, conforme o escopo desta versão;
+- a persistência após fechar e reabrir foi confirmada pelo operador no
+  encerramento da v0.5.
 
 ---
 
@@ -868,7 +994,7 @@ A v0.5 só está concluída quando:
 20. build funcionar;
 21. Tauri iniciar corretamente;
 22. a identidade visual da v0.4 permanecer intacta;
-23. `docs/versions/v0.5.md` existir;
+23. `Docs/Version/Version_0.5.md` existir;
 24. nenhuma funcionalidade da v0.4 sofrer regressão importante.
 
 ---

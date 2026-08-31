@@ -1,4 +1,5 @@
-import { gapAreas } from "../../data/knowledge";
+import { useAzrielData } from "../../contexts/useAzrielData";
+import { diagnoseGaps } from "../../services/knowledgeService";
 import type { KnowledgeArea } from "../../types";
 
 interface GapDiagnosticsProps {
@@ -13,6 +14,8 @@ const priorityLabel = {
 };
 
 export function GapDiagnostics({ onSelect }: GapDiagnosticsProps) {
+  const { knowledgeAreas } = useAzrielData();
+  const gapAreas = diagnoseGaps(knowledgeAreas);
   return (
     <div className="gap-list">
       {gapAreas.map((area) => (

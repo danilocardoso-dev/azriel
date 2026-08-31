@@ -6,8 +6,7 @@ import { Meter } from "../components/hud/Meter";
 import { GapDiagnostics } from "../components/knowledge/GapDiagnostics";
 import { StarkChart } from "../components/knowledge/StarkChart";
 import { ModuleIntro } from "../components/layout/ModuleIntro";
-import { knowledgeAreas } from "../data/knowledge";
-import { projects } from "../data/projects";
+import { useAzrielData } from "../contexts/useAzrielData";
 import { azrielStates, modules } from "../data/system";
 import type { AzrielState } from "../types";
 
@@ -17,11 +16,14 @@ interface CommandCenterProps {
 }
 
 export function CommandCenter({ coreState, setCoreState }: CommandCenterProps) {
+  const { knowledgeAreas, projects, databaseInfo } = useAzrielData();
   const [coreOpen, setCoreOpen] = useState(false);
+  const average = (field: "coverage" | "depth") => knowledgeAreas.length
+    ? Math.round(knowledgeAreas.reduce((total, area) => total + area[field], 0) / knowledgeAreas.length) : 0;
 
   return (
     <>
-      <ModuleIntro code="CMD-01" title="Command Center" description="Leitura consolidada da formação, dos projetos e das lacunas do operador." metric="V0.4 // HUD VIVO" />
+      <ModuleIntro code="CMD-01" title="Command Center" description="Leitura consolidada da formação, dos projetos e das lacunas do operador." metric="V0.5 // SQLITE LOCAL" />
       <div className="command-grid">
         <div className="command-grid__left">
           <HudPanel title="Perfil do operador" code="ID/AZ">
@@ -29,9 +31,9 @@ export function CommandCenter({ coreState, setCoreState }: CommandCenterProps) {
               <span className="eyebrow">OPERADOR PRINCIPAL</span>
               <h3>AZRIEL</h3>
               <p>Conhecimento · Engenharia · Inteligência · Impacto</p>
-              <Meter label="Cobertura" value={35} />
-              <Meter label="Profundidade" value={28} />
-              <Meter label="Integração" value={22} />
+              <Meter label="Cobertura" value={average("coverage")} />
+              <Meter label="Profundidade" value={average("depth")} />
+              <Meter label="Integração" value={databaseInfo?.integrationValue ?? 0} />
             </div>
           </HudPanel>
           <HudPanel title="Projetos" code="07 NÚCLEOS">
@@ -54,10 +56,10 @@ export function CommandCenter({ coreState, setCoreState }: CommandCenterProps) {
           <span className="satellite satellite--four">ENERGIA<br />P&D EM FILA</span>
           <div className="core-stage__center"><AzrielCore state={coreState} onClick={() => setCoreOpen(true)} /></div>
           <div className="core-stage__metrics">
-            <span><strong>13</strong>DOMÍNIOS</span>
-            <span><strong>07</strong>PROJETOS</span>
+            <span><strong>{knowledgeAreas.length}</strong>DOMÍNIOS</span>
+            <span><strong>{projects.length}</strong>PROJETOS</span>
             <span><strong>12+</strong>FRENTES</span>
-            <span><strong>04</strong>GAPS ALTOS</span>
+            <span><strong>{knowledgeAreas.filter((area) => ["critical", "high"].includes(area.priority)).length}</strong>GAPS ALTOS</span>
           </div>
         </HudPanel>
 
@@ -91,7 +93,7 @@ export function CommandCenter({ coreState, setCoreState }: CommandCenterProps) {
       {coreOpen && (
         <DetailsDrawer eyebrow="AZRIEL CORE // V0.4" title={azrielStates[coreState].label} onClose={() => setCoreOpen(false)}>
           <p className="drawer-lead">{azrielStates[coreState].message}</p>
-          <div className="drawer-kpis"><span><strong>8</strong>MÓDULOS</span><span><strong>7</strong>PROJETOS</span><span><strong>13</strong>ÁREAS</span></div>
+          <div className="drawer-kpis"><span><strong>8</strong>MÓDULOS</span><span><strong>{projects.length}</strong>PROJETOS</span><span><strong>{knowledgeAreas.length}</strong>ÁREAS</span></div>
           <h3>Estado dos módulos</h3>
           <div className="module-status-list">
             {modules.map((module) => <div key={module.id}><span>{module.code}</span><strong>{module.label}</strong><i>DISPONÍVEL</i></div>)}

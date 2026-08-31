@@ -236,6 +236,12 @@ button:focus-visible, input:focus-visible { outline: 1px solid var(--cyan); outl
 .gap-index strong { font-size: 28px; }
 .education-node__content h2 { font-size: 18px; }
 .settings-layout label strong { font-size: 12px; }
+.config-readout strong { overflow-wrap: anywhere; }
+
+.data-state { min-height: 430px; display: grid; place-content: center; justify-items: center; gap: 10px; border: 1px solid var(--line-soft); background: radial-gradient(circle,rgba(70,233,255,.08),transparent 42%); text-align: center; }
+.data-state strong { color: var(--cyan); font: 10px var(--mono); letter-spacing: .14em; }.data-state p { max-width: 540px; margin: 0; color: var(--muted); font-size: 11px; }.data-state button, .metric-editor button { border: 1px solid var(--line); background: rgba(70,233,255,.06); color: var(--cyan); padding: 9px 13px; font: 8px var(--mono); cursor: pointer; }.data-state--error { border-color: rgba(255,93,93,.28); }.data-state--error strong { color: var(--red); }
+.metric-editor { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 24px; padding: 13px; border: 1px solid var(--line-soft); background: rgba(70,233,255,.025); }.metric-editor h3, .metric-editor__reason, .metric-editor button, .metric-editor__message { grid-column: 1 / -1; }.metric-editor h3 { margin-top: 0; }.metric-editor label { display: grid; gap: 5px; color: #6894a2; font: 8px var(--mono); text-transform: uppercase; }.metric-editor input { min-width: 0; border: 1px solid var(--line-soft); background: #020a0f; color: var(--text); padding: 9px; font: 10px var(--mono); outline: none; }.metric-editor input:focus { border-color: var(--cyan); }.metric-editor button:disabled { opacity: .5; cursor: wait; }.metric-editor__message { margin: 0 !important; color: #89c7d5 !important; font-size: 9px !important; }
+.history-list { display: grid; gap: 6px; }.history-list > div { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 9px; border-left: 1px solid var(--line); background: rgba(70,233,255,.025); }.history-list span { color: var(--muted); font: 7px var(--mono); }.history-list strong { color: var(--cyan); font: 8px var(--mono); }.history-list p { grid-column: 1 / -1; margin: 0 !important; font-size: 9px !important; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulse { 50% { opacity: .28; } }

@@ -9,8 +9,11 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { StarkMapPage } from "./pages/StarkMapPage";
 import { SystemPage } from "./pages/SystemPage";
 import type { AzrielState, ModuleId } from "./types";
+import { useAzrielData } from "./contexts/useAzrielData";
+import { DataState } from "./components/layout/DataState";
 
 function App() {
+  const { loading, error, reload, databaseInfo, projects, knowledgeAreas, education } = useAzrielData();
   const [activeModule, setActiveModule] = useState<ModuleId>("command");
   const [coreState, setCoreState] = useState<AzrielState>("idle");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -24,6 +27,13 @@ function App() {
   const currentModule = useMemo(() => modules.find((module) => module.id === activeModule)!, [activeModule]);
 
   const renderModule = () => {
+    const empty = activeModule === "projects" ? projects.length === 0
+      : activeModule === "education" ? education.length === 0
+      : ["knowledge", "stark"].includes(activeModule) ? knowledgeAreas.length === 0
+      : activeModule === "command" ? projects.length === 0 && knowledgeAreas.length === 0 : false;
+    if (["command", "projects", "knowledge", "stark", "education"].includes(activeModule) && (loading || error || empty)) {
+      return <DataState loading={loading} error={error} empty={empty} onRetry={() => void reload()} />;
+    }
     switch (activeModule) {
       case "projects": return <ProjectsPage />;
       case "knowledge": return <KnowledgePage />;
@@ -43,7 +53,7 @@ function App() {
           <span className="brand__mark"><i /></span><strong>AZRIEL</strong><small>PERSONAL INTELLIGENCE SYSTEM</small>
         </button>
         <div className="topbar__context"><span>{currentModule.code}</span>{currentModule.description}</div>
-        <div className="topbar__status"><span className="live-dot" /><div><strong>SISTEMA ONLINE</strong><small>HUD V0.4</small></div></div>
+        <div className="topbar__status"><span className="live-dot" /><div><strong>SISTEMA ONLINE</strong><small>HUD V0.5 / SQLite {databaseInfo ? `S${databaseInfo.schemaVersion}` : ""}</small></div></div>
       </header>
 
       <aside className="sidebar">
@@ -67,8 +77,8 @@ function App() {
           ))}
         </nav>
         <div className="sidebar__telemetry">
-          <span>SESSION</span><strong>LOCAL / MOCK</strong>
-          <span>MEMORY</span><strong>STANDBY</strong>
+          <span>SESSION</span><strong>LOCAL / SQLITE</strong>
+          <span>DATABASE</span><strong>{databaseInfo ? `SCHEMA ${databaseInfo.schemaVersion}` : "CONECTANDO"}</strong>
           <span>AI CORE</span><strong>STANDBY</strong>
           <span>SECURITY</span><strong>NO NATIVE I/O</strong>
         </div>

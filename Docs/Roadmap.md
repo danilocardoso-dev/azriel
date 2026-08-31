@@ -9,14 +9,9 @@ Versões podem ser ajustadas conforme novas necessidades técnicas surgirem.
 
 ## Estado atual
 
-Última versão concluída: **v0.4 — HUD Vivo**
+Versão concluída mais recente: **v0.5 — Knowledge Core**
 
-Próxima versão planejada: **v0.5 — Knowledge Core**
-
-Próximo objetivo:
-
-Dar memória estrutural ao Azriel e substituir os dados mockados por
-informações persistidas em SQLite.
+Próxima versão planejada: **v0.6 — AI Core**
 
 ---
 
@@ -54,21 +49,21 @@ Criar a primeira interface funcional do Azriel.
 
 # v0.5 — Knowledge Core
 
-Status: ⏳ Planejado
+Status: ✅ Concluída em 31 de agosto de 2026
 
 Objetivo:
 Dar memória estrutural ao Azriel.
 
 ### Entregas
 
-- SQLite
-- banco de conhecimento
-- banco de projetos
-- estudos
-- formação
-- métricas
-- histórico de evolução
-- Mapa Stark baseado em dados reais
+- SQLite local com migrations versionadas — implementado
+- banco de conhecimento — implementado
+- banco de projetos e relações N:N — implementado
+- formação — implementado
+- métricas e atualização transacional — implementado
+- histórico de evolução — implementado
+- Mapa Stark baseado em dados reais — implementado
+- confirmação manual de persistência após fechar e reabrir — aprovada
 
 Resultado esperado:
 
