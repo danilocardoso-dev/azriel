@@ -15,7 +15,7 @@ const emptyDependencies: ToolDependencies = {
     processes: async () => [], listWorkspaces: async () => [], workspaceStatus: async () => { throw new Error("workspace ausente"); },
   },
   ollama: { settings: async () => settings, status: async () => ({ available: true, models: [settings.model], error: null }) },
-  automation: { listApplications: async () => [], listUrls: async () => [], execute: async (request) => ({ success: false, message: "não registrado", errorCode: "TARGET_NOT_FOUND", actionId: request.actionId, targetName: null, historyId: 1, confirmation: null }) },
+  automation: { listApplications: async () => [], listUrls: async () => [], listRoutines: async () => [], runRoutine: async (request) => ({ success: false, status: "failed", routineId: request.routineId, routineName: "", historyId: 1, completedSteps: 0, failedStep: null, error: "não registrada", confirmation: null }), execute: async (request) => ({ success: false, message: "não registrado", errorCode: "TARGET_NOT_FOUND", actionId: request.actionId, targetName: null, historyId: 1, confirmation: null }) },
 };
 
 describe("Context Builder", () => {

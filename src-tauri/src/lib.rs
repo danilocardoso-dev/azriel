@@ -7,6 +7,7 @@ mod daily_commands;
 mod database;
 mod git_monitor;
 mod ollama;
+mod routine_commands;
 mod system_commands;
 mod system_monitor;
 
@@ -84,6 +85,13 @@ pub fn run() {
             automation_commands::delete_registered_url,
             automation_commands::list_action_history,
             automation_commands::execute_automation_action,
+            routine_commands::list_routines,
+            routine_commands::save_routine,
+            routine_commands::delete_routine,
+            routine_commands::list_routine_history,
+            routine_commands::run_routine,
+            routine_commands::confirm_routine_execution,
+            routine_commands::cancel_routine_execution,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao executar o Azriel");

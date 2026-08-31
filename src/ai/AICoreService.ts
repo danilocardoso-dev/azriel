@@ -59,7 +59,10 @@ export class AICoreService {
     let systemMessages: Array<{ role: "system"; content: string }>;
     if (intent.scope === "azriel") {
       onPhase?.("tool", "CONSULTANDO NÚCLEOS DO AZRIEL");
-      const context = await this.contextBuilder.build(cleanQuery, intent, (domain, permission) => onPhase?.(permission === "safe_write" ? "executing" : "tool", permission === "safe_write" ? "EXECUTANDO AÇÃO AUTORIZADA" : `CONSULTANDO ${domain.toUpperCase()}`));
+      const context = await this.contextBuilder.build(cleanQuery, intent, (domain, permission) => onPhase?.(
+        permission === "confirm_write" ? "routine" : permission === "safe_write" ? "executing" : "tool",
+        permission === "confirm_write" ? "VALIDANDO ROTINA / CONFIRMAÇÃO NECESSÁRIA" : permission === "safe_write" ? "EXECUTANDO AÇÃO AUTORIZADA" : `CONSULTANDO ${domain.toUpperCase()}`,
+      ));
       if (context.empty) {
         answer = "Não encontrei essa informação registrada no Azriel.";
         const assistantMessage = await this.conversations.addMessage({ conversationId: conversation.id, role: "assistant", content: answer });

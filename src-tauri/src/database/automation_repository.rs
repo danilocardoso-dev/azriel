@@ -103,17 +103,19 @@ pub fn delete_url(connection: &Connection, id: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn start_history(
+pub fn start_history_with_routine(
     connection: &Connection,
     action_id: &str,
     source: &str,
     target_id: Option<&str>,
     permission: &str,
     confirmation_required: bool,
+    routine_history_id: Option<i64>,
+    routine_step_order: Option<i64>,
 ) -> Result<i64, String> {
     connection.execute(
-        "INSERT INTO action_history(action_id,source,target_id,permission,confirmation_required) VALUES (?1,?2,?3,?4,?5)",
-        params![action_id, source, target_id, permission, confirmation_required],
+        "INSERT INTO action_history(action_id,source,target_id,permission,confirmation_required,routine_history_id,routine_step_order) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+        params![action_id, source, target_id, permission, confirmation_required, routine_history_id, routine_step_order],
     ).map_err(err)?;
     Ok(connection.last_insert_rowid())
 }

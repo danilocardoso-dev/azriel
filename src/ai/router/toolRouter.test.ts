@@ -15,6 +15,7 @@ describe("Tool Router", () => {
     ["Quais workspaces estão cadastrados?", "list_workspaces"],
     ["Quais projetos Git possuem alterações?", "get_git_status"],
     ["O Ollama está disponível?", "get_ollama_status"],
+    ["Quais rotinas eu tenho?", "list_routines"],
   ])("roteia %s para %s", (query, tool) => expect(routeIntent(query).tools).toContain(tool));
 
   it("combina domínios relacionados a bioinformática", () => {
@@ -22,6 +23,11 @@ describe("Tool Router", () => {
     expect(route.intent).toBe("cross_domain_activity");
     expect(route.tools).toEqual(expect.arrayContaining(["list_projects", "list_knowledge_areas", "get_today_tasks"]));
     expect(route.term).toBe("bioinformática");
+  });
+
+  it("executa rotina apenas com intenção explícita", () => {
+    expect(routeIntent("Azriel, execute a rotina Ambiente de Desenvolvimento.").tools).toEqual(["run_routine"]);
+    expect(routeIntent("Talvez eu programe um pouco hoje.").tools).not.toContain("run_routine");
   });
 
   it.each([

@@ -822,6 +822,24 @@ Limite: não existe executor de shell genérico. O LLM fornece somente IDs resol
 
 ---
 
+## Azriel v0.8.1 — Automation Core / Rotinas
+
+Estado: concluída e validada em 31 de agosto de 2026.
+
+Objetivos:
+
+* compor ações autorizadas em rotinas persistentes;
+* validar todos os passos antes da execução;
+* executar passos em ordem com intervalos limitados;
+* exigir confirmação quando configurada ou solicitada pelo AI Core;
+* interromper no primeiro erro, sem rollback;
+* manter histórico da rotina e de cada ação individual;
+* permitir que o AI Core liste e solicite somente rotinas cadastradas.
+
+Limite: rotinas não criam novas permissões e não aceitam shell, comandos, caminhos ou URLs arbitrárias.
+
+---
+
 ## Azriel v0.9 — IoT Core
 
 Integração com o mundo físico.

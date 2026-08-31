@@ -17,6 +17,8 @@ export function routeIntent(query: string): RoutedIntent {
   if (!value) return { intent: "empty", scope: "general", tools: [] };
   const explicitOpen = /^(?:azriel\s+)?(?:abra|abrir)\b/.test(value);
   const explicitReveal = /^(?:azriel\s+)?(?:mostre|mostrar|revele|revelar)\b/.test(value) && value.includes("pasta");
+  const explicitRoutine = /^(?:azriel\s+)?(?:execute|executar|inicie|iniciar|rode|rodar)\b/.test(value) && value.includes("rotina");
+  if (explicitRoutine) return { intent: "run_routine", scope: "azriel", term: value, tools: ["run_routine"] };
   if (explicitReveal) return { intent: "reveal_workspace", scope: "azriel", term: value, tools: ["reveal_workspace"] };
   if (explicitOpen && value.includes("workspace")) return { intent: "open_workspace", scope: "azriel", term: value, tools: ["open_workspace"] };
   if (explicitOpen && /(github|url|site|pagina|link)\b/.test(value)) return { intent: "open_registered_url", scope: "azriel", term: value, tools: ["open_registered_url"] };
@@ -34,6 +36,7 @@ export function routeIntent(query: string): RoutedIntent {
   if (value.includes("commit")) return { intent: "git_commits", scope: "azriel", term: value, tools: ["list_workspaces", "get_recent_commits"] };
   if (value.includes("git") || value.includes("repositorio")) return { intent: "git", scope: "azriel", term: value, tools: ["list_workspaces", "get_git_status"] };
   if (value.includes("workspace") || value.includes("pasta autorizada")) return { intent: "workspaces", scope: "azriel", term: value, tools: ["list_workspaces", "get_workspace_status"] };
+  if (value.includes("rotina")) return { intent: "routines", scope: "azriel", term: value, tools: ["list_routines"] };
   if (value.includes("projet") && value.includes("lacuna")) return { intent: "projects_for_gaps", scope: "azriel", tools: ["list_projects", "list_knowledge_areas", "get_knowledge_gaps"] };
   if ((value.includes("fazendo") || value.includes("atividade") || value.includes("trabalhando")) && term) {
     return { intent: "cross_domain_activity", scope: "azriel", term, tools: ["list_projects", "list_knowledge_areas", "get_today_tasks", "get_upcoming_tasks", "get_recent_notes"] };

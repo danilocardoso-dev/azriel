@@ -27,14 +27,15 @@ export function CommandCenter({ coreState, onOpenAI, onOpenDaily, onNewProject, 
   const { counters, loading: dailyLoading, error: dailyError } = useDailyOperations();
   const { status: aiStatus, phase: aiPhase } = useAI();
   const { snapshot, workspaces } = useSystem();
-  const { state: automationState, actions, applications } = useAutomation();
+  const { state: automationState, actions, applications, routines, routineHistory } = useAutomation();
+  const routinesToday = routineHistory.filter((item) => new Date(item.startedAt).toDateString() === new Date().toDateString()).length;
   const memoryPercent = snapshot && snapshot.memory.totalBytes > 0 ? Math.round(snapshot.memory.usedBytes / snapshot.memory.totalBytes * 100) : 0;
   const average = (field: "coverage" | "depth") => knowledgeAreas.length
     ? Math.round(knowledgeAreas.reduce((total, area) => total + area[field], 0) / knowledgeAreas.length) : 0;
 
   return (
     <>
-      <ModuleIntro code="CMD-01" title="Command Center" description="Leitura consolidada da formação, dos projetos e das lacunas do operador." metric="V0.8.0 // SAFE ACTIONS" />
+      <ModuleIntro code="CMD-01" title="Command Center" description="Leitura consolidada da formação, dos projetos e das lacunas do operador." metric="V0.8.1 // ROTINAS" />
       <nav className="command-quick-actions" aria-label="Ações rápidas"><span>CAPTURA OPERACIONAL</span><button onClick={onNewProject}>＋ NOVO PROJETO</button><button onClick={onNewTask}>＋ NOVA TAREFA</button><button onClick={onNewNote}>＋ NOVA NOTA</button></nav>
       <div className="command-grid">
         <div className="command-grid__left">
@@ -95,6 +96,8 @@ export function CommandCenter({ coreState, onOpenAI, onOpenDaily, onNewProject, 
               <span><strong>{automationState === "error" || automationState === "offline" ? "OFFLINE" : "ONLINE"}</strong>POLICY ENGINE</span>
               <span><strong>{actions.length.toString().padStart(2, "0")}</strong>AÇÕES</span>
               <span><strong>{applications.filter((item) => item.enabled).length.toString().padStart(2, "0")}</strong>APLICATIVOS</span>
+              <span><strong>{routines.filter((item) => item.enabled).length.toString().padStart(2, "0")}</strong>ROTINAS</span>
+              <span><strong>{routinesToday.toString().padStart(2, "0")}</strong>EXECUTADAS HOJE</span>
             </div>
           </HudPanel>
           <HudPanel title="Fila de prioridades" code="PRÓXIMA AÇÃO">

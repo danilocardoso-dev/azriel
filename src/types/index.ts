@@ -1,5 +1,5 @@
 export type ModuleId = "command" | "ai" | "daily" | "projects" | "knowledge" | "stark" | "education" | "research" | "system" | "automation" | "settings";
-export type AzrielState = "idle" | "processing" | "tool" | "executing" | "alert" | "offline";
+export type AzrielState = "idle" | "processing" | "tool" | "executing" | "routine" | "alert" | "offline";
 export type ProjectStatus = "active" | "research" | "paused" | "planned" | "completed";
 export type Priority = "critical" | "high" | "medium" | "low";
 export type EducationKind = "graduation" | "postgraduate" | "masters" | "doctorate" | "course" | "certification";
@@ -74,7 +74,7 @@ export interface GitStatus { available: boolean; repository: boolean; branch: st
 export interface WorkspaceStatus { workspace: Workspace; pathAvailable: boolean; entryCount: number | null; git: GitStatus | null; error: string | null }
 export type ActionPermission = "read" | "safe_write" | "confirm_write" | "blocked";
 export type ActionSource = "user" | "ai" | "ui";
-export type AutomationState = "offline" | "safe" | "executing" | "waiting_confirmation" | "blocked" | "error";
+export type AutomationState = "offline" | "safe" | "validating" | "executing" | "waiting_confirmation" | "completed" | "cancelled" | "failed" | "blocked" | "error";
 export interface RegisteredAction { id: AutomationActionId; name: string; description: string; permission: ActionPermission; targetType: "application" | "workspace" | "project" | "url" }
 export type AutomationActionId = "open_application" | "open_workspace" | "open_project" | "reveal_workspace" | "open_registered_url";
 export interface Application { id: string; name: string; path: string; enabled: boolean; createdAt: string; updatedAt: string }
@@ -85,6 +85,15 @@ export interface ConfirmationRequest { actionId: string; targetName: string; des
 export interface ActionRequest { actionId: AutomationActionId; source: ActionSource; targetId?: string }
 export interface ActionResult { success: boolean; message: string; errorCode: string | null; actionId: string; targetName: string | null; historyId: number; confirmation: ConfirmationRequest | null }
 export interface ActionHistory { id: number; actionId: string; source: ActionSource; targetType: string | null; targetId: string | null; targetName: string | null; permission: ActionPermission; confirmationRequired: boolean; confirmed: boolean; success: boolean | null; error: string | null; createdAt: string; completedAt: string | null }
+export interface RoutineStep { id: string; order: number; actionId: AutomationActionId; targetType: RegisteredAction["targetType"]; targetId: string; delayMs: number; enabled: boolean }
+export interface Routine { id: string; name: string; description: string; enabled: boolean; confirmationRequired: boolean; revision: number; steps: RoutineStep[]; createdAt: string; updatedAt: string }
+export type RoutineInput = Omit<Routine, "revision" | "createdAt" | "updatedAt">;
+export type RoutineStatus = "waiting_confirmation" | "executing" | "completed" | "cancelled" | "failed";
+export interface RoutineHistory { id: number; routineId: string | null; routineName: string; routineRevision: number; source: ActionSource; status: RoutineStatus; confirmationRequired: boolean; confirmed: boolean; totalSteps: number; completedSteps: number; failedStep: number | null; error: string | null; startedAt: string; completedAt: string | null }
+export interface RoutineActionSummary { order: number; actionId: AutomationActionId; actionName: string; targetName: string; delayMs: number }
+export interface RoutineConfirmation { historyId: number; routineId: string; routineName: string; revision: number; actions: RoutineActionSummary[] }
+export interface RoutineExecutionResult { success: boolean; status: RoutineStatus; routineId: string; routineName: string; historyId: number; completedSteps: number; failedStep: number | null; error: string | null; confirmation: RoutineConfirmation | null }
+export interface RunRoutineRequest { routineId: string; source: ActionSource }
 export type AIToolName =
   | "get_today_tasks" | "get_overdue_tasks" | "get_upcoming_tasks" | "get_recent_notes" | "get_daily_operations_summary"
   | "list_projects" | "get_project" | "get_project_tasks" | "get_project_knowledge"
@@ -93,7 +102,7 @@ export type AIToolName =
   | "get_system_status" | "get_cpu_status" | "get_memory_status" | "get_storage_status" | "get_network_status" | "get_process_summary"
   | "list_workspaces" | "get_workspace_status" | "get_git_status" | "get_recent_commits" | "get_ollama_status"
   | "get_azriel_status" | "get_azriel_version"
-  | AutomationActionId;
+  | "list_routines" | "run_routine" | AutomationActionId;
 export interface AIToolInput { query: string; term?: string; entityId?: string; workspaceId?: string }
 export interface AIToolResult { name: AIToolName; domain: string; data: unknown; empty: boolean }
 export interface RoutedIntent { intent: string; scope: "azriel" | "general"; tools: AIToolName[]; term?: string }

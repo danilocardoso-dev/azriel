@@ -16,12 +16,13 @@ import { useAzrielData } from "./contexts/useAzrielData";
 import { DataState } from "./components/layout/DataState";
 import { useAI } from "./contexts/useAI";
 import { useAutomation } from "./contexts/useAutomation";
+import { RoutineConfirmationDialog } from "./components/automation/RoutineConfirmationDialog";
 
 function App() {
   const { loading, error, reload, databaseInfo, knowledgeAreas } = useAzrielData();
   const { coreState, status: aiStatus } = useAI();
-  const { state: automationState } = useAutomation();
-  const displayState = automationState === "executing" ? "executing" : coreState;
+  const { state: automationState, pendingRoutine } = useAutomation();
+  const displayState = automationState === "executing" ? (pendingRoutine ? "routine" : "executing") : coreState;
   const [activeModule, setActiveModule] = useState<ModuleId>("command");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [moduleAction, setModuleAction] = useState<"new-project" | "new-task" | "new-note" | null>(null);
@@ -61,7 +62,7 @@ function App() {
           <span className="brand__mark"><i /></span><strong>AZRIEL</strong><small>PERSONAL INTELLIGENCE SYSTEM</small>
         </button>
         <div className="topbar__context"><span>{currentModule.code}</span>{currentModule.description}</div>
-        <div className="topbar__status"><span className="live-dot" /><div><strong>SISTEMA ONLINE</strong><small>HUD V0.8.0 / SQLite {databaseInfo ? `S${databaseInfo.schemaVersion}` : ""}</small></div></div>
+        <div className="topbar__status"><span className="live-dot" /><div><strong>SISTEMA ONLINE</strong><small>HUD V0.8.1 / SQLite {databaseInfo ? `S${databaseInfo.schemaVersion}` : ""}</small></div></div>
       </header>
 
       <aside className="sidebar">
@@ -99,6 +100,7 @@ function App() {
         <span>{now.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }).toUpperCase()}</span>
         <strong>{now.toLocaleTimeString("pt-BR", { hour12: false })}</strong>
       </footer>
+      <RoutineConfirmationDialog key={pendingRoutine?.historyId ?? "routine-none"} />
     </div>
   );
 }

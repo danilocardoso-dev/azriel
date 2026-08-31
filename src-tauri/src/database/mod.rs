@@ -6,6 +6,8 @@ pub mod daily_models;
 pub mod daily_repository;
 pub mod models;
 pub mod repository;
+pub mod routine_models;
+pub mod routine_repository;
 pub mod system_models;
 pub mod system_repository;
 
@@ -57,6 +59,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         "automation_core",
         include_str!("../../migrations/0007_automation_core.sql"),
     ),
+    (
+        8,
+        "routines",
+        include_str!("../../migrations/0008_routines.sql"),
+    ),
 ];
 
 pub fn open(path: &Path) -> Result<Connection, String> {
@@ -65,6 +72,7 @@ pub fn open(path: &Path) -> Result<Connection, String> {
     }
     let mut connection = Connection::open(path).map_err(|error| error.to_string())?;
     initialize(&mut connection)?;
+    routine_repository::cancel_stale_waiting(&connection)?;
     Ok(connection)
 }
 
@@ -332,6 +340,39 @@ mod tests {
         assert_eq!(
             connection
                 .query_row("SELECT COUNT(*) FROM action_history", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn migration_eight_preserves_automation_core_data() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 7).unwrap();
+        repository::seed(&mut connection).unwrap();
+        connection.execute(
+            "INSERT INTO registered_urls(id,name,url,enabled) VALUES ('keep-url','Preservar','https://example.com/',1)",
+            [],
+        ).unwrap();
+
+        apply_migrations_through(&mut connection, 8).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 8);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM registered_urls WHERE id='keep-url'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM routines", [], |row| row
                     .get::<_, i64>(0))
                 .unwrap(),
             0

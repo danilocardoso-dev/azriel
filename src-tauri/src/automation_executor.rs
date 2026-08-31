@@ -57,5 +57,5 @@ fn execute_native(target: &ExecutionTarget) -> Result<(), String> {
 
 #[cfg(not(target_os = "windows"))]
 fn execute_native(_target: &ExecutionTarget) -> Result<(), String> {
-    Err("A Automation Core v0.8.0 está disponível apenas no Windows".into())
+    Err("A Automation Core v0.8.1 está disponível apenas no Windows".into())
 }

@@ -24,15 +24,23 @@ const dependencies: ToolDependencies = {
     listApplications: async () => [{ id: "code", name: "Visual Studio Code", path: "C:\\Code.exe", enabled: true, createdAt: "", updatedAt: "" }],
     listUrls: async () => [{ id: "github", name: "GitHub do Azriel", url: "https://example.com", enabled: true, createdAt: "", updatedAt: "" }],
     execute: async (request) => ({ success: true, message: "ok", errorCode: null, actionId: request.actionId, targetName: "alvo", historyId: 1, confirmation: null }),
+    listRoutines: async () => [{ id: "dev", name: "Ambiente de Desenvolvimento", description: "Code e workspace", enabled: true, confirmationRequired: true, revision: 1, steps: [], createdAt: "", updatedAt: "" }],
+    runRoutine: async (request) => ({ success: false, status: "waiting_confirmation", routineId: request.routineId, routineName: "Ambiente de Desenvolvimento", historyId: 2, completedSteps: 0, failedStep: null, error: null, confirmation: { historyId: 2, routineId: request.routineId, routineName: "Ambiente de Desenvolvimento", revision: 1, actions: [] } }),
   },
 };
 
 describe("Tool Registry", () => {
-  it("expõe 30 consultas e somente as cinco safe actions", () => {
+  it("expõe consultas, cinco safe actions e execução controlada de rotina", () => {
     const tools = new ToolRegistry(dependencies).list();
-    expect(tools).toHaveLength(35);
-    expect(tools.filter((tool) => !tool.readonly).map((tool) => tool.name)).toEqual(["open_application", "open_workspace", "open_project", "reveal_workspace", "open_registered_url"]);
-    expect(tools.filter((tool) => !tool.readonly).every((tool) => tool.permission === "safe_write")).toBe(true);
+    expect(tools).toHaveLength(37);
+    expect(tools.filter((tool) => !tool.readonly).map((tool) => tool.name)).toEqual(["run_routine", "open_application", "open_workspace", "open_project", "reveal_workspace", "open_registered_url"]);
+    expect(tools.find((tool) => tool.name === "run_routine")?.permission).toBe("confirm_write");
+  });
+  it("executa rotina somente pelo ID resolvido no registro", async () => {
+    const calls: unknown[] = [];
+    const registry = new ToolRegistry({ ...dependencies, automation: { ...dependencies.automation, runRoutine: async (request) => { calls.push(request); return dependencies.automation.runRoutine(request); } } });
+    await registry.execute("run_routine", { query: "Execute a rotina Ambiente de Desenvolvimento" });
+    expect(calls).toEqual([{ routineId: "dev", source: "ai" }]);
   });
   it("resolve ações por ID e não envia caminho ou URL no request", async () => {
     const calls: unknown[] = [];

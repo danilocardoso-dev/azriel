@@ -9,7 +9,7 @@ Versões podem ser ajustadas conforme novas necessidades técnicas surgirem.
 
 ## Estado atual
 
-Versão atual concluída: **v0.8.0 — Automation Core / Safe Actions**
+Versão atual concluída: **v0.8.1 — Automation Core / Rotinas**
 
 Próxima versão principal planejada: **v0.9 — IoT Core**
 
@@ -202,6 +202,39 @@ Exemplo:
 "Azriel, abra o GeneScope."
 
 Validação automatizada, visual e operacional concluída.
+
+---
+
+# v0.8.1 — Automation Core / Rotinas
+
+Status: ✅ Concluída em 31 de agosto de 2026
+
+Objetivo:
+Transformar ações autorizadas em sequências reutilizáveis, previsíveis e auditadas.
+
+### Entregas
+
+- Routine Registry e Routine Steps persistentes
+- editor visual para criar, editar, reordenar, ativar e excluir rotinas
+- validação integral antes do primeiro passo
+- execução sequencial com intervalo limitado
+- Confirmation Gate global para UI e AI Core
+- confirmação assíncrona sem bloqueio da interface e recuperação de confirmações abandonadas
+- proteção de inicialização entre aplicativo e workspace vinculado
+- política stop on error sem rollback
+- histórico de rotinas e vínculo com o Action History
+- tools `list_routines` e `run_routine` baseadas somente em IDs
+- resumo de rotinas no Command Center
+- estado visual `EXECUTANDO ROTINA` no AzrielCore
+
+### Limites
+
+- nenhum comando, caminho ou URL arbitrária
+- nenhuma elevação sobre as cinco ações seguras da v0.8.0
+- cancelamento disponível enquanto aguarda confirmação; execução iniciada não possui cancelamento intermediário
+- sem rollback, scheduler, recorrência ou gatilhos automáticos
+
+Validação automatizada, empacotamento e aceite operacional concluídos.
 
 ---
 

@@ -98,6 +98,15 @@ pub fn execute_with(
     request: ActionRequest,
     executor: &dyn ActionExecutor,
 ) -> Result<ActionResult, String> {
+    execute_with_routine_context(connection, request, executor, None)
+}
+
+pub fn execute_with_routine_context(
+    connection: &rusqlite::Connection,
+    request: ActionRequest,
+    executor: &dyn ActionExecutor,
+    routine_context: Option<(i64, i64)>,
+) -> Result<ActionResult, String> {
     eprintln!("[AUTOMATION] action requested");
     let safe_action_id = if request.action_id.len() <= 100
         && request
@@ -120,13 +129,15 @@ pub fn execute_with(
                 character.is_ascii_alphanumeric() || character == '-' || character == '_'
             })
     });
-    let history_id = automation_repository::start_history(
+    let history_id = automation_repository::start_history_with_routine(
         connection,
         safe_action_id,
         request.source.as_str(),
         safe_target_id,
         permission.as_str(),
         confirmation_required,
+        routine_context.map(|value| value.0),
+        routine_context.map(|value| value.1),
     )?;
     let Some(action) = registered else {
         eprintln!("[AUTOMATION] policy result: blocked / unregistered action");
@@ -183,7 +194,7 @@ pub fn execute_with(
                 action.id,
                 error.code,
                 &error.message,
-            )
+            );
         }
     };
     eprintln!("[AUTOMATION] execution started ({})", action.id);
@@ -273,7 +284,10 @@ mod tests {
         },
     };
     use rusqlite::Connection;
-    use std::sync::{atomic::{AtomicUsize, Ordering}, Mutex};
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Mutex,
+    };
 
     static EXECUTABLE_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -310,7 +324,8 @@ mod tests {
 
     fn executable_file() -> std::path::PathBuf {
         let sequence = EXECUTABLE_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!("azriel-fake-{}-{sequence}.exe", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("azriel-fake-{}-{sequence}.exe", std::process::id()));
         std::fs::write(&path, b"fake").unwrap();
         path
     }
@@ -554,8 +569,16 @@ mod tests {
             .unwrap();
             assert!(result.success);
         }
-        assert_eq!(executor.calls.lock().unwrap().as_slice(), ["workspace", "reveal"]);
-        assert_eq!(automation_repository::list_history(&connection, 10).unwrap().len(), 2);
+        assert_eq!(
+            executor.calls.lock().unwrap().as_slice(),
+            ["workspace", "reveal"]
+        );
+        assert_eq!(
+            automation_repository::list_history(&connection, 10)
+                .unwrap()
+                .len(),
+            2
+        );
         std::fs::remove_file(path).unwrap();
     }
 

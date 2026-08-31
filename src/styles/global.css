@@ -20,7 +20,7 @@
   --mono: ui-monospace, "Cascadia Code", "SFMono-Regular", monospace;
 }
 
-/* v0.8.0 — Automation Core */
+/* v0.8.1 — Automation Core / Rotinas */
 .automation-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; margin-bottom:9px; }
 .automation-summary article { padding:15px; border:1px solid var(--line-soft); background:linear-gradient(145deg,rgba(70,233,255,.05),rgba(3,15,22,.76)); }
 .automation-summary span,.automation-summary small { display:block; color:#678c96; font:10px var(--mono); letter-spacing:.08em; }
@@ -51,6 +51,33 @@
 .automation-command-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
 .automation-command-summary span { padding:10px; border:1px solid var(--line-soft); color:#668b95; font:9px var(--mono); }
 .automation-command-summary strong { display:block; margin-bottom:4px; color:var(--cyan); font-size:16px; font-weight:400; }
+.automation-history-title { margin:0; padding:11px 13px; border-top:1px solid var(--line-soft); color:#6b96a0; font:10px var(--mono); letter-spacing:.1em; }
+.routine-records article { grid-template-columns:minmax(0,1fr) auto auto auto auto; }
+.routine-editor__toolbar { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px; }
+.routine-editor__toolbar button,.routine-step button { padding:7px 9px; border:1px solid var(--line); background:rgba(70,233,255,.04); color:var(--cyan); font:9px var(--mono); cursor:pointer; }
+.routine-step { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px; padding:10px; border:1px solid var(--line-soft); background:rgba(2,13,19,.7); }
+.routine-step > header { grid-column:1/-1; display:flex; justify-content:space-between; align-items:center; }
+.routine-step > header strong { color:var(--cyan); font:10px var(--mono); }
+.routine-step > header div { display:flex; gap:5px; }
+.routine-step > label { display:grid; gap:5px; color:#7ca1aa; font:9px var(--mono); }
+.routine-step button:disabled { opacity:.35; cursor:not-allowed; }
+.routine-confirmation__backdrop { position:fixed; inset:0; z-index:220; display:grid; place-items:center; padding:22px; background:rgba(0,7,11,.88); backdrop-filter:blur(6px); }
+.routine-confirmation { width:min(620px,100%); border:1px solid var(--cyan); background:#06151c; box-shadow:0 0 60px rgba(70,233,255,.16); }
+.routine-confirmation > header { display:flex; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--line); color:#7299a3; font:9px var(--mono); }
+.routine-confirmation > header strong { color:var(--cyan); }
+.routine-confirmation__body { padding:19px; }
+.routine-confirmation__body > small { color:#618791; font:8px var(--mono); }
+.routine-confirmation h2 { margin:6px 0; color:#d3eaee; font-weight:400; }
+.routine-confirmation p { color:#83a2aa; }
+.routine-confirmation ol { display:grid; gap:7px; margin:16px 0 0; padding:0; list-style:none; }
+.routine-confirmation li { display:grid; grid-template-columns:38px 1fr; gap:10px; align-items:center; padding:10px; border:1px solid var(--line-soft); }
+.routine-confirmation li > span { color:var(--cyan); font:13px var(--mono); }
+.routine-confirmation li div { display:grid; gap:3px; }
+.routine-confirmation li strong { color:#bdd7dc; font-size:12px; }
+.routine-confirmation li small { color:#668c96; font:9px var(--mono); }
+.routine-confirmation footer { display:grid; grid-template-columns:1fr 1.5fr; gap:8px; padding:13px 19px; border-top:1px solid var(--line-soft); }
+.routine-confirmation footer button { padding:11px; border:1px solid var(--line); background:rgba(70,233,255,.04); color:#789ba4; font:9px var(--mono); cursor:pointer; }
+.routine-confirmation footer button.confirm { border-color:var(--cyan); color:var(--cyan); background:rgba(70,233,255,.1); }
 .azriel-core--executing .azriel-core__ring { border-color:#66d8a7; animation-duration:1.2s; }
 .azriel-core--executing .azriel-core__center { box-shadow:0 0 35px rgba(102,216,167,.35); }
 @media (max-width:900px) { .automation-summary { grid-template-columns:1fr 1fr; }.automation-records article { grid-template-columns:1fr auto; }.automation-records article > button { grid-row:2; } }
