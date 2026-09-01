@@ -10,7 +10,7 @@ import { evaluateGesture } from "../engineering/gestureEngine";
 import { HandTrackingService } from "../engineering/handTrackingService";
 import { ModelService, resolveModelCoreState, type LoadedEngineeringModel } from "../engineering/modelService";
 import { normalizedToViewport, smoothLandmark } from "../engineering/trackingMath";
-import type { CameraState, EngineeringCalibration, EngineeringCalibrationInput, EngineeringInteractionScope, EngineeringObjectSnapshot, GestureState, HandLandmark, HandSide, ManipulationMode, ModelComponent, ModelCoreState, TrackedHand, ViewportPoint } from "../engineering/types";
+import type { CameraState, ComponentTransformSnapshot, EngineeringCalibration, EngineeringCalibrationInput, EngineeringInteractionScope, EngineeringObjectSnapshot, GestureState, HandLandmark, HandSide, ManipulationMode, ModelComponent, ModelCoreState, TrackedHand, ViewportPoint } from "../engineering/types";
 import { engineeringRepository } from "../repositories/engineeringRepository";
 
 const futureInterfaces = [
@@ -61,6 +61,7 @@ export function EngineeringViewPage() {
   const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null);
   const [targetedComponentId, setTargetedComponentId] = useState<string | null>(null);
   const [componentRevision, setComponentRevision] = useState(0);
+  const [componentTransform, setComponentTransform] = useState<ComponentTransformSnapshot | null>(null);
   const [expandedComponentIds, setExpandedComponentIds] = useState<Set<string>>(new Set());
   const [componentSearch, setComponentSearch] = useState("");
   const [boundingBoxVisible, setBoundingBoxVisible] = useState(true);
@@ -179,6 +180,7 @@ export function EngineeringViewPage() {
       loadedModelRef.current = next;
       setLoadedModel(next);
       setSelectedComponentId(null);
+      setComponentTransform(null);
       setTargetedComponentId(null);
       setComponentSearch("");
       setExpandedComponentIds(new Set(next.components.list().filter((component) => component.depth < 2).map((component) => component.id)));
@@ -196,6 +198,7 @@ export function EngineeringViewPage() {
     loadedModelRef.current = null;
     setLoadedModel(null);
     setSelectedComponentId(null);
+    setComponentTransform(null);
     setTargetedComponentId(null);
     setComponentSearch("");
     setExpandedComponentIds(new Set());
@@ -287,6 +290,11 @@ export function EngineeringViewPage() {
     setFocusRequest((current) => ({ sequence: current.sequence + 1, componentId }));
   }, []);
 
+  const handleComponentTransform = useCallback((snapshot: ComponentTransformSnapshot | null) => {
+    setComponentTransform(snapshot);
+    setComponentRevision((revision) => revision + 1);
+  }, []);
+
   const toggleExpanded = useCallback((component: ModelComponent) => {
     if (!component.children.length) return;
     setExpandedComponentIds((current) => {
@@ -317,7 +325,7 @@ export function EngineeringViewPage() {
         <span>SCOPE</span>
         {(["model", "component"] as const).map((candidate) => <button key={candidate} className={interactionScope === candidate ? "active" : ""} onClick={() => { setInteractionScope(candidate); setTargetedComponentId(null); }}>{candidate.toUpperCase()}</button>)}
         <i />
-        <span>MODEL CONTROL</span>
+        <span>TRANSFORM</span>
         {(["move", "rotate", "scale"] as const).map((candidate) => <button key={candidate} className={mode === candidate ? "active" : ""} onClick={() => setMode(candidate)}>{candidate.toUpperCase()}</button>)}
         <button className={wireframe ? "active" : ""} onClick={() => setWireframe((active) => !active)}>WIREFRAME {wireframe ? "ON" : "OFF"}</button>
         <button className={gridVisible ? "active" : ""} onClick={() => setGridVisible((visible) => !visible)}>GRID {gridVisible ? "ON" : "OFF"}</button>
@@ -328,20 +336,29 @@ export function EngineeringViewPage() {
         <section className="engineering-canvas" aria-label="Viewport tridimensional do Engineering Core">
           <header><span>VIEWPORT // PRIMARY</span><strong>{loadedModel?.metadata.name ?? "TEST-01"} // {objectSnapshot.status.toUpperCase()}</strong></header>
           <div className="engineering-canvas__stage">
-            <EngineeringScene hands={sceneHands} mode={mode} interactionScope={interactionScope} calibration={calibration} model={loadedModel} wireframe={wireframe} gridVisible={gridVisible} axesVisible={axesVisible} resetSignal={resetSignal} selectedComponentId={selectedComponentId} targetedComponentId={targetedComponentId} componentRevision={componentRevision} boundingBoxVisible={boundingBoxVisible} focusRequest={focusRequest} onComponentTarget={setTargetedComponentId} onComponentSelect={selectComponent} onObjectChange={setObjectSnapshot} onRendererReady={setRendererReady} />
+            <EngineeringScene hands={sceneHands} mode={mode} interactionScope={interactionScope} calibration={calibration} model={loadedModel} wireframe={wireframe} gridVisible={gridVisible} axesVisible={axesVisible} resetSignal={resetSignal} selectedComponentId={selectedComponentId} targetedComponentId={targetedComponentId} componentRevision={componentRevision} boundingBoxVisible={boundingBoxVisible} focusRequest={focusRequest} onComponentTarget={setTargetedComponentId} onComponentSelect={selectComponent} onComponentTransform={handleComponentTransform} onObjectChange={setObjectSnapshot} onRendererReady={setRendererReady} />
             <span className="engineering-canvas__axis engineering-canvas__axis--x">AXIS X // INTERACTION PLANE</span>
             <span className="engineering-canvas__axis engineering-canvas__axis--y">AXIS Y // SCREEN SPACE</span>
             {sceneHands.map((hand) => <div key={hand.id} className={`engineering-hand-cursor engineering-hand-cursor--${hand.id} ${hand.gesture === "pinch" ? "engineering-hand-cursor--pinch" : ""}`} style={{ left: `${hand.cursor.x * 100}%`, top: `${hand.cursor.y * 100}%` }} aria-hidden="true"><i /><small>{hand.id.toUpperCase()}</small></div>)}
             <div className="engineering-object-readout engineering-object-inspector">
-              <span>OBJECT</span><strong>{loadedModel?.metadata.name ?? "TEST-01"}</strong>
-              <span>STATUS</span><strong data-status={objectSnapshot.status}>{objectSnapshot.status.toUpperCase()}</strong>
-              <span>CONTROL</span><strong>{objectSnapshot.control.toUpperCase()}</strong>
-              <span>POSITION</span><strong>{objectSnapshot.position.x.toFixed(2)} / {objectSnapshot.position.y.toFixed(2)} / {objectSnapshot.position.z.toFixed(2)}</strong>
-              <span>ROTATION</span><strong>{objectSnapshot.rotation.x.toFixed(2)} / {objectSnapshot.rotation.y.toFixed(2)} / {objectSnapshot.rotation.z.toFixed(2)}</strong>
-              <span>SCALE</span><strong>{objectSnapshot.scale.toFixed(2)}</strong>
+              {interactionScope === "component" && selectedComponent ? <>
+                <span>COMPONENT</span><strong>{selectedComponent.name}</strong>
+                <span>STATUS</span><strong data-status={componentTransform?.status ?? "ready"}>{(componentTransform?.status ?? "selected").toUpperCase()}</strong>
+                <span>CONTROL</span><strong>{(componentTransform?.control ?? "none").toUpperCase()}</strong>
+                <span>POSITION</span><strong>{selectedComponent.position.x.toFixed(2)} / {selectedComponent.position.y.toFixed(2)} / {selectedComponent.position.z.toFixed(2)}</strong>
+                <span>ROTATION</span><strong>{selectedComponent.rotation.x.toFixed(2)} / {selectedComponent.rotation.y.toFixed(2)} / {selectedComponent.rotation.z.toFixed(2)}</strong>
+                <span>SCALE</span><strong>{selectedComponent.scale.x.toFixed(2)} / {selectedComponent.scale.y.toFixed(2)} / {selectedComponent.scale.z.toFixed(2)}</strong>
+              </> : <>
+                <span>OBJECT</span><strong>{loadedModel?.metadata.name ?? "TEST-01"}</strong>
+                <span>STATUS</span><strong data-status={objectSnapshot.status}>{objectSnapshot.status.toUpperCase()}</strong>
+                <span>CONTROL</span><strong>{objectSnapshot.control.toUpperCase()}</strong>
+                <span>POSITION</span><strong>{objectSnapshot.position.x.toFixed(2)} / {objectSnapshot.position.y.toFixed(2)} / {objectSnapshot.position.z.toFixed(2)}</strong>
+                <span>ROTATION</span><strong>{objectSnapshot.rotation.x.toFixed(2)} / {objectSnapshot.rotation.y.toFixed(2)} / {objectSnapshot.rotation.z.toFixed(2)}</strong>
+                <span>SCALE</span><strong>{objectSnapshot.scale.toFixed(2)}</strong>
+              </>}
             </div>
           </div>
-          <footer><span>SCOPE {interactionScope.toUpperCase()} // {mode.toUpperCase()}</span><span>MOUSE DRAG ORBIT // WHEEL ZOOM</span><span>RENDERER {rendererReady ? "ONLINE" : "ERROR"}</span></footer>
+          <footer><span>SCOPE {interactionScope.toUpperCase()} // {mode.toUpperCase()}</span><span>{interactionScope === "component" ? "PINCH SELECT // RELEASE // PINCH TRANSFORM" : "MOUSE DRAG ORBIT // WHEEL ZOOM"}</span><span>RENDERER {rendererReady ? "ONLINE" : "ERROR"}</span></footer>
         </section>
 
         <aside className="engineering-module__rail">
@@ -391,9 +408,12 @@ export function EngineeringViewPage() {
                 <div><dt>VISIBLE</dt><dd>{selectedComponent.visible ? "YES" : "NO"}</dd></div>
                 <div><dt>VERTICES</dt><dd>{selectedComponent.vertices.toLocaleString("pt-BR")}</dd></div>
                 <div><dt>TRIANGLES</dt><dd>{selectedComponent.triangles.toLocaleString("pt-BR")}</dd></div>
-                <div><dt>POSITION</dt><dd>{selectedComponent.originalPosition.x.toFixed(2)} / {selectedComponent.originalPosition.y.toFixed(2)} / {selectedComponent.originalPosition.z.toFixed(2)}</dd></div>
-                <div><dt>ROTATION</dt><dd>{selectedComponent.originalRotation.x.toFixed(2)} / {selectedComponent.originalRotation.y.toFixed(2)} / {selectedComponent.originalRotation.z.toFixed(2)}</dd></div>
-                <div><dt>SCALE</dt><dd>{selectedComponent.originalScale.x.toFixed(2)} / {selectedComponent.originalScale.y.toFixed(2)} / {selectedComponent.originalScale.z.toFixed(2)}</dd></div>
+                <div><dt>POSITION</dt><dd>{selectedComponent.position.x.toFixed(2)} / {selectedComponent.position.y.toFixed(2)} / {selectedComponent.position.z.toFixed(2)}</dd></div>
+                <div><dt>ROTATION</dt><dd>{selectedComponent.rotation.x.toFixed(2)} / {selectedComponent.rotation.y.toFixed(2)} / {selectedComponent.rotation.z.toFixed(2)}</dd></div>
+                <div><dt>SCALE</dt><dd>{selectedComponent.scale.x.toFixed(2)} / {selectedComponent.scale.y.toFixed(2)} / {selectedComponent.scale.z.toFixed(2)}</dd></div>
+                <div><dt>ORIGINAL POS.</dt><dd>{selectedComponent.originalPosition.x.toFixed(2)} / {selectedComponent.originalPosition.y.toFixed(2)} / {selectedComponent.originalPosition.z.toFixed(2)}</dd></div>
+                <div><dt>ORIGINAL ROT.</dt><dd>{selectedComponent.originalRotation.x.toFixed(2)} / {selectedComponent.originalRotation.y.toFixed(2)} / {selectedComponent.originalRotation.z.toFixed(2)}</dd></div>
+                <div><dt>ORIGINAL SCALE</dt><dd>{selectedComponent.originalScale.x.toFixed(2)} / {selectedComponent.originalScale.y.toFixed(2)} / {selectedComponent.originalScale.z.toFixed(2)}</dd></div>
                 <div><dt>DIMENSIONS</dt><dd>{selectedComponent.dimensions.x.toFixed(2)} × {selectedComponent.dimensions.y.toFixed(2)} × {selectedComponent.dimensions.z.toFixed(2)}</dd></div>
               </dl>
               <div className="engineering-material-list">

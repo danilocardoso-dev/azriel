@@ -1,9 +1,10 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { ComponentInteractionController } from "../../engineering/componentInteractionController";
 import { InteractionController } from "../../engineering/interactionController";
 import type { LoadedEngineeringModel } from "../../engineering/modelService";
-import type { EngineeringCalibration, EngineeringInteractionScope, EngineeringObjectSnapshot, EngineeringObjectState, GestureState, HandInteractionPoint, HandSide, ManipulationMode, ViewportPoint } from "../../engineering/types";
+import type { ComponentTransformSnapshot, EngineeringCalibration, EngineeringInteractionScope, EngineeringObjectSnapshot, EngineeringObjectState, GestureState, HandInteractionPoint, HandSide, ManipulationMode, ViewportPoint } from "../../engineering/types";
 
 export interface EngineeringHandControl {
   id: HandSide;
@@ -28,6 +29,7 @@ interface EngineeringSceneProps {
   focusRequest: { sequence: number; componentId: string | null };
   onComponentTarget: (id: string | null) => void;
   onComponentSelect: (id: string | null) => void;
+  onComponentTransform: (snapshot: ComponentTransformSnapshot | null) => void;
   onObjectChange: (snapshot: EngineeringObjectSnapshot) => void;
   onRendererReady: (ready: boolean) => void;
 }
@@ -47,6 +49,7 @@ interface SceneRuntime {
   componentSelectionBox: THREE.BoxHelper;
   componentBoundsBox: THREE.BoxHelper;
   controller: InteractionController;
+  componentController: ComponentInteractionController;
   raycaster: THREE.Raycaster;
   dragPlane: THREE.Plane;
   resizeObserver: ResizeObserver;
@@ -102,13 +105,15 @@ function frameObject(runtime: SceneRuntime, target: THREE.Object3D = runtime.man
   runtime.render();
 }
 
-export function EngineeringScene({ hands, mode, interactionScope, calibration, model, wireframe, gridVisible, axesVisible, resetSignal, selectedComponentId, targetedComponentId, componentRevision, boundingBoxVisible, focusRequest, onComponentTarget, onComponentSelect, onObjectChange, onRendererReady }: EngineeringSceneProps) {
+export function EngineeringScene({ hands, mode, interactionScope, calibration, model, wireframe, gridVisible, axesVisible, resetSignal, selectedComponentId, targetedComponentId, componentRevision, boundingBoxVisible, focusRequest, onComponentTarget, onComponentSelect, onComponentTransform, onObjectChange, onRendererReady }: EngineeringSceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const runtimeRef = useRef<SceneRuntime | null>(null);
   const lastSnapshotRef = useRef<string>("");
   const previousHandGestureRef = useRef<Record<HandSide, GestureState>>({ left: "none", right: "none" });
   const mouseComponentTargetRef = useRef<string | null>(null);
   const handComponentTargetRef = useRef<string | null>(null);
+  const componentManipulationArmedRef = useRef(true);
+  const lastComponentSnapshotRef = useRef("");
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -180,7 +185,7 @@ export function EngineeringScene({ hands, mode, interactionScope, calibration, m
       resizeObserver.observe(container);
       runtimeRef.current = {
         renderer, scene, camera, controls, manipulator, fallback, loadedRoot: null, grid, axes, selectionBox, componentTargetBox, componentSelectionBox, componentBoundsBox,
-        controller: new InteractionController(), raycaster: new THREE.Raycaster(),
+        controller: new InteractionController(), componentController: new ComponentInteractionController(), raycaster: new THREE.Raycaster(),
         dragPlane: new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), resizeObserver,
         originalWireframe: new Map(), render,
       };
@@ -306,7 +311,7 @@ export function EngineeringScene({ hands, mode, interactionScope, calibration, m
       canvas.removeEventListener("pointerdown", down);
       canvas.removeEventListener("pointerup", up);
     };
-  }, [interactionScope, model, componentRevision, onComponentSelect, onComponentTarget]);
+  }, [interactionScope, model, onComponentSelect, onComponentTarget]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -318,19 +323,63 @@ export function EngineeringScene({ hands, mode, interactionScope, calibration, m
     });
     if (interactionScope === "component") {
       const emptySnapshot = runtime.controller.update({ mode, hands: [] });
-      runtime.controls.enabled = true;
       runtime.selectionBox.visible = false;
       let handTarget: string | null = null;
-      for (const hand of hands) {
+      const selectedObject = model?.components.getObject(selectedComponentId) ?? null;
+      const selectedComponent = model?.components.get(selectedComponentId) ?? null;
+      if (!selectedObject || !selectedComponent?.visible) {
+        runtime.componentController.clear();
+        if (lastComponentSnapshotRef.current) {
+          lastComponentSnapshotRef.current = "";
+          onComponentTransform(null);
+        }
+      }
+      else {
+        runtime.componentController.bind(selectedComponent.id, selectedComponent.position, selectedComponent.rotation, selectedComponent.scale);
+        runtime.componentController.updateSettings({
+          rotationSensitivity: calibration.rotationSensitivity,
+          minScaleFactor: calibration.minScale,
+          maxScaleFactor: calibration.maxScale,
+        });
+      }
+      const interactionHands: HandInteractionPoint[] = hands.map((hand) => {
         const pointer = new THREE.Vector2(hand.cursor.ndcX, hand.cursor.ndcY);
         runtime.raycaster.setFromCamera(pointer, runtime.camera);
         const hit = runtime.raycaster.intersectObjects(model?.components.getRaycastMeshes() ?? [], false)[0]?.object ?? null;
         const componentId = model?.components.resolveObject(hit) ?? null;
         if ((hand.gesture === "point" || hand.gesture === "pinch") && componentId) handTarget = componentId;
+        const hitWithinSelected = Boolean(componentId && selectedComponentId && (componentId === selectedComponentId || model?.components.ancestors(componentId).includes(selectedComponentId)));
         const previous = previousHandGestureRef.current[hand.id];
-        if (hand.gesture === "pinch" && previous !== "pinch" && componentId) onComponentSelect(componentId);
+        if (hand.gesture === "pinch" && previous !== "pinch" && componentId && !hitWithinSelected) {
+          componentManipulationArmedRef.current = false;
+          onComponentSelect(componentId);
+        }
         previousHandGestureRef.current[hand.id] = hand.gesture;
-      }
+        const intersection = new THREE.Vector3();
+        const worldIntersection = runtime.raycaster.ray.intersectPlane(runtime.dragPlane, intersection);
+        let localPoint = worldIntersection ? intersection.clone() : null;
+        if (localPoint && selectedObject?.parent) {
+          selectedObject.parent.updateWorldMatrix(true, false);
+          localPoint = selectedObject.parent.worldToLocal(localPoint);
+        }
+        return { id: hand.id, gesture: hand.gesture, viewport: hand.cursor, world: localPoint ? { x: localPoint.x, y: localPoint.y, z: localPoint.z } : null, hovered: hitWithinSelected };
+      });
+      if (!hands.some((hand) => hand.gesture === "pinch")) componentManipulationArmedRef.current = true;
+      const componentSnapshot = selectedObject && componentManipulationArmedRef.current
+        ? runtime.componentController.update(mode, interactionHands)
+        : runtime.componentController.release();
+      if (selectedObject && componentSnapshot) {
+        selectedObject.position.set(componentSnapshot.position.x, componentSnapshot.position.y, componentSnapshot.position.z);
+        selectedObject.rotation.set(componentSnapshot.rotation.x, componentSnapshot.rotation.y, componentSnapshot.rotation.z);
+        selectedObject.scale.set(componentSnapshot.scale.x, componentSnapshot.scale.y, componentSnapshot.scale.z);
+        selectedObject.updateMatrixWorld(true);
+        runtime.controls.enabled = componentSnapshot.status !== "grabbed";
+        const serializedComponent = JSON.stringify(componentSnapshot);
+        if (lastComponentSnapshotRef.current !== serializedComponent) {
+          lastComponentSnapshotRef.current = serializedComponent;
+          onComponentTransform(componentSnapshot);
+        }
+      } else runtime.controls.enabled = true;
       handComponentTargetRef.current = handTarget;
       onComponentTarget(handTarget ?? mouseComponentTargetRef.current);
       lastSnapshotRef.current = JSON.stringify(emptySnapshot);
@@ -368,7 +417,7 @@ export function EngineeringScene({ hands, mode, interactionScope, calibration, m
       lastSnapshotRef.current = serialized;
       onObjectChange(snapshot);
     }
-  }, [hands, mode, interactionScope, calibration, model, onComponentSelect, onComponentTarget, onObjectChange]);
+  }, [hands, mode, interactionScope, calibration, model, selectedComponentId, onComponentSelect, onComponentTarget, onComponentTransform, onObjectChange]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;

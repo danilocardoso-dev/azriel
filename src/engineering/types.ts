@@ -108,11 +108,23 @@ export interface ModelComponent {
   originalPosition: ScenePoint;
   originalRotation: ScenePoint;
   originalScale: ScenePoint;
+  position: ScenePoint;
+  rotation: ScenePoint;
+  scale: ScenePoint;
   worldPosition: ScenePoint;
   center: ScenePoint;
   directionFromModelCenter: ScenePoint;
   dimensions: ModelDimensions;
   materials: ComponentMaterialInfo[];
+}
+
+export interface ComponentTransformSnapshot {
+  componentId: string;
+  status: EngineeringObjectState;
+  control: ObjectControlState;
+  position: ScenePoint;
+  rotation: ScenePoint;
+  scale: ScenePoint;
 }
 
 export interface ModelMetadata {

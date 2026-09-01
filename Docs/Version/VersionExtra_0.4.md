@@ -1135,3 +1135,15 @@ Os modos `MODEL` e `COMPONENT` mantêm responsabilidades separadas. MOVE, ROTATE
 A suíte automatizada cobre o Component Core com fixtures locais. O fluxo entregue foi aprovado pelo operador e a v0.4 está encerrada.
 
 Known limitation: a calibração gestual ainda requer refinamento e permanece planejada para v0.2.1.
+
+## Complemento corretivo — manipulação gestual de componentes
+
+Após a primeira validação foi identificada uma lacuna: o modo COMPONENT selecionava e inspecionava peças, mas MOVE, ROTATE e SCALE ainda atuavam somente no ModelRoot.
+
+Foi criado um controlador independente para transformações locais. Agora uma peça selecionada pode ser movida ou rotacionada por pinça e escalada com duas mãos, sem alterar o ModelRoot. A primeira pinça seleciona; após o release, a próxima pinça inicia a transformação. Perda de tracking encerra a sessão sem desfazer a última posição.
+
+O inspector passou a exibir transformações atuais e originais. `RESTAURAR COMPONENTES` também restaura posição, rotação e escala locais. O complemento possui testes de MOVE relativo, ROTATE, SCALE proporcional, troca de componente, release, perda de tracking e restauração.
+
+Status do complemento: **concluído e revalidado pelo operador em 01/09/2026**.
+
+Com a aprovação de MOVE, ROTATE e SCALE sobre o componente selecionado, a v0.4 está definitivamente encerrada.

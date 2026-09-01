@@ -56,13 +56,13 @@ export class ComponentService {
   }
 
   list(): ModelComponent[] {
-    return [...this.components.values()].map((component) => ({ ...component, visible: this.isEffectivelyVisible(component.id) }));
+    return [...this.components.values()].map((component) => this.currentComponent(component));
   }
 
   get(id: string | null | undefined): ModelComponent | null {
     if (!id) return null;
     const component = this.components.get(id);
-    return component ? { ...component, visible: this.isEffectivelyVisible(id) } : null;
+    return component ? this.currentComponent(component) : null;
   }
 
   getObject(id: string | null | undefined): THREE.Object3D | null {
@@ -152,7 +152,13 @@ export class ComponentService {
     this.isolatedComponentId = null;
     for (const [id, visible] of this.originalVisibility) {
       const object = this.objects.get(id);
-      if (object) object.visible = visible;
+      const component = this.components.get(id);
+      if (object && component) {
+        object.visible = visible;
+        object.position.set(component.originalPosition.x, component.originalPosition.y, component.originalPosition.z);
+        object.rotation.set(component.originalRotation.x, component.originalRotation.y, component.originalRotation.z);
+        object.scale.set(component.originalScale.x, component.originalScale.y, component.originalScale.z);
+      }
     }
   }
 
@@ -186,6 +192,9 @@ export class ComponentService {
       originalPosition: scenePoint(object.position),
       originalRotation: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z },
       originalScale: scenePoint(object.scale),
+      position: scenePoint(object.position),
+      rotation: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z },
+      scale: scenePoint(object.scale),
       worldPosition: scenePoint(object.getWorldPosition(new THREE.Vector3())),
       center: scenePoint(center),
       directionFromModelCenter: scenePoint(direction),
@@ -220,5 +229,16 @@ export class ComponentService {
       currentId = this.components.get(currentId)?.parentId;
     }
     return true;
+  }
+
+  private currentComponent(component: ModelComponent): ModelComponent {
+    const object = this.objects.get(component.id);
+    return {
+      ...component,
+      visible: this.isEffectivelyVisible(component.id),
+      position: object ? scenePoint(object.position) : { ...component.position },
+      rotation: object ? { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z } : { ...component.rotation },
+      scale: object ? scenePoint(object.scale) : { ...component.scale },
+    };
   }
 }
