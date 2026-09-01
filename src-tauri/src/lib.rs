@@ -84,6 +84,7 @@ pub fn run() {
             engineering_commands::get_engineering_calibration,
             engineering_commands::update_engineering_calibration,
             engineering_commands::reset_engineering_calibration,
+            engineering_commands::read_engineering_model,
             ai_commands::get_ai_settings,
             ai_commands::update_ai_settings,
             ai_commands::list_conversations,

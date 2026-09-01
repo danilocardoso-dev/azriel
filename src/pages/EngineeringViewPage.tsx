@@ -8,8 +8,9 @@ import { CameraService } from "../engineering/cameraService";
 import { HAND_LANDMARK_INDEX } from "../engineering/config";
 import { evaluateGesture } from "../engineering/gestureEngine";
 import { HandTrackingService } from "../engineering/handTrackingService";
+import { ModelService, resolveModelCoreState, type LoadedEngineeringModel } from "../engineering/modelService";
 import { normalizedToViewport, smoothLandmark } from "../engineering/trackingMath";
-import type { CameraState, EngineeringCalibration, EngineeringCalibrationInput, EngineeringCoreState, EngineeringObjectSnapshot, GestureState, HandLandmark, HandSide, ManipulationMode, TrackedHand, ViewportPoint } from "../engineering/types";
+import type { CameraState, EngineeringCalibration, EngineeringCalibrationInput, EngineeringObjectSnapshot, GestureState, HandLandmark, HandSide, ManipulationMode, ModelCoreState, TrackedHand, ViewportPoint } from "../engineering/types";
 import { engineeringRepository } from "../repositories/engineeringRepository";
 
 const futureInterfaces = [
@@ -19,6 +20,7 @@ const futureInterfaces = [
 ];
 
 const cameraStateLabel: Record<CameraState, string> = { offline: "OFFLINE", requesting: "REQUESTING", online: "ONLINE", error: "ERROR" };
+const modelStateLabel: Record<ModelCoreState, string> = { empty: "SEM MODELO", loading: "CARREGANDO", ready: "ONLINE", error: "ERROR" };
 const emptyGestures: Record<HandSide, GestureState> = { left: "none", right: "none" };
 const initialObject: EngineeringObjectSnapshot = {
   status: "ready",
@@ -32,6 +34,8 @@ export function EngineeringViewPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraService = useRef(new CameraService());
   const trackingService = useRef(new HandTrackingService());
+  const modelService = useRef(new ModelService());
+  const loadedModelRef = useRef<LoadedEngineeringModel | null>(null);
   const startAttempt = useRef(0);
   const gestureRef = useRef<Record<HandSide, GestureState>>({ ...emptyGestures });
   const smoothedCursorRef = useRef<Partial<Record<HandSide, HandLandmark>>>({});
@@ -48,6 +52,11 @@ export function EngineeringViewPage() {
   const [mode, setMode] = useState<ManipulationMode>("move");
   const [objectSnapshot, setObjectSnapshot] = useState<EngineeringObjectSnapshot>(initialObject);
   const [resetSignal, setResetSignal] = useState(0);
+  const [loadedModel, setLoadedModel] = useState<LoadedEngineeringModel | null>(null);
+  const [modelState, setModelState] = useState<ModelCoreState>("empty");
+  const [wireframe, setWireframe] = useState(false);
+  const [gridVisible, setGridVisible] = useState(true);
+  const [axesVisible, setAxesVisible] = useState(true);
   const [calibration, setCalibration] = useState<EngineeringCalibration>(() => defaultCalibration());
   const [savingCalibration, setSavingCalibration] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,13 +70,6 @@ export function EngineeringViewPage() {
       .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : String(reason)); });
     return () => { active = false; };
   }, []);
-
-  const coreState: EngineeringCoreState = useMemo(() => {
-    if (cameraState === "error") return "error";
-    if (cameraState === "requesting") return "requesting_camera";
-    if (cameraState === "online") return trackedHands.length ? "tracking" : "ready";
-    return "offline";
-  }, [cameraState, trackedHands.length]);
 
   const handleTrackingFrame = useCallback(({ hands, fps: currentFps }: { hands: TrackedHand[]; fps: number }) => {
     setFps(currentFps);
@@ -152,6 +154,37 @@ export function EngineeringViewPage() {
     startAttempt.current += 1;
     trackingService.current.stop();
     cameraService.current.stop(videoRef.current);
+    modelService.current.unload(loadedModelRef.current);
+    loadedModelRef.current = null;
+  }, []);
+
+  const loadModel = useCallback(async () => {
+    setModelState(resolveModelCoreState("load_started", Boolean(loadedModelRef.current)));
+    setError(null);
+    try {
+      const next = await modelService.current.selectAndLoad();
+      if (!next) {
+        setModelState(resolveModelCoreState("load_cancelled", Boolean(loadedModelRef.current)));
+        return;
+      }
+      const previous = loadedModelRef.current;
+      loadedModelRef.current = next;
+      setLoadedModel(next);
+      setModelState(resolveModelCoreState("load_succeeded", true));
+      if (previous) window.setTimeout(() => modelService.current.unload(previous), 0);
+    } catch (reason) {
+      setModelState(resolveModelCoreState("load_failed", Boolean(loadedModelRef.current)));
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  }, []);
+
+  const unloadModel = useCallback(() => {
+    const previous = loadedModelRef.current;
+    loadedModelRef.current = null;
+    setLoadedModel(null);
+    setModelState(resolveModelCoreState("unloaded", false));
+    setError(null);
+    if (previous) window.setTimeout(() => modelService.current.unload(previous), 0);
   }, []);
 
   const sceneHands = useMemo<EngineeringHandControl[]>(() => trackedHands.flatMap((hand) => {
@@ -202,34 +235,39 @@ export function EngineeringViewPage() {
 
   return (
     <section className="engineering-module">
-      <ModuleIntro code="ENG-02" title="Engineering View" description="Manipulação espacial por duas mãos processada localmente." metric={`ENGINEERING CORE // ${coreState.toUpperCase()}`} />
+      <ModuleIntro code="ENG-03" title="Engineering View" description="Modelos 3D reais e manipulação espacial processados localmente." metric={`MODEL CORE // ${modelStateLabel[modelState]}`} />
 
       {error && <div className="engineering-error"><strong>ENGINEERING CORE ERROR</strong><span>{error}</span></div>}
 
       <div className="engineering-controls" aria-label="Controles do Engineering Core">
+        <button onClick={() => void loadModel()} disabled={modelState === "loading"}>CARREGAR MODELO</button>
+        <button onClick={unloadModel} disabled={!loadedModel}>DESCARREGAR</button>
+        <button onClick={() => setResetSignal((signal) => signal + 1)}>RESET MODEL</button>
         <button onClick={() => void startCamera()} disabled={cameraState === "requesting" || cameraState === "online"}>INICIAR CÂMERA</button>
         <button onClick={stopCamera} disabled={cameraState === "offline"}>PARAR CÂMERA</button>
         <button className={previewVisible ? "active" : ""} onClick={() => setPreviewVisible((visible) => !visible)}>PREVIEW {previewVisible ? "ON" : "OFF"}</button>
         <button className={debugVisible ? "active" : ""} onClick={() => setDebugVisible((visible) => !visible)}>DEBUG {debugVisible ? "ON" : "OFF"}</button>
-        <button onClick={() => setResetSignal((signal) => signal + 1)}>RESET OBJECT</button>
-        <span>PROCESSAMENTO LOCAL // FRAMES NÃO SAEM DO DISPOSITIVO</span>
+        <span>MODEL + VISION PROCESSING // LOCAL</span>
       </div>
 
       <div className="engineering-mode-switch" aria-label="Modo de manipulação">
         <span>MODE</span>
         {(["move", "rotate", "scale"] as const).map((candidate) => <button key={candidate} className={mode === candidate ? "active" : ""} onClick={() => setMode(candidate)}>{candidate.toUpperCase()}</button>)}
+        <button className={wireframe ? "active" : ""} onClick={() => setWireframe((active) => !active)}>WIREFRAME {wireframe ? "ON" : "OFF"}</button>
+        <button className={gridVisible ? "active" : ""} onClick={() => setGridVisible((visible) => !visible)}>GRID {gridVisible ? "ON" : "OFF"}</button>
+        <button className={axesVisible ? "active" : ""} onClick={() => setAxesVisible((visible) => !visible)}>AXES {axesVisible ? "ON" : "OFF"}</button>
       </div>
 
       <div className="engineering-module__layout">
         <section className="engineering-canvas" aria-label="Viewport tridimensional do Engineering Core">
-          <header><span>VIEWPORT // PRIMARY</span><strong>TEST-01 // {objectSnapshot.status.toUpperCase()}</strong></header>
+          <header><span>VIEWPORT // PRIMARY</span><strong>{loadedModel?.metadata.name ?? "TEST-01"} // {objectSnapshot.status.toUpperCase()}</strong></header>
           <div className="engineering-canvas__stage">
-            <EngineeringScene hands={sceneHands} mode={mode} calibration={calibration} resetSignal={resetSignal} onObjectChange={setObjectSnapshot} onRendererReady={setRendererReady} />
+            <EngineeringScene hands={sceneHands} mode={mode} calibration={calibration} model={loadedModel} wireframe={wireframe} gridVisible={gridVisible} axesVisible={axesVisible} resetSignal={resetSignal} onObjectChange={setObjectSnapshot} onRendererReady={setRendererReady} />
             <span className="engineering-canvas__axis engineering-canvas__axis--x">AXIS X // INTERACTION PLANE</span>
             <span className="engineering-canvas__axis engineering-canvas__axis--y">AXIS Y // SCREEN SPACE</span>
             {sceneHands.map((hand) => <div key={hand.id} className={`engineering-hand-cursor engineering-hand-cursor--${hand.id} ${hand.gesture === "pinch" ? "engineering-hand-cursor--pinch" : ""}`} style={{ left: `${hand.cursor.x * 100}%`, top: `${hand.cursor.y * 100}%` }} aria-hidden="true"><i /><small>{hand.id.toUpperCase()}</small></div>)}
             <div className="engineering-object-readout engineering-object-inspector">
-              <span>OBJECT</span><strong>TEST-01</strong>
+              <span>OBJECT</span><strong>{loadedModel?.metadata.name ?? "TEST-01"}</strong>
               <span>STATUS</span><strong data-status={objectSnapshot.status}>{objectSnapshot.status.toUpperCase()}</strong>
               <span>CONTROL</span><strong>{objectSnapshot.control.toUpperCase()}</strong>
               <span>POSITION</span><strong>{objectSnapshot.position.x.toFixed(2)} / {objectSnapshot.position.y.toFixed(2)} / {objectSnapshot.position.z.toFixed(2)}</strong>
@@ -237,10 +275,31 @@ export function EngineeringViewPage() {
               <span>SCALE</span><strong>{objectSnapshot.scale.toFixed(2)}</strong>
             </div>
           </div>
-          <footer><span>MODE {mode.toUpperCase()}</span><span>ORIGIN 0 / 0 / 0</span><span>RENDERER {rendererReady ? "ONLINE" : "ERROR"}</span></footer>
+          <footer><span>MODE {mode.toUpperCase()}</span><span>MOUSE DRAG ORBIT // WHEEL ZOOM</span><span>RENDERER {rendererReady ? "ONLINE" : "ERROR"}</span></footer>
         </section>
 
         <aside className="engineering-module__rail">
+          <section className="engineering-register engineering-model-status">
+            <header><strong>MODEL CORE</strong><span data-state={modelState}>{modelStateLabel[modelState]}</span></header>
+            {modelState === "loading" && <p className="engineering-model-loading">CARREGANDO MODELO...</p>}
+            {loadedModel ? <dl>
+              <div><dt>NAME</dt><dd>{loadedModel.metadata.name}</dd></div>
+              <div><dt>FORMAT</dt><dd>{loadedModel.metadata.format}</dd></div>
+              <div><dt>OBJECTS</dt><dd>{loadedModel.metadata.objects}</dd></div>
+              <div><dt>MESHES</dt><dd>{loadedModel.metadata.meshes}</dd></div>
+              <div><dt>MATERIALS</dt><dd>{loadedModel.metadata.materials}</dd></div>
+              <div><dt>VERTICES</dt><dd>{loadedModel.metadata.vertices.toLocaleString("pt-BR")}</dd></div>
+              <div><dt>TRIANGLES</dt><dd>{loadedModel.metadata.triangles.toLocaleString("pt-BR")}</dd></div>
+              <div><dt>DIMENSIONS</dt><dd>{loadedModel.metadata.dimensions.x.toFixed(2)} × {loadedModel.metadata.dimensions.y.toFixed(2)} × {loadedModel.metadata.dimensions.z.toFixed(2)}</dd></div>
+              <div><dt>STATUS</dt><dd data-state="online">{loadedModel.metadata.complexity === "high" ? "HIGH COMPLEXITY" : "READY"}</dd></div>
+            </dl> : <p className="engineering-model-empty">SEM MODELO CARREGADO<br /><small>TEST-01 ATIVO COMO FALLBACK</small></p>}
+          </section>
+
+          {loadedModel && <section className="engineering-register engineering-model-tree">
+            <header><strong>MODEL STRUCTURE</strong><span>{loadedModel.nodes.length} NODES</span></header>
+            <div>{loadedModel.nodes.map((node) => <article key={node.id} style={{ paddingLeft: `${10 + Math.min(node.depth, 6) * 12}px` }}><span>{node.type}</span><strong>{node.name}</strong><small>{node.children.length || "—"}</small></article>)}</div>
+          </section>}
+
           <section className="engineering-register engineering-tracking-status">
             <header><strong>HAND TRACKING</strong><span>{trackingOnline ? "ONLINE" : "OFFLINE"}</span></header>
             <dl>
@@ -268,7 +327,7 @@ export function EngineeringViewPage() {
           <section className="engineering-register engineering-register--status">
             <header><strong>ESTADO DA ESTAÇÃO</strong><span>LOCAL</span></header>
             <dl>
-              <div><dt>MODELO</dt><dd>TEST-01</dd></div><div><dt>TELEMETRIA</dt><dd>DESVINCULADA</dd></div>
+              <div><dt>MODELO</dt><dd data-state={modelState}>{loadedModel ? "ONLINE" : "NÃO CARREGADO"}</dd></div><div><dt>TELEMETRIA</dt><dd>DESVINCULADA</dd></div>
               <div><dt>RENDERIZADOR 3D</dt><dd>{rendererReady ? "ONLINE" : "ERROR"}</dd></div><div><dt>HAND TRACKING</dt><dd>{trackingOnline ? "ONLINE" : "OFFLINE"}</dd></div>
             </dl>
           </section>

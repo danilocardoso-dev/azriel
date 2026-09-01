@@ -6,6 +6,8 @@ export type GestureState = "none" | "pinch" | "point" | "open_hand";
 export type ManipulationMode = "move" | "rotate" | "scale";
 export type ObjectControlState = "none" | "translate" | "rotate" | "scale";
 export type EngineeringObjectState = "ready" | "targeted" | "grabbed";
+export type ModelCoreState = "empty" | "loading" | "ready" | "error";
+export type ModelFormat = "GLB" | "GLTF";
 
 export interface HandLandmark {
   x: number;
@@ -67,6 +69,32 @@ export interface EngineeringCalibration {
   comfortableHandDistance: number;
   calibrated: boolean;
   updatedAt: string;
+}
+
+export interface ModelDimensions extends ScenePoint {
+  largest: number;
+}
+
+export interface ModelNode {
+  id: string;
+  name: string;
+  type: string;
+  parentId?: string;
+  children: string[];
+  depth: number;
+}
+
+export interface ModelMetadata {
+  name: string;
+  format: ModelFormat;
+  objects: number;
+  groups: number;
+  meshes: number;
+  materials: number;
+  vertices: number;
+  triangles: number;
+  dimensions: ModelDimensions;
+  complexity: "normal" | "high";
 }
 
 export type EngineeringCalibrationInput = Omit<EngineeringCalibration, "updatedAt">;

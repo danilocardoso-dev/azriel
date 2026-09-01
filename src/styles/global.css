@@ -491,6 +491,10 @@ button.core-topology__node { cursor:pointer; }.core-topology__node:hover { borde
 @keyframes drawer-in { from { transform: translateX(100%); } }
 @keyframes scan { from { transform: translateY(-100px); } to { transform: translateY(100vh); } }
 
+.engineering-model-status > header span[data-state="ready"] { color:var(--green); }.engineering-model-status > header span[data-state="loading"] { color:var(--amber); }.engineering-model-status > header span[data-state="error"] { color:var(--red); }
+.engineering-model-empty,.engineering-model-loading { margin:0; padding:20px 14px; color:#648c96; font:9px/1.8 var(--mono); letter-spacing:.08em; }.engineering-model-empty small { color:#426a75; }.engineering-model-loading { color:var(--amber); }
+.engineering-model-tree > div { max-height:245px; overflow:auto; scrollbar-width:none; }.engineering-model-tree > div::-webkit-scrollbar { display:none; }.engineering-model-tree article { min-height:38px; grid-template-columns:58px minmax(0,1fr) 22px; }.engineering-model-tree article > span { overflow:hidden; color:#56818c; font-size:7px; text-overflow:ellipsis; }.engineering-model-tree article > strong { overflow:hidden; font:9px var(--mono); text-overflow:ellipsis; white-space:nowrap; }.engineering-model-tree article > small { text-align:right; }
+
 @media (max-width: 1380px) {
   .command-grid { grid-template-columns: 220px minmax(440px,1fr) 250px; }
   .engineering-command__deck { grid-template-columns:190px minmax(470px,1fr) 220px; }
