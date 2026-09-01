@@ -8,6 +8,8 @@ export type ObjectControlState = "none" | "translate" | "rotate" | "scale";
 export type EngineeringObjectState = "ready" | "targeted" | "grabbed";
 export type ModelCoreState = "empty" | "loading" | "ready" | "error";
 export type ModelFormat = "GLB" | "GLTF";
+export type EngineeringInteractionScope = "model" | "component";
+export type ComponentVisualState = "normal" | "targeted" | "selected" | "hidden" | "isolated";
 
 export interface HandLandmark {
   x: number;
@@ -82,6 +84,35 @@ export interface ModelNode {
   parentId?: string;
   children: string[];
   depth: number;
+}
+
+export interface ComponentMaterialInfo {
+  name: string;
+  type: string;
+  color?: string;
+  textured: boolean;
+}
+
+export interface ModelComponent {
+  id: string;
+  name: string;
+  type: string;
+  parentId?: string;
+  children: string[];
+  depth: number;
+  visible: boolean;
+  selectable: boolean;
+  meshCount: number;
+  vertices: number;
+  triangles: number;
+  originalPosition: ScenePoint;
+  originalRotation: ScenePoint;
+  originalScale: ScenePoint;
+  worldPosition: ScenePoint;
+  center: ScenePoint;
+  directionFromModelCenter: ScenePoint;
+  dimensions: ModelDimensions;
+  materials: ComponentMaterialInfo[];
 }
 
 export interface ModelMetadata {

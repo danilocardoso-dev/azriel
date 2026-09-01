@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { InteractionController } from "../../engineering/interactionController";
 import type { LoadedEngineeringModel } from "../../engineering/modelService";
-import type { EngineeringCalibration, EngineeringObjectSnapshot, EngineeringObjectState, GestureState, HandInteractionPoint, HandSide, ManipulationMode, ViewportPoint } from "../../engineering/types";
+import type { EngineeringCalibration, EngineeringInteractionScope, EngineeringObjectSnapshot, EngineeringObjectState, GestureState, HandInteractionPoint, HandSide, ManipulationMode, ViewportPoint } from "../../engineering/types";
 
 export interface EngineeringHandControl {
   id: HandSide;
@@ -14,12 +14,20 @@ export interface EngineeringHandControl {
 interface EngineeringSceneProps {
   hands: EngineeringHandControl[];
   mode: ManipulationMode;
+  interactionScope: EngineeringInteractionScope;
   calibration: EngineeringCalibration;
   model: LoadedEngineeringModel | null;
   wireframe: boolean;
   gridVisible: boolean;
   axesVisible: boolean;
   resetSignal: number;
+  selectedComponentId: string | null;
+  targetedComponentId: string | null;
+  componentRevision: number;
+  boundingBoxVisible: boolean;
+  focusRequest: { sequence: number; componentId: string | null };
+  onComponentTarget: (id: string | null) => void;
+  onComponentSelect: (id: string | null) => void;
   onObjectChange: (snapshot: EngineeringObjectSnapshot) => void;
   onRendererReady: (ready: boolean) => void;
 }
@@ -35,6 +43,9 @@ interface SceneRuntime {
   grid: THREE.GridHelper;
   axes: THREE.AxesHelper;
   selectionBox: THREE.BoxHelper;
+  componentTargetBox: THREE.BoxHelper;
+  componentSelectionBox: THREE.BoxHelper;
+  componentBoundsBox: THREE.BoxHelper;
   controller: InteractionController;
   raycaster: THREE.Raycaster;
   dragPlane: THREE.Plane;
@@ -73,9 +84,9 @@ function restoreWireframe(originals: Map<THREE.Material, boolean>) {
   originals.clear();
 }
 
-function frameObject(runtime: SceneRuntime) {
-  runtime.manipulator.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(runtime.manipulator);
+function frameObject(runtime: SceneRuntime, target: THREE.Object3D = runtime.manipulator) {
+  target.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(target);
   if (box.isEmpty()) return;
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
@@ -91,10 +102,13 @@ function frameObject(runtime: SceneRuntime) {
   runtime.render();
 }
 
-export function EngineeringScene({ hands, mode, calibration, model, wireframe, gridVisible, axesVisible, resetSignal, onObjectChange, onRendererReady }: EngineeringSceneProps) {
+export function EngineeringScene({ hands, mode, interactionScope, calibration, model, wireframe, gridVisible, axesVisible, resetSignal, selectedComponentId, targetedComponentId, componentRevision, boundingBoxVisible, focusRequest, onComponentTarget, onComponentSelect, onObjectChange, onRendererReady }: EngineeringSceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const runtimeRef = useRef<SceneRuntime | null>(null);
   const lastSnapshotRef = useRef<string>("");
+  const previousHandGestureRef = useRef<Record<HandSide, GestureState>>({ left: "none", right: "none" });
+  const mouseComponentTargetRef = useRef<string | null>(null);
+  const handComponentTargetRef = useRef<string | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -137,6 +151,13 @@ export function EngineeringScene({ hands, mode, calibration, model, wireframe, g
       const selectionBox = new THREE.BoxHelper(manipulator, colorByStatus.targeted);
       selectionBox.visible = false;
       scene.add(selectionBox);
+      const componentTargetBox = new THREE.BoxHelper(manipulator, 0x27cce5);
+      const componentSelectionBox = new THREE.BoxHelper(manipulator, 0x4bdb8f);
+      const componentBoundsBox = new THREE.BoxHelper(manipulator, 0xffb64b);
+      componentTargetBox.visible = false;
+      componentSelectionBox.visible = false;
+      componentBoundsBox.visible = false;
+      scene.add(componentTargetBox, componentSelectionBox, componentBoundsBox);
 
       const controls = new OrbitControls(camera, canvas);
       controls.enableDamping = false;
@@ -158,7 +179,7 @@ export function EngineeringScene({ hands, mode, calibration, model, wireframe, g
       const resizeObserver = new ResizeObserver(resize);
       resizeObserver.observe(container);
       runtimeRef.current = {
-        renderer, scene, camera, controls, manipulator, fallback, loadedRoot: null, grid, axes, selectionBox,
+        renderer, scene, camera, controls, manipulator, fallback, loadedRoot: null, grid, axes, selectionBox, componentTargetBox, componentSelectionBox, componentBoundsBox,
         controller: new InteractionController(), raycaster: new THREE.Raycaster(),
         dragPlane: new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), resizeObserver,
         originalWireframe: new Map(), render,
@@ -185,6 +206,10 @@ export function EngineeringScene({ hands, mode, calibration, model, wireframe, g
       (Array.isArray(runtime.axes.material) ? runtime.axes.material : [runtime.axes.material]).forEach((material) => material.dispose());
       runtime.selectionBox.geometry.dispose();
       (runtime.selectionBox.material as THREE.Material).dispose();
+      [runtime.componentTargetBox, runtime.componentSelectionBox, runtime.componentBoundsBox].forEach((helper) => {
+        helper.geometry.dispose();
+        (helper.material as THREE.Material).dispose();
+      });
       runtime.renderer.dispose();
       runtimeRef.current = null;
       onRendererReady(false);
@@ -205,6 +230,9 @@ export function EngineeringScene({ hands, mode, calibration, model, wireframe, g
     runtime.manipulator.rotation.set(snapshot.rotation.x, snapshot.rotation.y, snapshot.rotation.z);
     runtime.manipulator.scale.setScalar(snapshot.scale);
     runtime.selectionBox.visible = false;
+    runtime.componentTargetBox.visible = false;
+    runtime.componentSelectionBox.visible = false;
+    runtime.componentBoundsBox.visible = false;
     frameObject(runtime);
     lastSnapshotRef.current = JSON.stringify(snapshot);
     onObjectChange(snapshot);
@@ -229,11 +257,88 @@ export function EngineeringScene({ hands, mode, calibration, model, wireframe, g
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime) return;
+    const updateHelper = (helper: THREE.BoxHelper, componentId: string | null, visible: boolean) => {
+      const object = model?.components.getObject(componentId);
+      const component = model?.components.get(componentId);
+      helper.visible = Boolean(object && component?.visible && visible);
+      if (helper.visible && object) helper.setFromObject(object);
+    };
+    updateHelper(runtime.componentTargetBox, targetedComponentId, interactionScope === "component" && targetedComponentId !== selectedComponentId);
+    updateHelper(runtime.componentSelectionBox, selectedComponentId, interactionScope === "component");
+    updateHelper(runtime.componentBoundsBox, selectedComponentId, interactionScope === "component" && boundingBoxVisible);
+    runtime.selectionBox.visible = interactionScope === "model" && runtime.selectionBox.visible;
+    runtime.render();
+  }, [model, interactionScope, targetedComponentId, selectedComponentId, boundingBoxVisible, componentRevision]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    const canvas = canvasRef.current;
+    if (!runtime || !canvas || interactionScope !== "component" || !model) return;
+    let pointerDown: { x: number; y: number } | null = null;
+    const raycast = (event: PointerEvent) => {
+      const bounds = canvas.getBoundingClientRect();
+      const pointer = new THREE.Vector2(
+        ((event.clientX - bounds.left) / bounds.width) * 2 - 1,
+        -((event.clientY - bounds.top) / bounds.height) * 2 + 1,
+      );
+      runtime.raycaster.setFromCamera(pointer, runtime.camera);
+      const hit = runtime.raycaster.intersectObjects(model.components.getRaycastMeshes(), false)[0]?.object ?? null;
+      return model.components.resolveObject(hit);
+    };
+    const publishTarget = () => onComponentTarget(handComponentTargetRef.current ?? mouseComponentTargetRef.current);
+    const move = (event: PointerEvent) => { mouseComponentTargetRef.current = raycast(event); publishTarget(); };
+    const leave = () => { mouseComponentTargetRef.current = null; publishTarget(); };
+    const down = (event: PointerEvent) => { pointerDown = { x: event.clientX, y: event.clientY }; };
+    const up = (event: PointerEvent) => {
+      if (!pointerDown) return;
+      const moved = Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) > 5;
+      pointerDown = null;
+      if (moved) return;
+      onComponentSelect(raycast(event));
+    };
+    canvas.addEventListener("pointermove", move);
+    canvas.addEventListener("pointerleave", leave);
+    canvas.addEventListener("pointerdown", down);
+    canvas.addEventListener("pointerup", up);
+    return () => {
+      canvas.removeEventListener("pointermove", move);
+      canvas.removeEventListener("pointerleave", leave);
+      canvas.removeEventListener("pointerdown", down);
+      canvas.removeEventListener("pointerup", up);
+    };
+  }, [interactionScope, model, componentRevision, onComponentSelect, onComponentTarget]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
     runtime.controller.updateSettings({
       rotationSensitivity: calibration.rotationSensitivity,
       minScale: calibration.minScale,
       maxScale: calibration.maxScale,
     });
+    if (interactionScope === "component") {
+      const emptySnapshot = runtime.controller.update({ mode, hands: [] });
+      runtime.controls.enabled = true;
+      runtime.selectionBox.visible = false;
+      let handTarget: string | null = null;
+      for (const hand of hands) {
+        const pointer = new THREE.Vector2(hand.cursor.ndcX, hand.cursor.ndcY);
+        runtime.raycaster.setFromCamera(pointer, runtime.camera);
+        const hit = runtime.raycaster.intersectObjects(model?.components.getRaycastMeshes() ?? [], false)[0]?.object ?? null;
+        const componentId = model?.components.resolveObject(hit) ?? null;
+        if ((hand.gesture === "point" || hand.gesture === "pinch") && componentId) handTarget = componentId;
+        const previous = previousHandGestureRef.current[hand.id];
+        if (hand.gesture === "pinch" && previous !== "pinch" && componentId) onComponentSelect(componentId);
+        previousHandGestureRef.current[hand.id] = hand.gesture;
+      }
+      handComponentTargetRef.current = handTarget;
+      onComponentTarget(handTarget ?? mouseComponentTargetRef.current);
+      lastSnapshotRef.current = JSON.stringify(emptySnapshot);
+      runtime.render();
+      return;
+    }
+    previousHandGestureRef.current = { left: "none", right: "none" };
+    handComponentTargetRef.current = null;
     const target = runtime.loadedRoot ?? runtime.fallback;
     const interactionHands: HandInteractionPoint[] = hands.map((hand) => {
       const pointer = new THREE.Vector2(hand.cursor.ndcX, hand.cursor.ndcY);
@@ -263,7 +368,14 @@ export function EngineeringScene({ hands, mode, calibration, model, wireframe, g
       lastSnapshotRef.current = serialized;
       onObjectChange(snapshot);
     }
-  }, [hands, mode, calibration, onObjectChange]);
+  }, [hands, mode, interactionScope, calibration, model, onComponentSelect, onComponentTarget, onObjectChange]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime || focusRequest.sequence === 0) return;
+    const target = focusRequest.componentId ? model?.components.getObject(focusRequest.componentId) : runtime.manipulator;
+    if (target) frameObject(runtime, target);
+  }, [focusRequest, model]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;

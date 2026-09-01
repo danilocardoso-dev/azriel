@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { analyzeModel, prepareModelRoot } from "./modelMath";
+import { ComponentService } from "./componentService";
 import type { ModelFormat, ModelMetadata, ModelNode } from "./types";
 import type { ModelCoreState } from "./types";
 
@@ -10,6 +11,7 @@ export interface LoadedEngineeringModel {
   root: THREE.Group;
   metadata: ModelMetadata;
   nodes: ModelNode[];
+  components: ComponentService;
 }
 
 const extensionPattern = /\.([^.]+)$/;
@@ -79,10 +81,12 @@ export async function loadEngineeringModelBytes(bytes: Uint8Array, fileName: str
     disposeObjectResources(source);
     throw new Error("O modelo não contém geometria 3D utilizável.");
   }
+  const components = new ComponentService(source);
   return {
     root: prepareModelRoot(source, analysis.center, analysis.normalizationScale),
     metadata: { name: fileName, format, ...analysis.metadata },
     nodes: analysis.nodes,
+    components,
   };
 }
 

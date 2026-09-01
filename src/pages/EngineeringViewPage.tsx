@@ -10,7 +10,7 @@ import { evaluateGesture } from "../engineering/gestureEngine";
 import { HandTrackingService } from "../engineering/handTrackingService";
 import { ModelService, resolveModelCoreState, type LoadedEngineeringModel } from "../engineering/modelService";
 import { normalizedToViewport, smoothLandmark } from "../engineering/trackingMath";
-import type { CameraState, EngineeringCalibration, EngineeringCalibrationInput, EngineeringObjectSnapshot, GestureState, HandLandmark, HandSide, ManipulationMode, ModelCoreState, TrackedHand, ViewportPoint } from "../engineering/types";
+import type { CameraState, EngineeringCalibration, EngineeringCalibrationInput, EngineeringInteractionScope, EngineeringObjectSnapshot, GestureState, HandLandmark, HandSide, ManipulationMode, ModelComponent, ModelCoreState, TrackedHand, ViewportPoint } from "../engineering/types";
 import { engineeringRepository } from "../repositories/engineeringRepository";
 
 const futureInterfaces = [
@@ -50,6 +50,7 @@ export function EngineeringViewPage() {
   const [debugVisible, setDebugVisible] = useState(false);
   const [rendererReady, setRendererReady] = useState(false);
   const [mode, setMode] = useState<ManipulationMode>("move");
+  const [interactionScope, setInteractionScope] = useState<EngineeringInteractionScope>("model");
   const [objectSnapshot, setObjectSnapshot] = useState<EngineeringObjectSnapshot>(initialObject);
   const [resetSignal, setResetSignal] = useState(0);
   const [loadedModel, setLoadedModel] = useState<LoadedEngineeringModel | null>(null);
@@ -57,6 +58,13 @@ export function EngineeringViewPage() {
   const [wireframe, setWireframe] = useState(false);
   const [gridVisible, setGridVisible] = useState(true);
   const [axesVisible, setAxesVisible] = useState(true);
+  const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null);
+  const [targetedComponentId, setTargetedComponentId] = useState<string | null>(null);
+  const [componentRevision, setComponentRevision] = useState(0);
+  const [expandedComponentIds, setExpandedComponentIds] = useState<Set<string>>(new Set());
+  const [componentSearch, setComponentSearch] = useState("");
+  const [boundingBoxVisible, setBoundingBoxVisible] = useState(true);
+  const [focusRequest, setFocusRequest] = useState({ sequence: 0, componentId: null as string | null });
   const [calibration, setCalibration] = useState<EngineeringCalibration>(() => defaultCalibration());
   const [savingCalibration, setSavingCalibration] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -170,6 +178,11 @@ export function EngineeringViewPage() {
       const previous = loadedModelRef.current;
       loadedModelRef.current = next;
       setLoadedModel(next);
+      setSelectedComponentId(null);
+      setTargetedComponentId(null);
+      setComponentSearch("");
+      setExpandedComponentIds(new Set(next.components.list().filter((component) => component.depth < 2).map((component) => component.id)));
+      setComponentRevision((revision) => revision + 1);
       setModelState(resolveModelCoreState("load_succeeded", true));
       if (previous) window.setTimeout(() => modelService.current.unload(previous), 0);
     } catch (reason) {
@@ -182,6 +195,10 @@ export function EngineeringViewPage() {
     const previous = loadedModelRef.current;
     loadedModelRef.current = null;
     setLoadedModel(null);
+    setSelectedComponentId(null);
+    setTargetedComponentId(null);
+    setComponentSearch("");
+    setExpandedComponentIds(new Set());
     setModelState(resolveModelCoreState("unloaded", false));
     setError(null);
     if (previous) window.setTimeout(() => modelService.current.unload(previous), 0);
@@ -233,6 +250,52 @@ export function EngineeringViewPage() {
 
   const handBySide = (side: HandSide) => trackedHands.find((hand) => hand.id === side);
 
+  const components = useMemo(() => { void componentRevision; return loadedModel?.components.list() ?? []; }, [loadedModel, componentRevision]);
+  const selectedComponent = useMemo(() => { void componentRevision; return loadedModel?.components.get(selectedComponentId) ?? null; }, [loadedModel, selectedComponentId, componentRevision]);
+  const selectedParent = selectedComponent?.parentId ? loadedModel?.components.get(selectedComponent.parentId) : null;
+  const isolationId = loadedModel?.components.getIsolationId() ?? null;
+  const searchMatches = useMemo(() => { void componentRevision; return loadedModel?.components.search(componentSearch) ?? []; }, [loadedModel, componentSearch, componentRevision]);
+  const searchVisibleIds = useMemo(() => {
+    if (!loadedModel || !componentSearch.trim()) return null;
+    const ids = new Set<string>();
+    searchMatches.forEach((component) => {
+      ids.add(component.id);
+      loadedModel.components.ancestors(component.id).forEach((id) => ids.add(id));
+    });
+    return ids;
+  }, [loadedModel, componentSearch, searchMatches]);
+  const visibleComponents = useMemo(() => components.filter((component) => {
+    if (searchVisibleIds) return searchVisibleIds.has(component.id);
+    return loadedModel?.components.ancestors(component.id).every((id) => expandedComponentIds.has(id));
+  }), [components, expandedComponentIds, loadedModel, searchVisibleIds]);
+
+  const selectComponent = useCallback((id: string | null) => {
+    setSelectedComponentId(id);
+    if (!id || !loadedModelRef.current) return;
+    setExpandedComponentIds((current) => new Set([...current, ...loadedModelRef.current!.components.ancestors(id)]));
+  }, []);
+
+  const mutateComponents = useCallback((operation: (model: LoadedEngineeringModel) => void) => {
+    const current = loadedModelRef.current;
+    if (!current) return;
+    operation(current);
+    setTargetedComponentId(null);
+    setComponentRevision((revision) => revision + 1);
+  }, []);
+
+  const focusComponent = useCallback((componentId: string | null) => {
+    setFocusRequest((current) => ({ sequence: current.sequence + 1, componentId }));
+  }, []);
+
+  const toggleExpanded = useCallback((component: ModelComponent) => {
+    if (!component.children.length) return;
+    setExpandedComponentIds((current) => {
+      const next = new Set(current);
+      if (next.has(component.id)) next.delete(component.id); else next.add(component.id);
+      return next;
+    });
+  }, []);
+
   return (
     <section className="engineering-module">
       <ModuleIntro code="ENG-03" title="Engineering View" description="Modelos 3D reais e manipulação espacial processados localmente." metric={`MODEL CORE // ${modelStateLabel[modelState]}`} />
@@ -251,7 +314,10 @@ export function EngineeringViewPage() {
       </div>
 
       <div className="engineering-mode-switch" aria-label="Modo de manipulação">
-        <span>MODE</span>
+        <span>SCOPE</span>
+        {(["model", "component"] as const).map((candidate) => <button key={candidate} className={interactionScope === candidate ? "active" : ""} onClick={() => { setInteractionScope(candidate); setTargetedComponentId(null); }}>{candidate.toUpperCase()}</button>)}
+        <i />
+        <span>MODEL CONTROL</span>
         {(["move", "rotate", "scale"] as const).map((candidate) => <button key={candidate} className={mode === candidate ? "active" : ""} onClick={() => setMode(candidate)}>{candidate.toUpperCase()}</button>)}
         <button className={wireframe ? "active" : ""} onClick={() => setWireframe((active) => !active)}>WIREFRAME {wireframe ? "ON" : "OFF"}</button>
         <button className={gridVisible ? "active" : ""} onClick={() => setGridVisible((visible) => !visible)}>GRID {gridVisible ? "ON" : "OFF"}</button>
@@ -262,7 +328,7 @@ export function EngineeringViewPage() {
         <section className="engineering-canvas" aria-label="Viewport tridimensional do Engineering Core">
           <header><span>VIEWPORT // PRIMARY</span><strong>{loadedModel?.metadata.name ?? "TEST-01"} // {objectSnapshot.status.toUpperCase()}</strong></header>
           <div className="engineering-canvas__stage">
-            <EngineeringScene hands={sceneHands} mode={mode} calibration={calibration} model={loadedModel} wireframe={wireframe} gridVisible={gridVisible} axesVisible={axesVisible} resetSignal={resetSignal} onObjectChange={setObjectSnapshot} onRendererReady={setRendererReady} />
+            <EngineeringScene hands={sceneHands} mode={mode} interactionScope={interactionScope} calibration={calibration} model={loadedModel} wireframe={wireframe} gridVisible={gridVisible} axesVisible={axesVisible} resetSignal={resetSignal} selectedComponentId={selectedComponentId} targetedComponentId={targetedComponentId} componentRevision={componentRevision} boundingBoxVisible={boundingBoxVisible} focusRequest={focusRequest} onComponentTarget={setTargetedComponentId} onComponentSelect={selectComponent} onObjectChange={setObjectSnapshot} onRendererReady={setRendererReady} />
             <span className="engineering-canvas__axis engineering-canvas__axis--x">AXIS X // INTERACTION PLANE</span>
             <span className="engineering-canvas__axis engineering-canvas__axis--y">AXIS Y // SCREEN SPACE</span>
             {sceneHands.map((hand) => <div key={hand.id} className={`engineering-hand-cursor engineering-hand-cursor--${hand.id} ${hand.gesture === "pinch" ? "engineering-hand-cursor--pinch" : ""}`} style={{ left: `${hand.cursor.x * 100}%`, top: `${hand.cursor.y * 100}%` }} aria-hidden="true"><i /><small>{hand.id.toUpperCase()}</small></div>)}
@@ -275,7 +341,7 @@ export function EngineeringViewPage() {
               <span>SCALE</span><strong>{objectSnapshot.scale.toFixed(2)}</strong>
             </div>
           </div>
-          <footer><span>MODE {mode.toUpperCase()}</span><span>MOUSE DRAG ORBIT // WHEEL ZOOM</span><span>RENDERER {rendererReady ? "ONLINE" : "ERROR"}</span></footer>
+          <footer><span>SCOPE {interactionScope.toUpperCase()} // {mode.toUpperCase()}</span><span>MOUSE DRAG ORBIT // WHEEL ZOOM</span><span>RENDERER {rendererReady ? "ONLINE" : "ERROR"}</span></footer>
         </section>
 
         <aside className="engineering-module__rail">
@@ -296,8 +362,53 @@ export function EngineeringViewPage() {
           </section>
 
           {loadedModel && <section className="engineering-register engineering-model-tree">
-            <header><strong>MODEL STRUCTURE</strong><span>{loadedModel.nodes.length} NODES</span></header>
-            <div>{loadedModel.nodes.map((node) => <article key={node.id} style={{ paddingLeft: `${10 + Math.min(node.depth, 6) * 12}px` }}><span>{node.type}</span><strong>{node.name}</strong><small>{node.children.length || "—"}</small></article>)}</div>
+            <header><strong>MODEL STRUCTURE</strong><span>{components.length} COMPONENTS</span></header>
+            <label className="engineering-component-search">
+              <span>BUSCAR COMPONENTE</span>
+              <input value={componentSearch} onChange={(event) => setComponentSearch(event.target.value)} placeholder="Nome da peça..." />
+            </label>
+            <div>{visibleComponents.map((component) => {
+              const state = loadedModel.components.state(component.id, targetedComponentId, selectedComponentId);
+              const expanded = expandedComponentIds.has(component.id) || Boolean(searchVisibleIds);
+              return <article key={component.id} className={selectedComponentId === component.id ? "selected" : ""} data-state={state} style={{ paddingLeft: `${8 + Math.min(component.depth, 7) * 12}px` }}>
+                <button className="engineering-tree-toggle" onClick={() => toggleExpanded(component)} disabled={!component.children.length} aria-label={expanded ? "Recolher componente" : "Expandir componente"}>{component.children.length ? (expanded ? "−" : "+") : "·"}</button>
+                <button className="engineering-tree-select" onClick={() => selectComponent(component.id)} onDoubleClick={() => focusComponent(component.id)}>
+                  <span>{component.type}</span><strong>{component.name}</strong><small>{state.toUpperCase()}</small>
+                </button>
+              </article>;
+            })}</div>
+          </section>}
+
+          {loadedModel && <section className="engineering-register engineering-component-inspector">
+            <header><strong>COMPONENT INSPECTOR</strong><span>{selectedComponent ? "SELECTED" : "NONE"}</span></header>
+            {selectedComponent ? <>
+              <dl>
+                <div><dt>NAME</dt><dd>{selectedComponent.name}</dd></div>
+                <div><dt>TYPE</dt><dd>{selectedComponent.type}</dd></div>
+                <div><dt>PARENT</dt><dd>{selectedParent?.name ?? "ROOT"}</dd></div>
+                <div><dt>CHILDREN</dt><dd>{selectedComponent.children.length}</dd></div>
+                <div><dt>MESHES</dt><dd>{selectedComponent.meshCount}</dd></div>
+                <div><dt>VISIBLE</dt><dd>{selectedComponent.visible ? "YES" : "NO"}</dd></div>
+                <div><dt>VERTICES</dt><dd>{selectedComponent.vertices.toLocaleString("pt-BR")}</dd></div>
+                <div><dt>TRIANGLES</dt><dd>{selectedComponent.triangles.toLocaleString("pt-BR")}</dd></div>
+                <div><dt>POSITION</dt><dd>{selectedComponent.originalPosition.x.toFixed(2)} / {selectedComponent.originalPosition.y.toFixed(2)} / {selectedComponent.originalPosition.z.toFixed(2)}</dd></div>
+                <div><dt>ROTATION</dt><dd>{selectedComponent.originalRotation.x.toFixed(2)} / {selectedComponent.originalRotation.y.toFixed(2)} / {selectedComponent.originalRotation.z.toFixed(2)}</dd></div>
+                <div><dt>SCALE</dt><dd>{selectedComponent.originalScale.x.toFixed(2)} / {selectedComponent.originalScale.y.toFixed(2)} / {selectedComponent.originalScale.z.toFixed(2)}</dd></div>
+                <div><dt>DIMENSIONS</dt><dd>{selectedComponent.dimensions.x.toFixed(2)} × {selectedComponent.dimensions.y.toFixed(2)} × {selectedComponent.dimensions.z.toFixed(2)}</dd></div>
+              </dl>
+              <div className="engineering-material-list">
+                <strong>MATERIALS</strong>
+                {selectedComponent.materials.length ? selectedComponent.materials.map((material, index) => <p key={`${material.name}-${index}`}><span>{material.name}</span><small>{material.type} // {material.color ?? "NO COLOR"} // TEXTURE {material.textured ? "YES" : "NO"}</small></p>) : <p><span>NONE</span></p>}
+              </div>
+              <div className="engineering-component-actions">
+                <button onClick={() => mutateComponents((current) => selectedComponent.visible ? current.components.hide(selectedComponent.id) : current.components.show(selectedComponent.id))}>{selectedComponent.visible ? "OCULTAR" : "MOSTRAR"}</button>
+                <button className={isolationId ? "active" : ""} onClick={() => mutateComponents((current) => isolationId ? current.components.exitIsolation() : current.components.isolate(selectedComponent.id))}>{isolationId ? "SAIR DO ISOLAMENTO" : "ISOLAR"}</button>
+                <button onClick={() => focusComponent(selectedComponent.id)}>FOCAR</button>
+                <button className={boundingBoxVisible ? "active" : ""} onClick={() => setBoundingBoxVisible((visible) => !visible)}>BOUNDING BOX {boundingBoxVisible ? "ON" : "OFF"}</button>
+                <button onClick={() => focusComponent(null)}>FOCAR MODELO</button>
+                <button onClick={() => { mutateComponents((current) => current.components.restore()); selectComponent(null); }}>RESTAURAR COMPONENTES</button>
+              </div>
+            </> : <p className="engineering-model-empty">SELECIONE UMA PEÇA NA ÁRVORE OU NO VIEWPORT</p>}
           </section>}
 
           <section className="engineering-register engineering-tracking-status">
@@ -311,6 +422,7 @@ export function EngineeringViewPage() {
               <div><dt>GESTURE L</dt><dd data-state={gestures.left}>{gestures.left.toUpperCase()}</dd></div>
               <div><dt>GESTURE R</dt><dd data-state={gestures.right}>{gestures.right.toUpperCase()}</dd></div>
               <div><dt>MODE</dt><dd>{mode.toUpperCase()}</dd></div>
+              <div><dt>SCOPE</dt><dd>{interactionScope.toUpperCase()}</dd></div>
               <div><dt>FPS</dt><dd>{fps || "—"}</dd></div>
               <div><dt>CALIBRATION</dt><dd>V0.2.1 / PENDING</dd></div>
             </dl>
@@ -329,6 +441,7 @@ export function EngineeringViewPage() {
             <dl>
               <div><dt>MODELO</dt><dd data-state={modelState}>{loadedModel ? "ONLINE" : "NÃO CARREGADO"}</dd></div><div><dt>TELEMETRIA</dt><dd>DESVINCULADA</dd></div>
               <div><dt>RENDERIZADOR 3D</dt><dd>{rendererReady ? "ONLINE" : "ERROR"}</dd></div><div><dt>HAND TRACKING</dt><dd>{trackingOnline ? "ONLINE" : "OFFLINE"}</dd></div>
+              <div><dt>COMPONENT CORE</dt><dd>{loadedModel ? "ONLINE" : "OFFLINE"}</dd></div><div><dt>SELECTED</dt><dd>{selectedComponent?.name ?? "NONE"}</dd></div>
             </dl>
           </section>
         </aside>
