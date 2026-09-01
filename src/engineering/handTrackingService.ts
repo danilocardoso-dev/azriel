@@ -1,6 +1,7 @@
 import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
 import { ENGINEERING_CONFIG } from "./config";
-import type { TrackedHand, TrackingFrame } from "./types";
+import { handPositions, stabilizeHandIdentity, type PreviousHandPositions, type RawTrackedHand } from "./handIdentity";
+import type { HandSide, TrackingFrame } from "./types";
 
 export type TrackingListener = (frame: TrackingFrame) => void;
 export type TrackingErrorListener = (error: Error) => void;
@@ -18,6 +19,7 @@ export class HandTrackingService {
   private fpsFrames = 0;
   private fps = 0;
   private running = false;
+  private previousHands: PreviousHandPositions = {};
 
   async initialize(): Promise<void> {
     if (this.landmarker) return;
@@ -28,7 +30,7 @@ export class HandTrackingService {
         delegate: "CPU",
       },
       runningMode: "VIDEO",
-      numHands: 1,
+      numHands: 2,
       minHandDetectionConfidence: ENGINEERING_CONFIG.minimumConfidence,
       minHandPresenceConfidence: ENGINEERING_CONFIG.minimumConfidence,
       minTrackingConfidence: ENGINEERING_CONFIG.minimumConfidence,
@@ -44,6 +46,7 @@ export class HandTrackingService {
     this.fpsStartedAt = performance.now();
     this.fpsFrames = 0;
     this.fps = 0;
+    this.previousHands = {};
 
     const interval = 1000 / ENGINEERING_CONFIG.maximumTrackingFps;
     const loop = (timestamp: number) => {
@@ -54,7 +57,10 @@ export class HandTrackingService {
           this.lastVideoTime = video.currentTime;
           this.lastInferenceAt = timestamp;
           this.updateFps(timestamp);
-          listener({ hand: this.toTrackedHand(result.landmarks[0], result.handedness[0]?.[0]), fps: this.fps });
+          const rawHands = result.landmarks.map((landmarks, index) => this.toRawTrackedHand(landmarks, result.handedness[index]?.[0]));
+          const hands = stabilizeHandIdentity(rawHands, this.previousHands);
+          this.previousHands = handPositions(hands);
+          listener({ hands, fps: this.fps });
         } catch (reason) {
           this.stopLoop();
           onError?.(reason instanceof Error ? reason : new Error(String(reason)));
@@ -70,6 +76,7 @@ export class HandTrackingService {
     this.stopLoop();
     this.landmarker?.close();
     this.landmarker = null;
+    this.previousHands = {};
   }
 
   private stopLoop(): void {
@@ -88,15 +95,14 @@ export class HandTrackingService {
     }
   }
 
-  private toTrackedHand(
-    landmarks: ReadonlyArray<{ x: number; y: number; z: number }> | undefined,
+  private toRawTrackedHand(
+    landmarks: ReadonlyArray<{ x: number; y: number; z: number }>,
     handedness: { categoryName: string; score: number } | undefined,
-  ): TrackedHand | null {
-    if (!landmarks?.length) return null;
+  ): RawTrackedHand {
     const side = handedness?.categoryName.toLowerCase();
     return {
       landmarks: landmarks.map(({ x, y, z }) => ({ x, y, z })),
-      handedness: side === "left" || side === "right" ? side : undefined,
+      handedness: side === "left" || side === "right" ? side as HandSide : undefined,
       confidence: handedness?.score,
     };
   }

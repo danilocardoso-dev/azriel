@@ -4,6 +4,8 @@ pub mod automation_models;
 pub mod automation_repository;
 pub mod daily_models;
 pub mod daily_repository;
+pub mod engineering_models;
+pub mod engineering_repository;
 pub mod models;
 pub mod repository;
 pub mod routine_models;
@@ -63,6 +65,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         8,
         "routines",
         include_str!("../../migrations/0008_routines.sql"),
+    ),
+    (
+        9,
+        "engineering_core",
+        include_str!("../../migrations/0009_engineering_core.sql"),
     ),
 ];
 
@@ -374,6 +381,44 @@ mod tests {
             connection
                 .query_row("SELECT COUNT(*) FROM routines", [], |row| row
                     .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn migration_nine_preserves_routines() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 8).unwrap();
+        repository::seed(&mut connection).unwrap();
+        connection
+            .execute(
+                "INSERT INTO routines(id,name) VALUES ('keep-routine','Preservar')",
+                [],
+            )
+            .unwrap();
+
+        apply_migrations_through(&mut connection, 9).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 9);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM routines WHERE id='keep-routine'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT calibrated FROM engineering_calibration WHERE id=1",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
                 .unwrap(),
             0
         );

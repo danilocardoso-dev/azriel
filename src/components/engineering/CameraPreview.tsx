@@ -4,13 +4,15 @@ import type { TrackedHand } from "../../engineering/types";
 
 interface CameraPreviewProps {
   videoRef: RefObject<HTMLVideoElement | null>;
-  hand: TrackedHand | null;
+  hands: TrackedHand[];
   visible: boolean;
   debug: boolean;
   fps: number;
 }
 
-export function CameraPreview({ videoRef, hand, visible, debug, fps }: CameraPreviewProps) {
+const handColors = { left: "#46e9ff", right: "#4bdb8f" } as const;
+
+export function CameraPreview({ videoRef, hands, visible, debug, fps }: CameraPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -19,26 +21,28 @@ export function CameraPreview({ videoRef, hand, visible, debug, fps }: CameraPre
     const context = canvas.getContext("2d");
     if (!context) return;
     context.clearRect(0, 0, canvas.width, canvas.height);
-    if (!debug || !hand) return;
+    if (!debug || !hands.length) return;
 
-    context.strokeStyle = "rgba(70, 233, 255, .68)";
-    context.fillStyle = "#46e9ff";
     context.lineWidth = 1.5;
-    for (const [start, end] of HAND_CONNECTIONS) {
-      const first = hand.landmarks[start];
-      const second = hand.landmarks[end];
-      if (!first || !second) continue;
-      context.beginPath();
-      context.moveTo(first.x * canvas.width, first.y * canvas.height);
-      context.lineTo(second.x * canvas.width, second.y * canvas.height);
-      context.stroke();
+    for (const hand of hands) {
+      context.strokeStyle = handColors[hand.id];
+      context.fillStyle = handColors[hand.id];
+      for (const [start, end] of HAND_CONNECTIONS) {
+        const first = hand.landmarks[start];
+        const second = hand.landmarks[end];
+        if (!first || !second) continue;
+        context.beginPath();
+        context.moveTo(first.x * canvas.width, first.y * canvas.height);
+        context.lineTo(second.x * canvas.width, second.y * canvas.height);
+        context.stroke();
+      }
+      for (const landmark of hand.landmarks) {
+        context.beginPath();
+        context.arc(landmark.x * canvas.width, landmark.y * canvas.height, 2.4, 0, Math.PI * 2);
+        context.fill();
+      }
     }
-    for (const landmark of hand.landmarks) {
-      context.beginPath();
-      context.arc(landmark.x * canvas.width, landmark.y * canvas.height, 2.4, 0, Math.PI * 2);
-      context.fill();
-    }
-  }, [debug, hand]);
+  }, [debug, hands]);
 
   return (
     <section className="camera-preview">
@@ -48,8 +52,8 @@ export function CameraPreview({ videoRef, hand, visible, debug, fps }: CameraPre
         <canvas ref={canvasRef} width={640} height={480} aria-hidden={!debug} />
         {!visible && <p>PREVIEW OCULTO<br /><small>TRACKING PODE CONTINUAR ATIVO</small></p>}
         {debug && visible && <div className="camera-preview__debug">
-          <span>{hand ? hand.handedness?.toUpperCase() ?? "HAND" : "NO HAND"}</span>
-          <span>{hand?.confidence !== undefined ? `${Math.round(hand.confidence * 100)}%` : "—"}</span>
+          <span>{hands.length ? hands.map((hand) => hand.id.toUpperCase()).join(" + ") : "NO HAND"}</span>
+          <span>{hands.length ? hands.map((hand) => hand.confidence !== undefined ? `${Math.round(hand.confidence * 100)}%` : "—").join(" / ") : "—"}</span>
           <span>{fps} FPS</span>
         </div>}
       </div>

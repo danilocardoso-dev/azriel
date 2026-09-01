@@ -5,6 +5,7 @@ mod automation_policy;
 mod commands;
 mod daily_commands;
 mod database;
+mod engineering_commands;
 mod git_monitor;
 mod ollama;
 mod routine_commands;
@@ -80,6 +81,9 @@ pub fn run() {
             daily_commands::archive_note,
             daily_commands::delete_note,
             daily_commands::daily_counters,
+            engineering_commands::get_engineering_calibration,
+            engineering_commands::update_engineering_calibration,
+            engineering_commands::reset_engineering_calibration,
             ai_commands::get_ai_settings,
             ai_commands::update_ai_settings,
             ai_commands::list_conversations,

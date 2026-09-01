@@ -2,6 +2,13 @@ export const ENGINEERING_CONFIG = {
   pinchStartThreshold: 0.045,
   pinchReleaseThreshold: 0.065,
   smoothingAlpha: 0.38,
+  rotationSmoothingAlpha: 0.32,
+  scaleSmoothingAlpha: 0.28,
+  rotationSensitivity: 3.2,
+  minimumScale: 0.45,
+  maximumScale: 2.4,
+  comfortableHandDistance: 0.42,
+  workspaceBounds: { minX: -3.25, maxX: 3.25, minY: 0.15, maxY: 3.5 },
   minimumConfidence: 0.55,
   maximumTrackingFps: 24,
   cameraWidth: 640,
@@ -11,7 +18,15 @@ export const ENGINEERING_CONFIG = {
 export const HAND_LANDMARK_INDEX = {
   wrist: 0,
   thumbTip: 4,
+  indexMcp: 5,
+  indexPip: 6,
   indexTip: 8,
+  middlePip: 10,
+  middleTip: 12,
+  ringPip: 14,
+  ringTip: 16,
+  pinkyPip: 18,
+  pinkyTip: 20,
 } as const;
 
 export const HAND_CONNECTIONS: ReadonlyArray<readonly [number, number]> = [

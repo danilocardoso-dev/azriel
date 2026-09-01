@@ -1,14 +1,20 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { InteractionController } from "../../engineering/interactionController";
-import type { EngineeringObjectState, GestureState, ViewportPoint } from "../../engineering/types";
+import type { EngineeringCalibration, EngineeringObjectSnapshot, EngineeringObjectState, GestureState, HandInteractionPoint, HandSide, ManipulationMode, ViewportPoint } from "../../engineering/types";
+
+export interface EngineeringHandControl {
+  id: HandSide;
+  gesture: GestureState;
+  cursor: ViewportPoint;
+}
 
 interface EngineeringSceneProps {
-  cursor: ViewportPoint | null;
-  gesture: GestureState;
-  handDetected: boolean;
+  hands: EngineeringHandControl[];
+  mode: ManipulationMode;
+  calibration: EngineeringCalibration;
   resetSignal: number;
-  onObjectStatusChange: (status: EngineeringObjectState) => void;
+  onObjectChange: (snapshot: EngineeringObjectSnapshot) => void;
   onRendererReady: (ready: boolean) => void;
 }
 
@@ -30,10 +36,10 @@ const colorByStatus: Record<EngineeringObjectState, { color: number; emissive: n
   grabbed: { color: 0x4bdb8f, emissive: 0x0b5030 },
 };
 
-export function EngineeringScene({ cursor, gesture, handDetected, resetSignal, onObjectStatusChange, onRendererReady }: EngineeringSceneProps) {
+export function EngineeringScene({ hands, mode, calibration, resetSignal, onObjectChange, onRendererReady }: EngineeringSceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const runtimeRef = useRef<SceneRuntime | null>(null);
-  const lastStatusRef = useRef<EngineeringObjectState>("ready");
+  const lastSnapshotRef = useRef<string>("");
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -108,40 +114,51 @@ export function EngineeringScene({ cursor, gesture, handDetected, resetSignal, o
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime) return;
-    const pointer = cursor ? new THREE.Vector2(cursor.ndcX, cursor.ndcY) : null;
-    let hovered = false;
-    let cursorWorld = null;
-    if (pointer) {
+    runtime.controller.updateSettings({
+      rotationSensitivity: calibration.rotationSensitivity,
+      minScale: calibration.minScale,
+      maxScale: calibration.maxScale,
+    });
+    const interactionHands: HandInteractionPoint[] = hands.map((hand) => {
+      const pointer = new THREE.Vector2(hand.cursor.ndcX, hand.cursor.ndcY);
       runtime.raycaster.setFromCamera(pointer, runtime.camera);
-      hovered = runtime.raycaster.intersectObject(runtime.mesh, false).length > 0;
+      const hovered = (hand.gesture === "point" || hand.gesture === "pinch") && runtime.raycaster.intersectObject(runtime.mesh, false).length > 0;
       const intersection = new THREE.Vector3();
-      if (runtime.raycaster.ray.intersectPlane(runtime.dragPlane, intersection)) cursorWorld = { x: intersection.x, y: intersection.y, z: 0 };
-    }
+      const world = runtime.raycaster.ray.intersectPlane(runtime.dragPlane, intersection)
+        ? { x: intersection.x, y: intersection.y, z: 0 }
+        : null;
+      return { id: hand.id, gesture: hand.gesture, viewport: hand.cursor, world, hovered };
+    });
 
-    const snapshot = runtime.controller.update({ handDetected, gesture, hovered, cursorWorld });
+    const snapshot = runtime.controller.update({ mode, hands: interactionHands });
     runtime.mesh.position.set(snapshot.position.x, snapshot.position.y, snapshot.position.z);
+    runtime.mesh.rotation.set(snapshot.rotation.x, snapshot.rotation.y, snapshot.rotation.z);
+    runtime.mesh.scale.setScalar(snapshot.scale);
     const colors = colorByStatus[snapshot.status];
     runtime.mesh.material.color.setHex(colors.color);
     runtime.mesh.material.emissive.setHex(colors.emissive);
     runtime.renderer.render(runtime.scene, runtime.camera);
-    if (lastStatusRef.current !== snapshot.status) {
-      lastStatusRef.current = snapshot.status;
-      onObjectStatusChange(snapshot.status);
+    const serialized = JSON.stringify(snapshot);
+    if (lastSnapshotRef.current !== serialized) {
+      lastSnapshotRef.current = serialized;
+      onObjectChange(snapshot);
     }
-  }, [cursor, gesture, handDetected, onObjectStatusChange]);
+  }, [hands, mode, calibration, onObjectChange]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime) return;
     const snapshot = runtime.controller.reset();
     runtime.mesh.position.set(snapshot.position.x, snapshot.position.y, snapshot.position.z);
+    runtime.mesh.rotation.set(snapshot.rotation.x, snapshot.rotation.y, snapshot.rotation.z);
+    runtime.mesh.scale.setScalar(snapshot.scale);
     const colors = colorByStatus.ready;
     runtime.mesh.material.color.setHex(colors.color);
     runtime.mesh.material.emissive.setHex(colors.emissive);
     runtime.renderer.render(runtime.scene, runtime.camera);
-    lastStatusRef.current = "ready";
-    onObjectStatusChange("ready");
-  }, [resetSignal, onObjectStatusChange]);
+    lastSnapshotRef.current = JSON.stringify(snapshot);
+    onObjectChange(snapshot);
+  }, [resetSignal, onObjectChange]);
 
   return <canvas ref={canvasRef} className="engineering-scene" aria-label="Cena 3D do objeto TEST-01" />;
 }
