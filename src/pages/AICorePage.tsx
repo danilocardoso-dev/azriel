@@ -49,7 +49,7 @@ export function AICorePage() {
           {!status?.available && !loading && <div className="ai-terminal__offline"><strong>AI CORE OFFLINE</strong><p>{status?.error || "Ollama não encontrado em localhost:11434."}</p><small>Os demais módulos permanecem operacionais. Verifique a conexão em Configurações.</small></div>}
           <div ref={endRef} />
         </div>
-        <form className="ai-composer" onSubmit={submit}><span>&gt;</span><textarea rows={2} placeholder="Digite um comando para o Azriel..." value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} disabled={!status?.available || sending} /><button disabled={!status?.available || sending || !input.trim()}>{sending ? "PROCESSANDO" : "ENVIAR"}</button></form>
+        <form className="ai-composer" onSubmit={submit}><span>&gt;</span><textarea rows={5} placeholder="Digite um comando para o Azriel..." value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} disabled={!status?.available || sending} /><button disabled={!status?.available || sending || !input.trim()}>{sending ? "PROCESSANDO" : "ENVIAR"}</button></form>
       </section>
     </div>
     {conversationToDelete && <DeleteConfirmationDialog kind="conversa" title={conversationToDelete.title} description="A conversa e todas as mensagens dela serão removidas definitivamente do banco local. Esta ação não poderá ser desfeita." busy={deleting} onCancel={() => setConversationToDelete(null)} onConfirm={() => void removeConversation()} />}

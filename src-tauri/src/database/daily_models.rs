@@ -62,4 +62,5 @@ pub struct DailyCounters {
     pub overdue: i64,
     pub priority: i64,
     pub notes: i64,
+    pub completed: i64,
 }

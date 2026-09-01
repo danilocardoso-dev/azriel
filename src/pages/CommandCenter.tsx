@@ -1,17 +1,16 @@
-import { AzrielCore } from "../components/azriel/AzrielCore";
+import { CoreTopology } from "../components/azriel/CoreTopology";
 import { HudPanel } from "../components/hud/HudPanel";
 import { Meter } from "../components/hud/Meter";
 import { GapDiagnostics } from "../components/knowledge/GapDiagnostics";
 import { StarkChart } from "../components/knowledge/StarkChart";
 import { ModuleIntro } from "../components/layout/ModuleIntro";
-import { useAzrielData } from "../contexts/useAzrielData";
-import { azrielStates } from "../data/system";
-import type { AzrielState } from "../types";
-import { useDailyOperations } from "../contexts/useDailyOperations";
 import { useAI } from "../contexts/useAI";
+import { useAutomation } from "../contexts/useAutomation";
+import { useAzrielData } from "../contexts/useAzrielData";
+import { useDailyOperations } from "../contexts/useDailyOperations";
 import { useSystem } from "../contexts/useSystem";
 import { formatBytes } from "../services/systemService";
-import { useAutomation } from "../contexts/useAutomation";
+import type { AzrielState } from "../types";
 
 interface CommandCenterProps {
   coreState: AzrielState;
@@ -30,104 +29,102 @@ export function CommandCenter({ coreState, onOpenAI, onOpenDaily, onNewProject, 
   const { state: automationState, actions, applications, routines, routineHistory } = useAutomation();
   const routinesToday = routineHistory.filter((item) => new Date(item.startedAt).toDateString() === new Date().toDateString()).length;
   const memoryPercent = snapshot && snapshot.memory.totalBytes > 0 ? Math.round(snapshot.memory.usedBytes / snapshot.memory.totalBytes * 100) : 0;
+  const primaryStorage = snapshot?.storage[0];
+  const storagePercent = primaryStorage && primaryStorage.totalBytes > 0
+    ? Math.round((primaryStorage.totalBytes - primaryStorage.availableBytes) / primaryStorage.totalBytes * 100) : null;
+  const automationOnline = automationState !== "error" && automationState !== "offline";
   const average = (field: "coverage" | "depth") => knowledgeAreas.length
     ? Math.round(knowledgeAreas.reduce((total, area) => total + area[field], 0) / knowledgeAreas.length) : 0;
 
   return (
     <>
-      <ModuleIntro code="CMD-01" title="Command Center" description="Leitura consolidada da formação, dos projetos e das lacunas do operador." metric="V0.8.1 // ROTINAS" />
+      <ModuleIntro code="CMD-01" title="Command Center" description="Estação integrada de pesquisa, engenharia e inteligência operacional." metric="ENGINEERING HUD // EXP-01" />
       <nav className="command-quick-actions" aria-label="Ações rápidas"><span>CAPTURA OPERACIONAL</span><button onClick={onNewProject}>＋ NOVO PROJETO</button><button onClick={onNewTask}>＋ NOVA TAREFA</button><button onClick={onNewNote}>＋ NOVA NOTA</button></nav>
-      <div className="command-grid">
-        <div className="command-grid__left">
-          <HudPanel title="Perfil do operador" code="ID/AZ">
-            <div className="operator-card">
-              <span className="eyebrow">OPERADOR PRINCIPAL</span>
-              <h3>AZRIEL</h3>
-              <p>Conhecimento · Engenharia · Inteligência · Impacto</p>
-              <Meter label="Cobertura" value={average("coverage")} />
-              <Meter label="Profundidade" value={average("depth")} />
-              <Meter label="Integração" value={databaseInfo?.integrationValue ?? 0} />
-            </div>
-          </HudPanel>
-          <HudPanel title="Projetos" code="07 NÚCLEOS">
-            <div className="signal-list">
-              {projects.map((project, index) => (
-                <div className="signal-row" key={project.id}>
-                  <span>P-{String(index + 1).padStart(2, "0")}</span>
-                  <strong>{project.name}</strong>
-                  <i data-state={project.status}>{project.status}</i>
-                </div>
-              ))}
-            </div>
-          </HudPanel>
+
+      <div className="engineering-command">
+        <div className="engineering-command__deck">
+          <aside className="engineering-command__rail engineering-command__rail--left">
+            <section className="engineering-instrument operator-instrument">
+              <header><span>OPR-00</span><strong>OPERADOR</strong><i>ID / AZ</i></header>
+              <div className="operator-instrument__identity"><small>OPERADOR PRINCIPAL</small><strong>AZRIEL</strong><span>KNOWLEDGE · ENGINEERING · INTELLIGENCE · IMPACT</span></div>
+              <div className="operator-instrument__metrics">
+                <Meter label="Cobertura" value={average("coverage")} />
+                <Meter label="Profundidade" value={average("depth")} />
+                <Meter label="Integração" value={databaseInfo?.integrationValue ?? 0} />
+              </div>
+            </section>
+
+            <section className="engineering-instrument project-matrix">
+              <header><span>PRJ-MTX</span><strong>PROJECT MATRIX</strong><i>{projects.length.toString().padStart(2, "0")} NODES</i></header>
+              <div className="project-matrix__head"><span>ID</span><span>PROJECT</span><span>STATE</span></div>
+              <div className="project-matrix__body">
+                {projects.map((project, index) => (
+                  <div className="project-matrix__row" key={project.id}>
+                    <span>P-{String(index + 1).padStart(2, "0")}</span><strong>{project.name}</strong><i data-state={project.status}>{project.status}</i>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </aside>
+
+          <CoreTopology
+            state={coreState}
+            aiOnline={Boolean(aiStatus?.available)}
+            systemOnline={Boolean(snapshot)}
+            automationOnline={automationOnline}
+            knowledgeCount={knowledgeAreas.length}
+            projectCount={projects.length}
+            dailyCount={counters.pending}
+            onOpenAI={onOpenAI}
+            onOpenDaily={onOpenDaily}
+          />
+
+          <aside className="engineering-command__rail engineering-command__rail--right">
+            <section className="engineering-instrument diagnostic-stack">
+              <header><span>SYS-DIAG</span><strong>SYSTEM CORE</strong><i>{snapshot ? "LIVE" : "UNAVAILABLE"}</i></header>
+              <div className="diagnostic-stack__row"><span>CPU LOAD</span><strong>{snapshot ? `${snapshot.cpu.usagePercent.toFixed(0)}%` : "—"}</strong><i data-level={snapshot && snapshot.cpu.usagePercent > 80 ? "warning" : "nominal"} /></div>
+              <div className="diagnostic-stack__row"><span>MEMORY</span><strong>{snapshot ? `${memoryPercent}%` : "—"}</strong><i data-level={memoryPercent > 85 ? "warning" : "nominal"} /></div>
+              <div className="diagnostic-stack__row"><span>STORAGE</span><strong>{storagePercent === null ? "—" : `${storagePercent}%`}</strong><i data-level={storagePercent !== null && storagePercent > 90 ? "warning" : "nominal"} /></div>
+              <div className="diagnostic-stack__row"><span>NETWORK</span><strong>{snapshot?.network.length ? "ONLINE" : "—"}</strong><i data-level={snapshot?.network.length ? "nominal" : "standby"} /></div>
+              <footer><span>RAM FREE</span><strong>{snapshot ? formatBytes(snapshot.memory.availableBytes) : "—"}</strong><span>WS</span><strong>{workspaces.filter((workspace) => workspace.enabled).length.toString().padStart(2, "0")}</strong></footer>
+            </section>
+
+            <button className="engineering-link-panel" onClick={onOpenAI}>
+              <span>AIC-02 // OLLAMA LOCAL</span><strong>AI CORE</strong><i data-state={aiStatus?.available ? "online" : "warning"}>{aiStatus?.available ? "ONLINE" : "OFFLINE"}</i>
+              <small>{aiStatus?.available ? aiStatus.models.join(" / ") : "Verifique o Ollama"}</small><em>{aiPhase}</em><b>OPEN CHANNEL →</b>
+            </button>
+
+            <section className="engineering-instrument automation-instrument">
+              <header><span>AUT-10</span><strong>AUTOMATION</strong><i>{automationOnline ? "SAFE MODE" : "OFFLINE"}</i></header>
+              <div><span><strong>{actions.length.toString().padStart(2, "0")}</strong>ACTIONS</span><span><strong>{applications.filter((item) => item.enabled).length.toString().padStart(2, "0")}</strong>APPS</span><span><strong>{routines.filter((item) => item.enabled).length.toString().padStart(2, "0")}</strong>ROUTINES</span><span><strong>{routinesToday.toString().padStart(2, "0")}</strong>TODAY</span></div>
+            </section>
+
+            <button className="engineering-link-panel engineering-link-panel--daily" onClick={onOpenDaily}>
+              <span>OPS-03 // OPERATIONAL QUEUE</span><strong>DAILY OPERATIONS</strong>
+              {dailyError ? <small>OPERATIONS UNAVAILABLE</small> : dailyLoading ? <small>SYNCHRONIZING...</small> : <div><span><b>{counters.today}</b>TODAY</span><span><b>{counters.overdue}</b>OVERDUE</span><span><b>{counters.priority}</b>HIGH / CRITICAL</span></div>}
+              <em>OPEN CENTRAL →</em>
+            </button>
+          </aside>
         </div>
 
-        <HudPanel title="Núcleo central de conhecimento" code={`ESTADO / ${azrielStates[coreState].label}`} className="core-stage">
-          <span className="satellite satellite--one">BIOSSISTEMAS<br />SINCRONIA 42%</span>
-          <span className="satellite satellite--two">ENGENHARIA<br />LACUNA ALTA</span>
-          <span className="satellite satellite--three">IA / SOFTWARE<br />NÚCLEO ESTÁVEL</span>
-          <span className="satellite satellite--four">ENERGIA<br />P&D EM FILA</span>
-          <div className="core-stage__center"><AzrielCore state={coreState} onClick={onOpenAI} /></div>
-          <div className="core-stage__metrics">
-            <span><strong>{knowledgeAreas.length}</strong>DOMÍNIOS</span>
-            <span><strong>{projects.length}</strong>PROJETOS</span>
-            <span><strong>12+</strong>FRENTES</span>
-            <span><strong>{knowledgeAreas.filter((area) => ["critical", "high"].includes(area.priority)).length}</strong>GAPS ALTOS</span>
-          </div>
-        </HudPanel>
-
-        <div className="command-grid__right">
-          <HudPanel title="System Core" code="TELEMETRIA REAL">
-            <div className="system-command-summary">
-              <span><strong>{snapshot ? `${snapshot.cpu.usagePercent.toFixed(0)}%` : "—"}</strong>CPU</span>
-              <span><strong>{snapshot ? `${memoryPercent}%` : "—"}</strong>MEMÓRIA</span>
-              <span><strong>{snapshot ? formatBytes(snapshot.memory.availableBytes) : "—"}</strong>RAM LIVRE</span>
-              <span><strong>{workspaces.filter((workspace) => workspace.enabled).length}</strong>WORKSPACES</span>
-            </div>
-          </HudPanel>
-          <HudPanel title="AI Core" code="OLLAMA LOCAL">
-            <button className="ai-command-summary" onClick={onOpenAI}>
-              <span><strong>{aiStatus?.available ? "ONLINE" : "OFFLINE"}</strong>{aiStatus?.available ? aiStatus.models.join(" / ") : "Verifique o Ollama"}</span>
-              <small>{aiPhase}</small><i>ABRIR AI CORE →</i>
-            </button>
-          </HudPanel>
-          <HudPanel title="Automation Core" code="SAFE MODE">
-            <div className="automation-command-summary">
-              <span><strong>{automationState === "error" || automationState === "offline" ? "OFFLINE" : "ONLINE"}</strong>POLICY ENGINE</span>
-              <span><strong>{actions.length.toString().padStart(2, "0")}</strong>AÇÕES</span>
-              <span><strong>{applications.filter((item) => item.enabled).length.toString().padStart(2, "0")}</strong>APLICATIVOS</span>
-              <span><strong>{routines.filter((item) => item.enabled).length.toString().padStart(2, "0")}</strong>ROTINAS</span>
-              <span><strong>{routinesToday.toString().padStart(2, "0")}</strong>EXECUTADAS HOJE</span>
-            </div>
-          </HudPanel>
-          <HudPanel title="Fila de prioridades" code="PRÓXIMA AÇÃO">
-            <div className="priority-queue">
-              <article><span>ALTA</span><strong>Matemática + Física</strong><p>Construir a base necessária antes da Mecatrônica.</p></article>
-              <article><span>ALTA</span><strong>Eletrônica</strong><p>Circuitos, instrumentação e microcontroladores.</p></article>
-              <article><span>ATIVO</span><strong>Biologia Molecular</strong><p>Transformar teoria em domínio aplicado.</p></article>
-              <article><span>CONSTRUIR</span><strong>Azriel</strong><p>Consolidar o sistema pessoal de inteligência.</p></article>
-            </div>
-          </HudPanel>
-          <HudPanel title="Diagnóstico de lacunas" code="ANÁLISE">
-            <GapDiagnostics />
-          </HudPanel>
-          <HudPanel title="Operações Diárias" code="AGORA">
-            <button className="daily-command-summary" onClick={onOpenDaily}>
-              {dailyError ? <span>OPERAÇÕES INDISPONÍVEIS</span> : dailyLoading ? <span>SINCRONIZANDO...</span> : <>
-                <span><strong>{counters.today}</strong>TAREFAS HOJE</span>
-                <span><strong>{counters.overdue}</strong>ATRASADAS</span>
-                <span><strong>{counters.priority}</strong>ALTA / CRÍTICA</span>
-              </>}
-              <i>ABRIR CENTRAL →</i>
-            </button>
-          </HudPanel>
-        </div>
       </div>
+
+      <HudPanel title="Fila de prioridades" code="PRÓXIMA AÇÃO" className="command-flat-panel">
+        <div className="priority-queue">
+          <article><span>ALTA</span><strong>Matemática + Física</strong><p>Construir a base necessária antes da Mecatrônica.</p></article>
+          <article><span>ALTA</span><strong>Eletrônica</strong><p>Circuitos, instrumentação e microcontroladores.</p></article>
+          <article><span>ATIVO</span><strong>Biologia Molecular</strong><p>Transformar teoria em domínio aplicado.</p></article>
+          <article><span>CONSTRUIR</span><strong>Azriel</strong><p>Consolidar o sistema pessoal de inteligência.</p></article>
+        </div>
+      </HudPanel>
+
+      <HudPanel title="Diagnóstico de lacunas" code="ANÁLISE" className="command-flat-panel">
+        <GapDiagnostics />
+      </HudPanel>
 
       <HudPanel title="Mapa Stark // Cobertura × Profundidade" code="LINHA DE BASE" className="command-chart">
         <StarkChart areas={knowledgeAreas} onSelect={() => undefined} />
       </HudPanel>
-
     </>
   );
 }

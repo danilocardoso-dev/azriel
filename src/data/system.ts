@@ -2,6 +2,7 @@ import type { AzrielState, ModuleId } from "../types";
 
 export const modules: Array<{ id: ModuleId; label: string; code: string; description: string }> = [
   { id: "command", label: "Command Center", code: "CMD", description: "Visão estratégica do sistema" },
+  { id: "engineering", label: "Engineering View", code: "ENG", description: "Visualização técnica e modelos" },
   { id: "ai", label: "AI Core", code: "AIC", description: "Conversa e consultas locais" },
   { id: "daily", label: "Operações Diárias", code: "OPS", description: "Tarefas, notas e prioridades" },
   { id: "projects", label: "Projetos", code: "PRJ", description: "Projetos e objetivos" },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupUpcoming, localDateKey, parseLocalDate } from "./dateService";
+import { formatLocalDate, groupUpcoming, localDateKey, parseBrazilianDateInput, parseLocalDate } from "./dateService";
 import type { Task } from "../types";
 
 const task = (id: string, dueDate: string): Task => ({ id, dueDate, title: id, description: "", status: "pending", priority: "medium", projectId: null, knowledgeAreaId: null, createdAt: "", updatedAt: "", completedAt: null });
@@ -8,6 +8,17 @@ describe("dateService", () => {
   it("gera a chave usando a data local, sem conversão UTC", () => {
     expect(localDateKey(new Date(2026, 7, 31, 23, 59))).toBe("2026-08-31");
     expect(parseLocalDate("2026-08-31").getDate()).toBe(31);
+  });
+
+  it("converte datas brasileiras para ISO e volta sem inverter dia e mês", () => {
+    expect(parseBrazilianDateInput("01/09/2026")).toBe("2026-09-01");
+    expect(formatLocalDate("2026-09-01")).toBe("01/09/2026");
+    expect(parseBrazilianDateInput("  ")).toBeNull();
+  });
+
+  it("rejeita formato americano e datas impossíveis", () => {
+    expect(() => parseBrazilianDateInput("09-01-2026")).toThrow(/DD\/MM\/AAAA/);
+    expect(() => parseBrazilianDateInput("31/02/2026")).toThrow(/data válida/);
   });
 
   it("agrupa amanhã, restante da semana e datas posteriores", () => {

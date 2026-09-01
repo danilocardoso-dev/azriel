@@ -16,5 +16,5 @@ export interface DailyContextValue {
   deleteNote: (id: string) => Promise<void>;
 }
 
-export const emptyDailyCounters: DailyCounters = { pending: 0, today: 0, overdue: 0, priority: 0, notes: 0 };
+export const emptyDailyCounters: DailyCounters = { pending: 0, today: 0, overdue: 0, priority: 0, notes: 0, completed: 0 };
 export const DailyContext = createContext<DailyContextValue | null>(null);

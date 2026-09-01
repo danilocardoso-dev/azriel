@@ -16,6 +16,22 @@ export function formatLocalDate(value: string) {
   return parseLocalDate(value).toLocaleDateString("pt-BR");
 }
 
+export function parseBrazilianDateInput(value: string) {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(normalized);
+  if (!match) throw new Error("Informe o prazo no formato DD/MM/AAAA.");
+  const [, dayText, monthText, yearText] = match;
+  const day = Number(dayText);
+  const month = Number(monthText);
+  const year = Number(yearText);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    throw new Error("Informe uma data válida no formato DD/MM/AAAA.");
+  }
+  return localDateKey(date);
+}
+
 export function formatTimestamp(value: string) {
   const normalized = value.includes("T") ? value : `${value.replace(" ", "T")}Z`;
   const date = new Date(normalized);

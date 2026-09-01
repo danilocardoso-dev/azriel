@@ -31,6 +31,25 @@ pub fn run() {
             });
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if window.label() != "main" {
+                return;
+            }
+            match event {
+                tauri::WindowEvent::Resized(_) if window.is_minimized().unwrap_or(false) => {
+                    if let Some(orb) = window.app_handle().get_webview_window("orb") {
+                        let _ = orb.show();
+                    }
+                    let _ = window.hide();
+                }
+                tauri::WindowEvent::Destroyed => {
+                    if let Some(orb) = window.app_handle().get_webview_window("orb") {
+                        let _ = orb.close();
+                    }
+                }
+                _ => {}
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::database_info,
             commands::list_knowledge,

@@ -7,7 +7,7 @@ import { ToolRegistry, type ToolDependencies } from "./tools/toolRegistry";
 
 const settings: AISettings = { provider: "ollama", endpoint: "http://localhost:11434", model: "qwen2.5:0.5b", contextMessageLimit: 6, timeoutSeconds: 30, updatedAt: "" };
 const dependencies: ToolDependencies = {
-  tasks: { list: async () => [], today: async () => [{ id: "t", title: "Testar", description: "", status: "pending", priority: "high", dueDate: null, projectId: null, knowledgeAreaId: null, createdAt: "", updatedAt: "", completedAt: null }], upcoming: async () => [], counters: async () => ({ pending: 1, today: 1, overdue: 0, priority: 1, notes: 0 }) },
+  tasks: { list: async () => [], today: async () => [{ id: "t", title: "Testar", description: "", status: "pending", priority: "high", dueDate: null, projectId: null, knowledgeAreaId: null, createdAt: "", updatedAt: "", completedAt: null }], upcoming: async () => [], counters: async () => ({ pending: 1, today: 1, overdue: 0, priority: 1, notes: 0, completed: 0 }) },
   notes: { list: async () => [] }, projects: { list: async () => [], get: async () => null }, knowledge: { list: async () => [], get: async () => null, history: async () => [] }, education: { list: async () => [] }, databaseInfo: async () => ({ schemaVersion: 5, integrationValue: 0 }),
   system: {
     snapshot: async () => ({ collectedAt: 0, details: { osName: "Windows", osVersion: "11", kernelVersion: "", architecture: "x86_64", hostname: "azriel", logicalCores: 8, physicalCores: 4, uptimeSeconds: 100 }, cpu: { usagePercent: 10, cores: [10] }, memory: { totalBytes: 1000, usedBytes: 500, availableBytes: 500, swapTotalBytes: 0, swapUsedBytes: 0 }, storage: [], network: [], errors: [] }),

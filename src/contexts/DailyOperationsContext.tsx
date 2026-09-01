@@ -24,7 +24,7 @@ export function DailyOperationsProvider({ children }: { children: ReactNode }) {
         const listed = await noteService.list(view === "archived_notes");
         setNotes(view === "archived_notes" ? listed.filter((note) => note.status === "archived") : listed); setTasks([]);
       } else {
-        const loaders = { today: taskService.today, inbox: taskService.inbox, upcoming: taskService.upcoming, completed: taskService.completed };
+        const loaders = { pending: taskService.pending, today: taskService.today, overdue: taskService.overdue, priority: taskService.priority, inbox: taskService.inbox, upcoming: taskService.upcoming, completed: taskService.completed };
         setTasks(await loaders[view]()); setNotes([]);
       }
     } catch (reason) { setError(messageOf(reason)); }

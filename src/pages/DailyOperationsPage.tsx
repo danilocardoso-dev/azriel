@@ -7,10 +7,12 @@ import { ModuleIntro } from "../components/layout/ModuleIntro";
 import { useAzrielData } from "../contexts/useAzrielData";
 import { useDailyOperations } from "../contexts/useDailyOperations";
 import { formatLocalDate, groupUpcoming, localDateKey } from "../services/dateService";
-import type { DailyView, Task } from "../types";
+import type { DailyCounters, DailyView, Task } from "../types";
 
-const views: Array<[DailyView, string]> = [["today","HOJE"],["inbox","CAIXA DE ENTRADA"],["upcoming","PRÓXIMAS"],["completed","CONCLUÍDAS"],["notes","NOTAS"],["archived_notes","ARQUIVADAS"]];
-const emptyLabels: Record<DailyView,string> = { today: "Nenhuma tarefa para hoje.", inbox: "Caixa de entrada vazia.", upcoming: "Nenhuma tarefa futura.", completed: "Nenhuma atividade concluída.", notes: "Nenhuma nota ativa.", archived_notes: "Nenhuma nota arquivada." };
+const navigationViews: Array<[DailyView, string]> = [["today","HOJE"],["inbox","CAIXA DE ENTRADA"],["upcoming","PRÓXIMAS"],["completed","CONCLUÍDAS"],["notes","NOTAS"],["archived_notes","ARQUIVADAS"]];
+const counterViews: Array<[DailyView, keyof DailyCounters, string]> = [["pending","pending","PENDENTES"],["today","today","HOJE"],["overdue","overdue","ATRASADAS"],["priority","priority","PRIORIDADE"],["notes","notes","NOTAS"],["completed","completed","CONCLUÍDAS"]];
+const viewLabels: Record<DailyView,string> = { pending: "PENDENTES", today: "HOJE", overdue: "ATRASADAS", priority: "PRIORIDADE", inbox: "CAIXA DE ENTRADA", upcoming: "PRÓXIMAS", completed: "CONCLUÍDAS", notes: "NOTAS", archived_notes: "ARQUIVADAS" };
+const emptyLabels: Record<DailyView,string> = { pending: "Nenhuma tarefa pendente.", today: "Nenhuma tarefa para hoje.", overdue: "Nenhuma tarefa atrasada.", priority: "Nenhuma tarefa de alta prioridade.", inbox: "Caixa de entrada vazia.", upcoming: "Nenhuma tarefa futura.", completed: "Nenhuma atividade concluída.", notes: "Nenhuma nota ativa.", archived_notes: "Nenhuma nota arquivada." };
 
 export function DailyOperationsPage({ initialCapture }: { initialCapture?: "task" | "note" }) {
   const { view, setView, tasks, notes, counters, loading, error, reload, completeTask } = useDailyOperations();
@@ -39,10 +41,10 @@ export function DailyOperationsPage({ initialCapture }: { initialCapture?: "task
 
   return <>
     <ModuleIntro code="OPS-09" title="Operações Diárias" description="Central operacional para tarefas, prioridades e anotações rápidas." metric={`${counters.pending} PENDENTES / ${counters.priority} PRIORIDADES`} />
-    <div className="daily-counters"><span><strong>{counters.pending}</strong>PENDENTES</span><span><strong>{counters.today}</strong>HOJE</span><span><strong>{counters.overdue}</strong>ATRASADAS</span><span><strong>{counters.priority}</strong>PRIORIDADE</span><span><strong>{counters.notes}</strong>NOTAS</span></div>
+    <div className="daily-counters" aria-label="Filtros rápidos">{counterViews.map(([nextView, field, label]) => <button className={view === nextView ? "active" : ""} onClick={() => selectView(nextView)} aria-pressed={view === nextView} key={nextView}><strong>{counters[field]}</strong>{label}</button>)}</div>
     <div className="daily-layout">
-      <aside className="daily-control"><QuickCapture initialKind={initialCapture} autoFocus={Boolean(initialCapture)} /><nav>{views.map(([id,label]) => <button className={view === id ? "active" : ""} onClick={() => selectView(id)} key={id}><span>{label}</span><strong>{id === "today" ? counters.today : id === "inbox" ? "IN" : id === "notes" ? counters.notes : id === "archived_notes" ? "ARQ" : "→"}</strong></button>)}</nav></aside>
-      <section className="daily-worklist"><header><span>{views.find(([id]) => id === view)?.[1]}</span><strong>{view === "notes" || view === "archived_notes" ? notes.length : tasks.length} REGISTROS</strong></header>{content()}</section>
+      <aside className="daily-control"><QuickCapture initialKind={initialCapture} autoFocus={Boolean(initialCapture)} /><nav>{navigationViews.map(([id,label]) => <button className={view === id ? "active" : ""} onClick={() => selectView(id)} key={id}><span>{label}</span><strong>{id === "today" ? counters.today : id === "inbox" ? "IN" : id === "notes" ? counters.notes : id === "archived_notes" ? "ARQ" : "→"}</strong></button>)}</nav></aside>
+      <section className="daily-worklist"><header><span>{viewLabels[view]}</span><strong>{view === "notes" || view === "archived_notes" ? notes.length : tasks.length} REGISTROS</strong></header>{content()}</section>
       <aside className="daily-inspector">{selectedTask ? <TaskDetails key={selectedTask.id} task={selectedTask} onClear={() => setSelectedTaskId(null)} /> : selectedNote ? <NoteDetails key={selectedNote.id} note={selectedNote} onClear={() => setSelectedNoteId(null)} /> : <div className="daily-empty"><strong>DETALHES</strong><p>Selecione uma tarefa ou nota para organizar seus campos.</p></div>}</aside>
     </div>
   </>;

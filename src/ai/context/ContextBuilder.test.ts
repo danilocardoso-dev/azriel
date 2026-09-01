@@ -6,7 +6,7 @@ import { ToolRegistry } from "../tools/toolRegistry";
 const settings = { provider: "ollama" as const, endpoint: "http://localhost:11434", model: "qwen", contextMessageLimit: 6, timeoutSeconds: 30, updatedAt: "" };
 
 const emptyDependencies: ToolDependencies = {
-  tasks: { list: async () => [], today: async () => [], upcoming: async () => [], counters: async () => ({ pending: 0, today: 0, overdue: 0, priority: 0, notes: 0 }) },
+  tasks: { list: async () => [], today: async () => [], upcoming: async () => [], counters: async () => ({ pending: 0, today: 0, overdue: 0, priority: 0, notes: 0, completed: 0 }) },
   notes: { list: async () => [] }, projects: { list: async () => [], get: async () => null },
   knowledge: { list: async () => [], get: async () => null, history: async () => [] },
   education: { list: async () => [] }, databaseInfo: async () => ({ schemaVersion: 5, integrationValue: 0 }),

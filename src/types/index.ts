@@ -1,4 +1,4 @@
-export type ModuleId = "command" | "ai" | "daily" | "projects" | "knowledge" | "stark" | "education" | "research" | "system" | "automation" | "settings";
+export type ModuleId = "command" | "engineering" | "ai" | "daily" | "projects" | "knowledge" | "stark" | "education" | "research" | "system" | "automation" | "settings";
 export type AzrielState = "idle" | "processing" | "tool" | "executing" | "routine" | "alert" | "offline";
 export type ProjectStatus = "active" | "research" | "paused" | "planned" | "completed";
 export type Priority = "critical" | "high" | "medium" | "low";
@@ -31,7 +31,7 @@ export interface DatabaseInfo { path: string; schemaVersion: number; integration
 
 export type TaskStatus = "inbox" | "pending" | "in_progress" | "completed" | "cancelled";
 export type TaskPriority = "low" | "medium" | "high" | "critical";
-export type DailyView = "today" | "inbox" | "upcoming" | "completed" | "notes" | "archived_notes";
+export type DailyView = "pending" | "today" | "overdue" | "priority" | "inbox" | "upcoming" | "completed" | "notes" | "archived_notes";
 export interface Task {
   id: string; title: string; description: string; status: TaskStatus; priority: TaskPriority;
   dueDate: string | null; projectId: string | null; knowledgeAreaId: string | null;
@@ -44,7 +44,7 @@ export interface Note {
   projectId: string | null; knowledgeAreaId: string | null; createdAt: string; updatedAt: string;
 }
 export type NoteInput = Omit<Note, "createdAt" | "updatedAt">;
-export interface DailyCounters { pending: number; today: number; overdue: number; priority: number; notes: number }
+export interface DailyCounters { pending: number; today: number; overdue: number; priority: number; notes: number; completed: number }
 
 export interface AISettings {
   provider: "ollama"; endpoint: string; model: string; contextMessageLimit: number;

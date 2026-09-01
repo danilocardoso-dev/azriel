@@ -6,7 +6,7 @@ const dependencies: ToolDependencies = {
   tasks: {
     list: async () => [{ id: "late", title: "Atrasada", description: "", status: "pending", priority: "high", dueDate: "2026-08-30", projectId: "p1", knowledgeAreaId: "k1", createdAt: "", updatedAt: "", completedAt: null }],
     today: async () => [], upcoming: async () => [],
-    counters: async () => ({ pending: 1, today: 0, overdue: 1, priority: 1, notes: 0 }),
+    counters: async () => ({ pending: 1, today: 0, overdue: 1, priority: 1, notes: 0, completed: 0 }),
   },
   notes: { list: async () => [] },
   projects: { list: async () => [{ id: "p1", name: "GeneScope", category: "bio", description: "", status: "active", knowledgeAreaIds: ["k1"], objective: "", progress: 20, nextStep: "", createdAt: "", updatedAt: "" }], get: async () => null },

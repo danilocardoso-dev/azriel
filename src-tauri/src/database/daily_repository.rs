@@ -16,8 +16,8 @@ pub fn list_today_tasks(connection: &Connection, today: &str) -> Result<Vec<Task
     validate_date(today)?;
     query_tasks(connection,
         "SELECT id,title,description,status,priority,due_date,project_id,knowledge_area_id,created_at,updated_at,completed_at FROM tasks
-         WHERE status NOT IN ('completed','cancelled') AND (due_date<=?1 OR (due_date IS NULL AND status IN ('pending','in_progress') AND priority IN ('high','critical')))
-         ORDER BY CASE WHEN due_date<?1 THEN 0 ELSE 1 END,CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,due_date,title", [today])
+         WHERE status NOT IN ('completed','cancelled') AND due_date=?1
+         ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,title", [today])
 }
 
 pub fn list_upcoming_tasks(connection: &Connection, today: &str) -> Result<Vec<Task>, String> {
@@ -120,12 +120,13 @@ pub fn counters(connection: &Connection, today: &str) -> Result<DailyCounters, S
     connection.query_row(
         "SELECT
            (SELECT COUNT(*) FROM tasks WHERE status NOT IN ('completed','cancelled')),
-           (SELECT COUNT(*) FROM tasks WHERE status NOT IN ('completed','cancelled') AND (due_date=?1 OR (due_date IS NULL AND status IN ('pending','in_progress') AND priority IN ('high','critical')))),
+           (SELECT COUNT(*) FROM tasks WHERE status NOT IN ('completed','cancelled') AND due_date=?1),
            (SELECT COUNT(*) FROM tasks WHERE status NOT IN ('completed','cancelled') AND due_date<?1),
            (SELECT COUNT(*) FROM tasks WHERE status NOT IN ('completed','cancelled') AND priority IN ('high','critical')),
-           (SELECT COUNT(*) FROM notes WHERE status='active')",
+           (SELECT COUNT(*) FROM notes WHERE status='active'),
+           (SELECT COUNT(*) FROM tasks WHERE status='completed')",
         [today],
-        |row| Ok(DailyCounters { pending: row.get(0)?, today: row.get(1)?, overdue: row.get(2)?, priority: row.get(3)?, notes: row.get(4)? }),
+        |row| Ok(DailyCounters { pending: row.get(0)?, today: row.get(1)?, overdue: row.get(2)?, priority: row.get(3)?, notes: row.get(4)?, completed: row.get(5)? }),
     ).map_err(err)
 }
 
@@ -301,6 +302,13 @@ mod tests {
         current.status = "in_progress".into();
         current.due_date = None;
         save_task(&connection, &current).unwrap();
+        let mut today = task("today");
+        today.status = "pending".into();
+        today.due_date = Some("2026-08-31".into());
+        save_task(&connection, &today).unwrap();
+        let mut completed = task("completed");
+        completed.status = "completed".into();
+        save_task(&connection, &completed).unwrap();
         assert_eq!(
             list_upcoming_tasks(&connection, "2026-08-31")
                 .unwrap()
@@ -309,10 +317,19 @@ mod tests {
         );
         assert_eq!(
             list_today_tasks(&connection, "2026-08-31").unwrap().len(),
-            2
+            1
         );
         let counts = counters(&connection, "2026-08-31").unwrap();
-        assert_eq!((counts.pending, counts.overdue, counts.priority), (3, 1, 3));
+        assert_eq!(
+            (
+                counts.pending,
+                counts.today,
+                counts.overdue,
+                counts.priority,
+                counts.completed
+            ),
+            (4, 1, 1, 4, 1)
+        );
     }
 
     #[test]
