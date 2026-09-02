@@ -127,6 +127,15 @@ export class ComponentService {
     if (object) object.visible = true;
   }
 
+  showAll(): void {
+    this.isolationVisibility = null;
+    this.isolatedComponentId = null;
+    for (const [id, visible] of this.originalVisibility) {
+      const object = this.objects.get(id);
+      if (object) object.visible = visible;
+    }
+  }
+
   isolate(id: string): void {
     if (!this.objects.has(id)) return;
     if (this.isolationVisibility) this.exitIsolation();

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ContextBuilder } from "./ContextBuilder";
 import type { ToolDependencies } from "../tools/toolRegistry";
 import { ToolRegistry } from "../tools/toolRegistry";
+import { FakeEngineeringService } from "../../engineering/fakeEngineeringService";
 
 const settings = { provider: "ollama" as const, endpoint: "http://localhost:11434", model: "qwen", contextMessageLimit: 6, timeoutSeconds: 30, updatedAt: "" };
 
@@ -25,5 +26,15 @@ describe("Context Builder", () => {
     expect(context.results[0].name).toBe("list_projects");
     expect(context.empty).toBe(true);
     expect(context.text.length).toBeLessThanOrEqual(440);
+  });
+  it("classifica ações do Engineering como visuais e mantém o payload compacto", async () => {
+    const permissions: string[] = [];
+    const engineering = new FakeEngineeringService();
+    const context = await new ContextBuilder(new ToolRegistry({ ...emptyDependencies, engineering }), 600)
+      .build("Abra em 50%", { intent: "explosion_adjust", scope: "azriel", tools: ["set_explosion_factor"], factor: 0.5 }, (_domain, permission) => permissions.push(permission));
+    expect(permissions).toEqual(["visual_action"]);
+    expect(engineering.calls).toEqual([{ command: "set_explosion_factor", value: 0.5 }]);
+    expect(context.text).toContain("set_explosion_factor");
+    expect(context.text.length).toBeLessThanOrEqual(640);
   });
 });

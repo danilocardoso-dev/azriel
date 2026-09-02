@@ -1,5 +1,6 @@
 export type ModuleId = "command" | "engineering" | "ai" | "daily" | "projects" | "knowledge" | "stark" | "education" | "research" | "system" | "automation" | "settings";
-export type AzrielState = "idle" | "processing" | "tool" | "executing" | "routine" | "alert" | "offline";
+export type AzrielState = "idle" | "processing" | "tool" | "executing" | "engineering" | "routine" | "alert" | "offline";
+export type AIToolPermission = "read" | "visual_action" | "safe_write" | "confirm_write";
 export type ProjectStatus = "active" | "research" | "paused" | "planned" | "completed";
 export type Priority = "critical" | "high" | "medium" | "low";
 export type EducationKind = "graduation" | "postgraduate" | "masters" | "doctorate" | "course" | "certification";
@@ -102,10 +103,13 @@ export type AIToolName =
   | "get_system_status" | "get_cpu_status" | "get_memory_status" | "get_storage_status" | "get_network_status" | "get_process_summary"
   | "list_workspaces" | "get_workspace_status" | "get_git_status" | "get_recent_commits" | "get_ollama_status"
   | "get_azriel_status" | "get_azriel_version"
+  | "get_loaded_model" | "get_model_summary" | "list_components" | "find_component" | "get_component_details" | "get_selected_component" | "get_explosion_state"
+  | "select_component" | "focus_component" | "isolate_component" | "show_all_components" | "hide_component" | "show_component"
+  | "set_explosion_factor" | "explode_all" | "explode_component" | "reassemble" | "reset_model_view"
   | "list_routines" | "run_routine" | AutomationActionId;
-export interface AIToolInput { query: string; term?: string; entityId?: string; workspaceId?: string }
+export interface AIToolInput { query: string; term?: string; entityId?: string; workspaceId?: string; factor?: number; delta?: number }
 export interface AIToolResult { name: AIToolName; domain: string; data: unknown; empty: boolean }
-export interface RoutedIntent { intent: string; scope: "azriel" | "general"; tools: AIToolName[]; term?: string }
+export interface RoutedIntent { intent: string; scope: "azriel" | "general"; tools: AIToolName[]; term?: string; factor?: number; delta?: number }
 
 export interface ResearchItem {
   id: string; title: string; domain: string; objective: string;

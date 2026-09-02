@@ -137,6 +137,12 @@ describe("Engineering Core spatial interaction", () => {
     expect(controller.reset()).toEqual({ status: "ready", position: INITIAL_OBJECT_POSITION, rotation: { x: 0, y: 0, z: 0 }, scale: 1, control: "none" });
   });
 
+  it("restaura transformação global ao recriar o renderer da sessão", () => {
+    const controller = new InteractionController();
+    expect(controller.restore({ status: "grabbed", control: "rotate", position: { x: 1, y: 2, z: 0 }, rotation: { x: 0.2, y: 0.4, z: 0 }, scale: 1.4 }))
+      .toEqual({ status: "ready", control: "none", position: { x: 1, y: 2, z: 0 }, rotation: { x: 0.2, y: 0.4, z: 0 }, scale: 1.4 });
+  });
+
   it("clamp respeita limites de escala", () => {
     expect(clamp(0.1, 0.5, 2)).toBe(0.5);
     expect(clamp(3, 0.5, 2)).toBe(2);

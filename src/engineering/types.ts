@@ -99,6 +99,7 @@ export interface ComponentMaterialInfo {
 export interface ModelComponent {
   id: string;
   name: string;
+  semanticLabel?: string;
   type: string;
   parentId?: string;
   children: string[];

@@ -60,8 +60,8 @@ export class AICoreService {
     if (intent.scope === "azriel") {
       onPhase?.("tool", "CONSULTANDO NÚCLEOS DO AZRIEL");
       const context = await this.contextBuilder.build(cleanQuery, intent, (domain, permission) => onPhase?.(
-        permission === "confirm_write" ? "routine" : permission === "safe_write" ? "executing" : "tool",
-        permission === "confirm_write" ? "VALIDANDO ROTINA / CONFIRMAÇÃO NECESSÁRIA" : permission === "safe_write" ? "EXECUTANDO AÇÃO AUTORIZADA" : `CONSULTANDO ${domain.toUpperCase()}`,
+        permission === "confirm_write" ? "routine" : permission === "safe_write" ? "executing" : permission === "visual_action" ? "engineering" : "tool",
+        permission === "confirm_write" ? "VALIDANDO ROTINA / CONFIRMAÇÃO NECESSÁRIA" : permission === "safe_write" ? "EXECUTANDO AÇÃO AUTORIZADA" : permission === "visual_action" ? "MANIPULANDO MODELO" : `CONSULTANDO ${domain.toUpperCase()}`,
       ));
       if (context.empty) {
         answer = "Não encontrei essa informação registrada no Azriel.";

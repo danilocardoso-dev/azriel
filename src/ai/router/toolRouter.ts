@@ -11,10 +11,47 @@ function termFrom(query: string) {
     ?? normalized.match(/trabalham? ([a-z0-9 ]+)/)?.[1];
 }
 
+const contextualComponent = /\b(?:essa|esta) peca\b|\b(?:esse|este) componente\b|\bpeca selecionada\b|\bcomponente selecionado\b|\b(?:isso|ela|ele)\b/;
+
+function engineeringComponentTerm(value: string, verbs: string): string | undefined {
+  if (contextualComponent.test(value)) return undefined;
+  const match = value.match(new RegExp(`(?:${verbs})\\s+(?:(?:o|a|ao|do|da|de|no|na)\\s+)?(.+)$`));
+  return match?.[1]?.replace(/^(?:componente|peca)\s+/, "").trim();
+}
+
+function engineeringIntent(value: string): RoutedIntent | null {
+  const percentage = value.match(/(\d{1,3})(?:\s*por cento)?\b/);
+  if (percentage && /\b(?:abra|abrir|exploda|explodir|explosao|fator)\b/.test(value)) return { intent: "explosion_adjust", scope: "azriel", tools: ["set_explosion_factor"], factor: Number(percentage[1]) / 100 };
+  if (/\b(?:abra|abrir)\s+(?:um\s+)?(?:pouco\s+)?mais\b/.test(value)) return { intent: "explosion_adjust", scope: "azriel", tools: ["set_explosion_factor"], delta: 0.15 };
+  if (/\b(?:feche|fechar)\s+(?:um\s+)?(?:pouco\s+)?(?:mais)?\b/.test(value)) return { intent: "explosion_adjust", scope: "azriel", tools: ["set_explosion_factor"], delta: -0.15 };
+  if (/\b(?:reconstrua|reconstruir|reagrupe|reagrupar|remonte|remontar)\b/.test(value)) return { intent: "assembly_reassemble", scope: "azriel", tools: ["reassemble"] };
+  if (/\b(?:resete|resetar|restaure|restaurar)\b/.test(value) && /\b(?:modelo|visualizacao|vista|camera)\b/.test(value)) return { intent: "model_view_reset", scope: "azriel", tools: ["reset_model_view"] };
+  if (/\b(?:exploda|explodir)\b/.test(value) && /\b(?:montagem|modelo|tudo|todos)\b/.test(value)) return { intent: "assembly_explode", scope: "azriel", tools: ["explode_all"] };
+  if (/\b(?:exploda|explodir)\b/.test(value)) return { intent: "component_explode", scope: "azriel", term: engineeringComponentTerm(value, "exploda|explodir"), tools: ["explode_component"] };
+  if (/\b(?:mostre|mostrar|exiba|exibir|revele|revelar)\b/.test(value) && /\b(?:todos|todas)\b/.test(value) && /\bcomponentes?\b/.test(value)) return { intent: "component_show_all", scope: "azriel", tools: ["show_all_components"] };
+  if (/\b(?:oculte|ocultar|esconda|esconder)\b/.test(value)) return { intent: "component_visibility", scope: "azriel", term: engineeringComponentTerm(value, "oculte|ocultar|esconda|esconder"), tools: ["hide_component"] };
+  if (/\b(?:mostre|mostrar|exiba|exibir)\b/.test(value) && !/\b(?:pasta|mapa|projeto|nota|rotina|tarefa|formacao|sistema|status|workspace)\b/.test(value)) return { intent: "component_visibility", scope: "azriel", term: engineeringComponentTerm(value, "mostre|mostrar|exiba|exibir"), tools: ["show_component"] };
+  if (/\b(?:isole|isolar)\b/.test(value)) return { intent: "component_isolate", scope: "azriel", term: engineeringComponentTerm(value, "isole|isolar"), tools: ["isolate_component"] };
+  if (/\b(?:foque|focar|enquadre|enquadrar)\b/.test(value)) return { intent: "component_focus", scope: "azriel", term: engineeringComponentTerm(value, "foque|focar|enquadre|enquadrar"), tools: ["focus_component"] };
+  if (/\b(?:selecione|selecionar|destaque|destacar|marque|marcar)\b/.test(value)) return { intent: "component_select", scope: "azriel", term: engineeringComponentTerm(value, "selecione|selecionar|destaque|destacar|marque|marcar"), tools: ["select_component"] };
+  if (/\b(?:encontre|encontrar|localize|localizar|procure|procurar)\b/.test(value)) return { intent: "component_search", scope: "azriel", term: engineeringComponentTerm(value, "encontre|encontrar|localize|localizar|procure|procurar"), tools: ["find_component"] };
+  if (/\b(?:qual|que)\b/.test(value) && /\b(?:peca|componente)\b/.test(value) && /\bselecionad[ao]\b/.test(value)) return { intent: "component_selected", scope: "azriel", tools: ["get_selected_component"] };
+  if (contextualComponent.test(value) && /\b(?:o que e|qual e|fale sobre|informacoes sobre)\b/.test(value)) return { intent: "component_inspect", scope: "azriel", tools: ["get_component_details"] };
+  if (/\b(?:detalhes?|inspecione|inspecionar)\b/.test(value) && !/\b(?:projeto|rotina|tarefa|sistema|workspace)\b/.test(value)) return { intent: "component_inspect", scope: "azriel", term: engineeringComponentTerm(value, "detalhe|detalhes|inspecione|inspecionar"), tools: ["get_component_details"] };
+  if ((/\b(?:detalhes?|filhos?|visivel|material|dimensoes|transform)\b/.test(value) && (contextualComponent.test(value) || /\b(?:peca|componente)\b/.test(value)))) return { intent: "component_inspect", scope: "azriel", term: engineeringComponentTerm(value, "detalhe|detalhes|inspecione|inspecionar"), tools: ["get_component_details"] };
+  if (/\b(?:liste|listar|quais)\b/.test(value) && /\bcomponentes?\b/.test(value)) return { intent: "component_list", scope: "azriel", tools: ["list_components"] };
+  if (/\b(?:quantos|numero de|total de)\b/.test(value) && /\bcomponentes?\b/.test(value)) return { intent: "model_summary", scope: "azriel", tools: ["get_model_summary"] };
+  if (/\b(?:explosao|exploded view)\b/.test(value) && /\b(?:estado|status|fator|quanto|como)\b/.test(value)) return { intent: "explosion_state", scope: "azriel", tools: ["get_explosion_state"] };
+  if (/\bmodelo\b/.test(value) && /\b(?:carregado|aberto|atual|status)\b/.test(value)) return { intent: "model_status", scope: "azriel", tools: ["get_loaded_model"] };
+  return null;
+}
+
 export function routeIntent(query: string): RoutedIntent {
   const value = normalize(query);
   const term = termFrom(query);
   if (!value) return { intent: "empty", scope: "general", tools: [] };
+  const engineering = engineeringIntent(value);
+  if (engineering) return engineering;
   const explicitOpen = /^(?:azriel\s+)?(?:abra|abrir)\b/.test(value);
   const explicitReveal = /^(?:azriel\s+)?(?:mostre|mostrar|revele|revelar)\b/.test(value) && value.includes("pasta");
   const explicitRoutine = /^(?:azriel\s+)?(?:execute|executar|inicie|iniciar|rode|rodar)\b/.test(value) && value.includes("rotina");

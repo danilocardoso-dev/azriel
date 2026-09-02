@@ -16,7 +16,48 @@ describe("Tool Router", () => {
     ["Quais projetos Git possuem alterações?", "get_git_status"],
     ["O Ollama está disponível?", "get_ollama_status"],
     ["Quais rotinas eu tenho?", "list_routines"],
+    ["Qual modelo está carregado?", "get_loaded_model"],
+    ["Quantos componentes ele possui?", "get_model_summary"],
+    ["Encontre o rotor.", "find_component"],
+    ["Selecione o rotor.", "select_component"],
+    ["Isole o rotor.", "isolate_component"],
+    ["Exploda a montagem.", "explode_all"],
+    ["Reconstrua a montagem.", "reassemble"],
+    ["Qual peça está selecionada?", "get_selected_component"],
   ])("roteia %s para %s", (query, tool) => expect(routeIntent(query).tools).toContain(tool));
+
+  it("resolve fatores absolutos e incrementais no software", () => {
+    expect(routeIntent("Abra em 50%.")).toMatchObject({ tools: ["set_explosion_factor"], factor: 0.5 });
+    expect(routeIntent("Exploda a montagem em 70%.")).toMatchObject({ tools: ["set_explosion_factor"], factor: 0.7 });
+    expect(routeIntent("Abra mais.")).toMatchObject({ tools: ["set_explosion_factor"], delta: 0.15 });
+    expect(routeIntent("Feche um pouco.")).toMatchObject({ tools: ["set_explosion_factor"], delta: -0.15 });
+  });
+
+  it.each([
+    ["Mostre todos os componentes.", "show_all_components"],
+    ["Oculte o rotor.", "hide_component"],
+    ["Mostre o rotor.", "show_component"],
+    ["Foque o rotor.", "focus_component"],
+    ["Exploda o conjunto do eixo.", "explode_component"],
+    ["Resete a visualização do modelo.", "reset_model_view"],
+  ])("roteia ação visual %s", (query, tool) => expect(routeIntent(query).tools).toEqual([tool]));
+
+  it("mantém referências contextuais sem inventar um ID", () => {
+    expect(routeIntent("Isole essa peça.")).toMatchObject({ tools: ["isolate_component"], term: undefined });
+    expect(routeIntent("Esse componente está visível?")).toMatchObject({ tools: ["get_component_details"], term: undefined });
+    expect(routeIntent("Azriel, o que é essa peça?")).toMatchObject({ tools: ["get_component_details"] });
+    expect(routeIntent("Quantos filhos ela possui?")).toMatchObject({ tools: ["get_component_details"], term: undefined });
+  });
+
+  it("extrai o nome real do componente sem delegar IDs ao modelo", () => {
+    expect(routeIntent("Destaque o rotor.")).toMatchObject({ tools: ["select_component"], term: "rotor" });
+    expect(routeIntent("Detalhes do rotor.")).toMatchObject({ tools: ["get_component_details"], term: "rotor" });
+  });
+
+  it("não captura consultas de outros módulos como ações do Engineering", () => {
+    expect(routeIntent("Mostre meu Mapa Stark.").tools).toContain("get_stark_map");
+    expect(routeIntent("Mostre a pasta do ArcCore.").tools).toEqual(["reveal_workspace"]);
+  });
 
   it("combina domínios relacionados a bioinformática", () => {
     const route = routeIntent("O que estou fazendo relacionado a bioinformática?");

@@ -533,3 +533,9 @@ button.core-topology__node { cursor:pointer; }.core-topology__node:hover { borde
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+.engineering-ai-commands > div { display: grid; gap: 1px; background: var(--line-soft); }
+.engineering-ai-commands article { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 4px 10px; padding: 10px 12px; background: var(--surface); }
+.engineering-ai-commands article time, .engineering-ai-commands article span, .engineering-ai-commands article small { color: var(--muted); font: 10px/1.35 var(--mono); }
+.engineering-ai-commands article strong { color: var(--cyan); font: 700 11px/1.35 var(--mono); }
+.engineering-ai-commands article span, .engineering-ai-commands article small { grid-column: 2; overflow-wrap: anywhere; }
+.engineering-ai-commands article[data-state="error"] strong, .engineering-ai-commands article[data-state="error"] small { color: var(--red); }

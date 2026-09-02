@@ -8,15 +8,16 @@ import { localDateKey } from "../../services/dateService";
 import { systemService } from "../../services/systemService";
 import { aiRepository } from "../../repositories/aiRepository";
 import { automationService } from "../../services/automationService";
-import type { ActionPermission, ActionRequest, ActionResult, AISettings, AIToolInput, AIToolName, AIToolResult, Application, DailyCounters, EducationItem, KnowledgeArea, KnowledgeHistory, Note, OllamaStatus, ProcessSnapshot, Project, RegisteredUrl, Routine, RoutineExecutionResult, RunRoutineRequest, SystemSnapshot, Task, Workspace, WorkspaceStatus } from "../../types";
+import { engineeringSessionService, type EngineeringToolGateway } from "../../engineering/engineeringSessionService";
+import type { ActionRequest, ActionResult, AISettings, AIToolInput, AIToolName, AIToolPermission, AIToolResult, Application, DailyCounters, EducationItem, KnowledgeArea, KnowledgeHistory, Note, OllamaStatus, ProcessSnapshot, Project, RegisteredUrl, Routine, RoutineExecutionResult, RunRoutineRequest, SystemSnapshot, Task, Workspace, WorkspaceStatus } from "../../types";
 
 export interface AzrielTool {
   name: AIToolName;
   description: string;
   domain: string;
   readonly: boolean;
-  permission?: ActionPermission;
-  execute(input: AIToolInput): Promise<unknown>;
+  permission?: AIToolPermission;
+  execute(input: AIToolInput): Promise<unknown> | unknown;
 }
 
 export interface ToolDependencies {
@@ -29,6 +30,7 @@ export interface ToolDependencies {
   system: { snapshot(): Promise<SystemSnapshot>; processes(): Promise<ProcessSnapshot[]>; listWorkspaces(): Promise<Workspace[]>; workspaceStatus(id: string): Promise<WorkspaceStatus> };
   ollama: { settings(): Promise<AISettings>; status(endpoint: string, timeoutSeconds: number): Promise<OllamaStatus> };
   automation: { listApplications(): Promise<Application[]>; listUrls(): Promise<RegisteredUrl[]>; execute(request: ActionRequest): Promise<ActionResult>; listRoutines(): Promise<Routine[]>; runRoutine(request: RunRoutineRequest): Promise<RoutineExecutionResult> };
+  engineering?: EngineeringToolGateway;
 }
 
 const productionDependencies: ToolDependencies = {
@@ -41,6 +43,7 @@ const productionDependencies: ToolDependencies = {
   system: systemService,
   ollama: { settings: aiRepository.getSettings, status: aiRepository.status },
   automation: automationService,
+  engineering: engineeringSessionService,
 };
 
 const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -74,8 +77,10 @@ const bestNamedMatch = <T extends { id: string; name: string; enabled: boolean }
 };
 const executeAction = async (dependencies: ToolDependencies, actionId: ActionRequest["actionId"], targetId: string | undefined) =>
   dependencies.automation.execute({ actionId, source: "ai", targetId: targetId ?? "unregistered" });
+const engineeringReference = (input: AIToolInput) => input.entityId || input.term;
 
 function createTools(dependencies: ToolDependencies): AzrielTool[] {
+  const engineering = dependencies.engineering ?? engineeringSessionService;
   return [
     { name: "get_today_tasks", domain: "Operações Diárias", description: "Tarefas de hoje e atrasadas ainda abertas", readonly: true, execute: () => dependencies.tasks.today() },
     { name: "get_overdue_tasks", domain: "Operações Diárias", description: "Tarefas atrasadas", readonly: true, execute: async () => { const today = localDateKey(); return (await dependencies.tasks.list()).filter((task) => unfinished(task) && task.dueDate !== null && task.dueDate < today); } },
@@ -107,6 +112,24 @@ function createTools(dependencies: ToolDependencies): AzrielTool[] {
     { name: "get_ollama_status", domain: "System Core", description: "Estado do Ollama e modelos locais usando as configurações existentes", readonly: true, execute: async () => { const settings = await dependencies.ollama.settings(); return dependencies.ollama.status(settings.endpoint, Math.min(settings.timeoutSeconds, 8)); } },
     { name: "get_azriel_status", domain: "Azriel", description: "Estado consolidado do Azriel", readonly: true, execute: async () => { const [database, daily, system, workspaces, routines] = await Promise.all([dependencies.databaseInfo(), dependencies.tasks.counters(), dependencies.system.snapshot(), dependencies.system.listWorkspaces(), dependencies.automation.listRoutines()]); return { version: "0.8.1", database, daily, system: { cpuUsagePercent: system.cpu.usagePercent, memory: system.memory, errors: system.errors }, workspaces: { enabled: workspaces.filter((item) => item.enabled).length, total: workspaces.length }, routines: { enabled: routines.filter((item) => item.enabled).length, total: routines.length }, aiCore: "online quando Ollama disponível", automationCore: "rotinas autorizadas", writeAccess: "somente ações previamente autorizadas" }; } },
     { name: "get_azriel_version", domain: "Azriel", description: "Versão atual", readonly: true, execute: async () => ({ version: "0.8.1", name: "Automation Core / Rotinas" }) },
+    { name: "get_loaded_model", domain: "Engineering Core", description: "Modelo 3D carregado na sessão local", readonly: true, permission: "read", execute: () => engineering.getLoadedModel() },
+    { name: "get_model_summary", domain: "Engineering Core", description: "Resumo compacto do modelo 3D atual", readonly: true, permission: "read", execute: () => engineering.getModelSummary() },
+    { name: "list_components", domain: "Engineering Core", description: "Lista compacta dos componentes reais do modelo", readonly: true, permission: "read", execute: () => engineering.listComponents() },
+    { name: "find_component", domain: "Engineering Core", description: "Busca componentes reais por nome, sem inventar IDs", readonly: true, permission: "read", execute: (input) => engineering.findComponent(engineeringReference(input) ?? "") },
+    { name: "get_component_details", domain: "Engineering Core", description: "Detalhes do componente identificado ou selecionado", readonly: true, permission: "read", execute: (input) => engineering.getComponentDetails(engineeringReference(input)) },
+    { name: "get_selected_component", domain: "Engineering Core", description: "Componente atualmente selecionado", readonly: true, permission: "read", execute: () => engineering.getSelectedComponent() },
+    { name: "get_explosion_state", domain: "Engineering Core", description: "Estado atual do Exploded View", readonly: true, permission: "read", execute: () => engineering.getExplosionState() },
+    { name: "select_component", domain: "Engineering Core", description: "Seleciona visualmente um componente real", readonly: false, permission: "visual_action", execute: (input) => engineering.selectComponent(engineeringReference(input), "ai") },
+    { name: "focus_component", domain: "Engineering Core", description: "Enquadra visualmente um componente real", readonly: false, permission: "visual_action", execute: (input) => engineering.focusComponent(engineeringReference(input), "ai") },
+    { name: "isolate_component", domain: "Engineering Core", description: "Isola visualmente um componente real", readonly: false, permission: "visual_action", execute: (input) => engineering.isolateComponent(engineeringReference(input), "ai") },
+    { name: "show_all_components", domain: "Engineering Core", description: "Restaura a visibilidade dos componentes", readonly: false, permission: "visual_action", execute: () => engineering.showAllComponents("ai") },
+    { name: "hide_component", domain: "Engineering Core", description: "Oculta visualmente um componente real", readonly: false, permission: "visual_action", execute: (input) => engineering.hideComponent(engineeringReference(input), "ai") },
+    { name: "show_component", domain: "Engineering Core", description: "Mostra visualmente um componente real", readonly: false, permission: "visual_action", execute: (input) => engineering.showComponent(engineeringReference(input), "ai") },
+    { name: "set_explosion_factor", domain: "Engineering Core", description: "Ajusta o fator visual de explosão entre zero e um", readonly: false, permission: "visual_action", execute: (input) => input.delta === undefined ? engineering.setExplosionFactor(input.factor ?? Number.NaN, "ai") : engineering.adjustExplosion(input.delta, "ai") },
+    { name: "explode_all", domain: "Engineering Core", description: "Explode visualmente toda a montagem", readonly: false, permission: "visual_action", execute: () => engineering.explodeAll("ai") },
+    { name: "explode_component", domain: "Engineering Core", description: "Explode visualmente uma submontagem real", readonly: false, permission: "visual_action", execute: (input) => engineering.explodeComponent(engineeringReference(input), "ai") },
+    { name: "reassemble", domain: "Engineering Core", description: "Reconstrói visualmente a montagem", readonly: false, permission: "visual_action", execute: () => engineering.reassemble("ai") },
+    { name: "reset_model_view", domain: "Engineering Core", description: "Restaura câmera e transformação global da visualização", readonly: false, permission: "visual_action", execute: () => engineering.resetModelView("ai") },
     { name: "list_routines", domain: "Automation Core", description: "Lista rotinas registradas e seus passos autorizados", readonly: true, execute: async () => (await dependencies.automation.listRoutines()).map((routine) => ({ id: routine.id, name: routine.name, description: routine.description, enabled: routine.enabled, confirmationRequired: routine.confirmationRequired, steps: routine.steps.map(({ order, actionId, targetType, targetId, delayMs, enabled }) => ({ order, actionId, targetType, targetId, delayMs, enabled })) })) },
     { name: "run_routine", domain: "Automation Core", description: "Solicita a execução de uma rotina existente identificada internamente", readonly: false, permission: "confirm_write", execute: async (input) => { const target = bestNamedMatch(await dependencies.automation.listRoutines(), input.query); return dependencies.automation.runRoutine({ routineId: target?.id ?? "unregistered", source: "ai" }); } },
     { name: "open_application", domain: "Automation Core", description: "Abre somente um aplicativo autorizado identificado pelo nome", readonly: false, permission: "safe_write", execute: async (input) => { const target = bestNamedMatch(await dependencies.automation.listApplications(), input.query); return executeAction(dependencies, "open_application", target?.id); } },

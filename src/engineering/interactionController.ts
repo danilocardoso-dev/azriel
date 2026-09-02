@@ -74,6 +74,19 @@ export class InteractionController {
     return this.getSnapshot();
   }
 
+  restore(snapshot: EngineeringObjectSnapshot): EngineeringObjectSnapshot {
+    this.cancelSession();
+    this.snapshot = {
+      ...snapshot,
+      status: "ready",
+      control: "none",
+      position: { ...snapshot.position },
+      rotation: { ...snapshot.rotation },
+      scale: clamp(snapshot.scale, this.settings.minScale, this.settings.maxScale),
+    };
+    return this.getSnapshot();
+  }
+
   getSnapshot(): EngineeringObjectSnapshot {
     return { ...this.snapshot, position: { ...this.snapshot.position }, rotation: { ...this.snapshot.rotation } };
   }

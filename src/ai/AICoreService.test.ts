@@ -90,4 +90,14 @@ describe("AI Core Service", () => {
     expect(provider.requests[1].generationProfile).toBe("repetition-retry");
     expect(result.assistantMessage.content).toBe("Uma explicação curta e completa.");
   });
+
+  it("publica estado de Engineering durante uma visual action", async () => {
+    const provider = new FakeAIProvider("A montagem não foi alterada porque não há modelo carregado.");
+    const gateway = new MemoryConversations();
+    const phases: string[] = [];
+    const service = new AICoreService(provider, new ContextBuilder(new ToolRegistry(dependencies)), gateway, settings);
+    await service.send("Exploda a montagem.", null, (state) => phases.push(state));
+    expect(phases).toContain("engineering");
+    expect(provider.requests[0].messages.some((message) => message.content.includes("NO_MODEL"))).toBe(true);
+  });
 });

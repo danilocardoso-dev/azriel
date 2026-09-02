@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ToolDependencies } from "./toolRegistry";
 import { ToolRegistry } from "./toolRegistry";
+import { FakeEngineeringService } from "../../engineering/fakeEngineeringService";
 
 const dependencies: ToolDependencies = {
   tasks: {
@@ -32,8 +33,14 @@ const dependencies: ToolDependencies = {
 describe("Tool Registry", () => {
   it("expõe consultas, cinco safe actions e execução controlada de rotina", () => {
     const tools = new ToolRegistry(dependencies).list();
-    expect(tools).toHaveLength(37);
-    expect(tools.filter((tool) => !tool.readonly).map((tool) => tool.name)).toEqual(["run_routine", "open_application", "open_workspace", "open_project", "reveal_workspace", "open_registered_url"]);
+    expect(tools).toHaveLength(55);
+    expect(tools.filter((tool) => tool.permission === "visual_action")).toHaveLength(11);
+    expect(tools.filter((tool) => tool.domain === "Engineering Core" && tool.readonly)).toHaveLength(7);
+    expect(tools.filter((tool) => !tool.readonly).map((tool) => tool.name)).toEqual([
+      "select_component", "focus_component", "isolate_component", "show_all_components", "hide_component", "show_component",
+      "set_explosion_factor", "explode_all", "explode_component", "reassemble", "reset_model_view",
+      "run_routine", "open_application", "open_workspace", "open_project", "reveal_workspace", "open_registered_url",
+    ]);
     expect(tools.find((tool) => tool.name === "run_routine")?.permission).toBe("confirm_write");
   });
   it("executa rotina somente pelo ID resolvido no registro", async () => {
@@ -75,5 +82,15 @@ describe("Tool Registry", () => {
   it("não envia caminhos ao listar workspaces para a IA", async () => {
     const result = await new ToolRegistry(dependencies).execute("list_workspaces", { query: "workspaces" });
     expect(result.data).toEqual([{ id: "w1", name: "Azriel", projectId: "p1", enabled: true }]);
+  });
+  it("executa visual actions somente pelo gateway controlado do Engineering Core", async () => {
+    const engineering = new FakeEngineeringService();
+    const registry = new ToolRegistry({ ...dependencies, engineering });
+    await registry.execute("select_component", { query: "Selecione o rotor", term: "rotor" });
+    await registry.execute("set_explosion_factor", { query: "Abra em 50%", factor: 0.5 });
+    expect(engineering.calls).toEqual([
+      { command: "select_component", value: "component-rotor" },
+      { command: "set_explosion_factor", value: 0.5 },
+    ]);
   });
 });

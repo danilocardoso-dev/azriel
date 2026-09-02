@@ -37,6 +37,7 @@ interface EngineeringSceneProps {
   onExplosionGestureState: (state: "idle" | "active" | "cancelled") => void;
   onObjectChange: (snapshot: EngineeringObjectSnapshot) => void;
   onRendererReady: (ready: boolean) => void;
+  persistedObjectSnapshot: EngineeringObjectSnapshot;
 }
 
 interface SceneRuntime {
@@ -121,7 +122,7 @@ function frameObject(runtime: SceneRuntime, target: THREE.Object3D = runtime.man
   runtime.render();
 }
 
-export function EngineeringScene({ hands, mode, interactionScope, calibration, model, wireframe, gridVisible, axesVisible, resetSignal, selectedComponentId, targetedComponentId, componentRevision, explosionFactor, guideLinesVisible, boundingBoxVisible, focusRequest, onComponentTarget, onComponentSelect, onComponentTransform, onExplosionFactorChange, onExplosionGestureState, onObjectChange, onRendererReady }: EngineeringSceneProps) {
+export function EngineeringScene({ hands, mode, interactionScope, calibration, model, wireframe, gridVisible, axesVisible, resetSignal, selectedComponentId, targetedComponentId, componentRevision, explosionFactor, guideLinesVisible, boundingBoxVisible, focusRequest, onComponentTarget, onComponentSelect, onComponentTransform, onExplosionFactorChange, onExplosionGestureState, onObjectChange, onRendererReady, persistedObjectSnapshot }: EngineeringSceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const runtimeRef = useRef<SceneRuntime | null>(null);
   const lastSnapshotRef = useRef<string>("");
@@ -131,6 +132,9 @@ export function EngineeringScene({ hands, mode, interactionScope, calibration, m
   const componentManipulationArmedRef = useRef(true);
   const lastComponentSnapshotRef = useRef("");
   const explosionFactorRef = useRef(explosionFactor);
+  const persistedObjectSnapshotRef = useRef(persistedObjectSnapshot);
+
+  useEffect(() => { persistedObjectSnapshotRef.current = persistedObjectSnapshot; }, [persistedObjectSnapshot]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -249,7 +253,7 @@ export function EngineeringScene({ hands, mode, interactionScope, calibration, m
     runtime.manipulator.remove(runtime.fallback);
     if (runtime.loadedRoot) runtime.manipulator.add(runtime.loadedRoot);
     else runtime.manipulator.add(runtime.fallback);
-    const snapshot = runtime.controller.reset();
+    const snapshot = runtime.controller.restore(persistedObjectSnapshotRef.current);
     runtime.manipulator.position.set(snapshot.position.x, snapshot.position.y, snapshot.position.z);
     runtime.manipulator.rotation.set(snapshot.rotation.x, snapshot.rotation.y, snapshot.rotation.z);
     runtime.manipulator.scale.setScalar(snapshot.scale);

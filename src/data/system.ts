@@ -20,6 +20,7 @@ export const azrielStates: Record<AzrielState, { label: string; message: string 
   processing: { label: "PROCESSANDO", message: "Organizando relações entre módulos." },
   tool: { label: "CONSULTANDO", message: "Recuperando dados estruturados dos núcleos." },
   executing: { label: "EXECUTANDO AÇÃO", message: "Executando uma ação previamente autorizada." },
+  engineering: { label: "ENGINEERING COMMAND", message: "Manipulando o estado visual do modelo 3D." },
   routine: { label: "EXECUTANDO ROTINA", message: "Executando passos autorizados em sequência." },
   alert: { label: "ALERTA", message: "Lacunas críticas requerem atenção." },
   offline: { label: "OFFLINE", message: "Ollama local indisponível; demais núcleos continuam ativos." },
