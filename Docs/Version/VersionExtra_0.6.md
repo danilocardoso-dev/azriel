@@ -1339,3 +1339,17 @@ O LLM interpreta.
 O Engineering Core executa.
 
 O modelo 3D continua protegido.
+
+---
+
+# Estado da implementação — 02/09/2026
+
+Status: **concluída e validada em 02/09/2026**.
+
+Foram entregues a sessão compartilhada do Engineering Core, ferramentas `READ` e `VISUAL_ACTION`, roteamento controlado pelo AI Core, sincronização de seleção e estado visual, ações de foco, isolamento, visibilidade, explosão, reconstrução e reset, além do registro `AZRIEL COMMAND` para ações originadas pela IA.
+
+O teste operacional foi aprovado no aplicativo Tauri com modelo GLB real. O carregamento permaneceu manual, o modelo continuou disponível ao alternar entre Engineering View e AI Core e os comandos em linguagem natural utilizaram exclusivamente as ferramentas registradas.
+
+A calibração gestual continua como limitação conhecida e permanece planejada para a v0.2.1. A sessão 3D permanece somente em memória e é encerrada ao fechar o Azriel.
+
+Com a aprovação do operador, a Engineering Core v0.6 está encerrada.
