@@ -2,9 +2,10 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { ComponentInteractionController } from "../../engineering/componentInteractionController";
+import { ExplosionGestureController } from "../../engineering/explosionGestureController";
 import { InteractionController } from "../../engineering/interactionController";
 import type { LoadedEngineeringModel } from "../../engineering/modelService";
-import type { ComponentTransformSnapshot, EngineeringCalibration, EngineeringInteractionScope, EngineeringObjectSnapshot, EngineeringObjectState, GestureState, HandInteractionPoint, HandSide, ManipulationMode, ViewportPoint } from "../../engineering/types";
+import type { ComponentTransformSnapshot, EngineeringCalibration, EngineeringControlMode, EngineeringInteractionScope, EngineeringObjectSnapshot, EngineeringObjectState, GestureState, HandInteractionPoint, HandSide, ViewportPoint } from "../../engineering/types";
 
 export interface EngineeringHandControl {
   id: HandSide;
@@ -14,7 +15,7 @@ export interface EngineeringHandControl {
 
 interface EngineeringSceneProps {
   hands: EngineeringHandControl[];
-  mode: ManipulationMode;
+  mode: EngineeringControlMode;
   interactionScope: EngineeringInteractionScope;
   calibration: EngineeringCalibration;
   model: LoadedEngineeringModel | null;
@@ -25,11 +26,15 @@ interface EngineeringSceneProps {
   selectedComponentId: string | null;
   targetedComponentId: string | null;
   componentRevision: number;
+  explosionFactor: number;
+  guideLinesVisible: boolean;
   boundingBoxVisible: boolean;
   focusRequest: { sequence: number; componentId: string | null };
   onComponentTarget: (id: string | null) => void;
   onComponentSelect: (id: string | null) => void;
   onComponentTransform: (snapshot: ComponentTransformSnapshot | null) => void;
+  onExplosionFactorChange: (factor: number) => void;
+  onExplosionGestureState: (state: "idle" | "active" | "cancelled") => void;
   onObjectChange: (snapshot: EngineeringObjectSnapshot) => void;
   onRendererReady: (ready: boolean) => void;
 }
@@ -50,6 +55,8 @@ interface SceneRuntime {
   componentBoundsBox: THREE.BoxHelper;
   controller: InteractionController;
   componentController: ComponentInteractionController;
+  explosionController: ExplosionGestureController;
+  guideLines: Map<string, THREE.Line>;
   raycaster: THREE.Raycaster;
   dragPlane: THREE.Plane;
   resizeObserver: ResizeObserver;
@@ -87,6 +94,15 @@ function restoreWireframe(originals: Map<THREE.Material, boolean>) {
   originals.clear();
 }
 
+function clearGuideLines(runtime: SceneRuntime) {
+  runtime.guideLines.forEach((line) => {
+    line.removeFromParent();
+    line.geometry.dispose();
+    (line.material as THREE.Material).dispose();
+  });
+  runtime.guideLines.clear();
+}
+
 function frameObject(runtime: SceneRuntime, target: THREE.Object3D = runtime.manipulator) {
   target.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(target);
@@ -105,7 +121,7 @@ function frameObject(runtime: SceneRuntime, target: THREE.Object3D = runtime.man
   runtime.render();
 }
 
-export function EngineeringScene({ hands, mode, interactionScope, calibration, model, wireframe, gridVisible, axesVisible, resetSignal, selectedComponentId, targetedComponentId, componentRevision, boundingBoxVisible, focusRequest, onComponentTarget, onComponentSelect, onComponentTransform, onObjectChange, onRendererReady }: EngineeringSceneProps) {
+export function EngineeringScene({ hands, mode, interactionScope, calibration, model, wireframe, gridVisible, axesVisible, resetSignal, selectedComponentId, targetedComponentId, componentRevision, explosionFactor, guideLinesVisible, boundingBoxVisible, focusRequest, onComponentTarget, onComponentSelect, onComponentTransform, onExplosionFactorChange, onExplosionGestureState, onObjectChange, onRendererReady }: EngineeringSceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const runtimeRef = useRef<SceneRuntime | null>(null);
   const lastSnapshotRef = useRef<string>("");
@@ -114,6 +130,7 @@ export function EngineeringScene({ hands, mode, interactionScope, calibration, m
   const handComponentTargetRef = useRef<string | null>(null);
   const componentManipulationArmedRef = useRef(true);
   const lastComponentSnapshotRef = useRef("");
+  const explosionFactorRef = useRef(explosionFactor);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -185,7 +202,7 @@ export function EngineeringScene({ hands, mode, interactionScope, calibration, m
       resizeObserver.observe(container);
       runtimeRef.current = {
         renderer, scene, camera, controls, manipulator, fallback, loadedRoot: null, grid, axes, selectionBox, componentTargetBox, componentSelectionBox, componentBoundsBox,
-        controller: new InteractionController(), componentController: new ComponentInteractionController(), raycaster: new THREE.Raycaster(),
+        controller: new InteractionController(), componentController: new ComponentInteractionController(), explosionController: new ExplosionGestureController(), guideLines: new Map(), raycaster: new THREE.Raycaster(),
         dragPlane: new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), resizeObserver,
         originalWireframe: new Map(), render,
       };
@@ -201,6 +218,7 @@ export function EngineeringScene({ hands, mode, interactionScope, calibration, m
       runtime.resizeObserver.disconnect();
       runtime.controls.removeEventListener("change", runtime.render);
       runtime.controls.dispose();
+      clearGuideLines(runtime);
       restoreWireframe(runtime.originalWireframe);
       runtime.fallback.geometry.dispose();
       runtime.fallback.material.dispose();
@@ -225,6 +243,7 @@ export function EngineeringScene({ hands, mode, interactionScope, calibration, m
     const runtime = runtimeRef.current;
     if (!runtime) return;
     restoreWireframe(runtime.originalWireframe);
+    clearGuideLines(runtime);
     if (runtime.loadedRoot) runtime.manipulator.remove(runtime.loadedRoot);
     runtime.loadedRoot = model?.root ?? null;
     runtime.manipulator.remove(runtime.fallback);
@@ -242,6 +261,49 @@ export function EngineeringScene({ hands, mode, interactionScope, calibration, m
     lastSnapshotRef.current = JSON.stringify(snapshot);
     onObjectChange(snapshot);
   }, [model, onObjectChange]);
+
+  useEffect(() => { explosionFactorRef.current = explosionFactor; }, [explosionFactor]);
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    if (!model || !guideLinesVisible || explosionFactor <= 0) {
+      clearGuideLines(runtime);
+      runtime.render();
+      return;
+    }
+    const activeIds = new Set<string>();
+    for (const guide of model.explosion.getGuideLines()) {
+      const object = model.components.getObject(guide.componentId);
+      const component = model.components.get(guide.componentId);
+      if (!object?.parent || !component?.visible) continue;
+      activeIds.add(guide.componentId);
+      let line = runtime.guideLines.get(guide.componentId);
+      if (!line) {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.Float32BufferAttribute(new Float32Array(6), 3));
+        const material = new THREE.LineBasicMaterial({ color: 0x46e9ff, transparent: true, opacity: 0.46, depthTest: false });
+        line = new THREE.Line(geometry, material);
+        line.name = `ExplosionGuide-${guide.componentId}`;
+        line.renderOrder = 20;
+        object.parent.add(line);
+        runtime.guideLines.set(guide.componentId, line);
+      } else if (line.parent !== object.parent) object.parent.add(line);
+      const positions = line.geometry.getAttribute("position") as THREE.BufferAttribute;
+      positions.setXYZ(0, guide.from.x, guide.from.y, guide.from.z);
+      positions.setXYZ(1, guide.to.x, guide.to.y, guide.to.z);
+      positions.needsUpdate = true;
+      line.geometry.computeBoundingSphere();
+    }
+    [...runtime.guideLines].forEach(([id, line]) => {
+      if (activeIds.has(id)) return;
+      line.removeFromParent();
+      line.geometry.dispose();
+      (line.material as THREE.Material).dispose();
+      runtime.guideLines.delete(id);
+    });
+    runtime.render();
+  }, [model, explosionFactor, guideLinesVisible, componentRevision]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -321,6 +383,26 @@ export function EngineeringScene({ hands, mode, interactionScope, calibration, m
       minScale: calibration.minScale,
       maxScale: calibration.maxScale,
     });
+    if (mode === "explode") {
+      runtime.controller.update({ mode: "move", hands: [] });
+      runtime.componentController.release();
+      const result = runtime.explosionController.update(
+        hands.map((hand) => ({ id: hand.id, viewport: hand.cursor })),
+        explosionFactorRef.current,
+        calibration.smoothingAlpha,
+      );
+      if (result.cancelled) onExplosionGestureState("cancelled");
+      else if (result.active) onExplosionGestureState("active");
+      runtime.controls.enabled = true;
+      if (Math.abs(result.factor - explosionFactorRef.current) > 0.0005) {
+        explosionFactorRef.current = result.factor;
+        onExplosionFactorChange(result.factor);
+      }
+      runtime.render();
+      return;
+    }
+    runtime.explosionController.cancel(explosionFactorRef.current);
+    onExplosionGestureState("idle");
     if (interactionScope === "component") {
       const emptySnapshot = runtime.controller.update({ mode, hands: [] });
       runtime.selectionBox.visible = false;
@@ -365,7 +447,7 @@ export function EngineeringScene({ hands, mode, interactionScope, calibration, m
         return { id: hand.id, gesture: hand.gesture, viewport: hand.cursor, world: localPoint ? { x: localPoint.x, y: localPoint.y, z: localPoint.z } : null, hovered: hitWithinSelected };
       });
       if (!hands.some((hand) => hand.gesture === "pinch")) componentManipulationArmedRef.current = true;
-      const componentSnapshot = selectedObject && componentManipulationArmedRef.current
+      const componentSnapshot = explosionFactor <= 0 && selectedObject && componentManipulationArmedRef.current
         ? runtime.componentController.update(mode, interactionHands)
         : runtime.componentController.release();
       if (selectedObject && componentSnapshot) {
@@ -417,7 +499,7 @@ export function EngineeringScene({ hands, mode, interactionScope, calibration, m
       lastSnapshotRef.current = serialized;
       onObjectChange(snapshot);
     }
-  }, [hands, mode, interactionScope, calibration, model, selectedComponentId, onComponentSelect, onComponentTarget, onComponentTransform, onObjectChange]);
+  }, [hands, mode, interactionScope, calibration, model, selectedComponentId, explosionFactor, onComponentSelect, onComponentTarget, onComponentTransform, onExplosionFactorChange, onExplosionGestureState, onObjectChange]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;

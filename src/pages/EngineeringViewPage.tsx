@@ -10,7 +10,7 @@ import { evaluateGesture } from "../engineering/gestureEngine";
 import { HandTrackingService } from "../engineering/handTrackingService";
 import { ModelService, resolveModelCoreState, type LoadedEngineeringModel } from "../engineering/modelService";
 import { normalizedToViewport, smoothLandmark } from "../engineering/trackingMath";
-import type { CameraState, ComponentTransformSnapshot, EngineeringCalibration, EngineeringCalibrationInput, EngineeringInteractionScope, EngineeringObjectSnapshot, GestureState, HandLandmark, HandSide, ManipulationMode, ModelComponent, ModelCoreState, TrackedHand, ViewportPoint } from "../engineering/types";
+import type { AssemblyState, CameraState, ComponentTransformSnapshot, EngineeringCalibration, EngineeringCalibrationInput, EngineeringControlMode, EngineeringInteractionScope, EngineeringObjectSnapshot, ExplosionMode, ExplosionState, GestureState, HandLandmark, HandSide, ModelComponent, ModelCoreState, TrackedHand, ViewportPoint } from "../engineering/types";
 import { engineeringRepository } from "../repositories/engineeringRepository";
 
 const futureInterfaces = [
@@ -29,6 +29,7 @@ const initialObject: EngineeringObjectSnapshot = {
   scale: 1,
   control: "none",
 };
+const initialExplosion: ExplosionState = { enabled: false, factor: 0, mode: "all", assemblyState: "assembled" };
 
 export function EngineeringViewPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -36,6 +37,8 @@ export function EngineeringViewPage() {
   const trackingService = useRef(new HandTrackingService());
   const modelService = useRef(new ModelService());
   const loadedModelRef = useRef<LoadedEngineeringModel | null>(null);
+  const explosionAnimationRef = useRef<number | null>(null);
+  const explosionFactorRef = useRef(0);
   const startAttempt = useRef(0);
   const gestureRef = useRef<Record<HandSide, GestureState>>({ ...emptyGestures });
   const smoothedCursorRef = useRef<Partial<Record<HandSide, HandLandmark>>>({});
@@ -49,7 +52,7 @@ export function EngineeringViewPage() {
   const [previewVisible, setPreviewVisible] = useState(true);
   const [debugVisible, setDebugVisible] = useState(false);
   const [rendererReady, setRendererReady] = useState(false);
-  const [mode, setMode] = useState<ManipulationMode>("move");
+  const [mode, setMode] = useState<EngineeringControlMode>("move");
   const [interactionScope, setInteractionScope] = useState<EngineeringInteractionScope>("model");
   const [objectSnapshot, setObjectSnapshot] = useState<EngineeringObjectSnapshot>(initialObject);
   const [resetSignal, setResetSignal] = useState(0);
@@ -61,6 +64,10 @@ export function EngineeringViewPage() {
   const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null);
   const [targetedComponentId, setTargetedComponentId] = useState<string | null>(null);
   const [componentRevision, setComponentRevision] = useState(0);
+  const [explosionState, setExplosionState] = useState<ExplosionState>(initialExplosion);
+  const [guideLinesVisible, setGuideLinesVisible] = useState(true);
+  const [explosionError, setExplosionError] = useState<string | null>(null);
+  const [explosionGestureState, setExplosionGestureState] = useState<"idle" | "active" | "cancelled">("idle");
   const [componentTransform, setComponentTransform] = useState<ComponentTransformSnapshot | null>(null);
   const [expandedComponentIds, setExpandedComponentIds] = useState<Set<string>>(new Set());
   const [componentSearch, setComponentSearch] = useState("");
@@ -160,6 +167,7 @@ export function EngineeringViewPage() {
   }, [cameraState, handleTrackingError, handleTrackingFrame]);
 
   useEffect(() => () => {
+    if (explosionAnimationRef.current !== null) cancelAnimationFrame(explosionAnimationRef.current);
     startAttempt.current += 1;
     trackingService.current.stop();
     cameraService.current.stop(videoRef.current);
@@ -168,6 +176,8 @@ export function EngineeringViewPage() {
   }, []);
 
   const loadModel = useCallback(async () => {
+    if (explosionAnimationRef.current !== null) cancelAnimationFrame(explosionAnimationRef.current);
+    explosionAnimationRef.current = null;
     setModelState(resolveModelCoreState("load_started", Boolean(loadedModelRef.current)));
     setError(null);
     try {
@@ -185,6 +195,10 @@ export function EngineeringViewPage() {
       setComponentSearch("");
       setExpandedComponentIds(new Set(next.components.list().filter((component) => component.depth < 2).map((component) => component.id)));
       setComponentRevision((revision) => revision + 1);
+      const nextExplosion = next.explosion.getState();
+      explosionFactorRef.current = nextExplosion.factor;
+      setExplosionState(nextExplosion);
+      setExplosionError(null);
       setModelState(resolveModelCoreState("load_succeeded", true));
       if (previous) window.setTimeout(() => modelService.current.unload(previous), 0);
     } catch (reason) {
@@ -202,6 +216,12 @@ export function EngineeringViewPage() {
     setTargetedComponentId(null);
     setComponentSearch("");
     setExpandedComponentIds(new Set());
+    if (explosionAnimationRef.current !== null) cancelAnimationFrame(explosionAnimationRef.current);
+    explosionAnimationRef.current = null;
+    explosionFactorRef.current = 0;
+    setExplosionState(initialExplosion);
+    setExplosionError(null);
+    setExplosionGestureState("idle");
     setModelState(resolveModelCoreState("unloaded", false));
     setError(null);
     if (previous) window.setTimeout(() => modelService.current.unload(previous), 0);
@@ -295,6 +315,63 @@ export function EngineeringViewPage() {
     setComponentRevision((revision) => revision + 1);
   }, []);
 
+  const stopExplosionAnimation = useCallback(() => {
+    if (explosionAnimationRef.current !== null) cancelAnimationFrame(explosionAnimationRef.current);
+    explosionAnimationRef.current = null;
+  }, []);
+
+  const applyExplosionFactor = useCallback((factor: number, assemblyState?: AssemblyState) => {
+    const current = loadedModelRef.current;
+    if (!current?.explosion.getState().enabled) return;
+    const next = current.explosion.applyFactor(factor, assemblyState);
+    explosionFactorRef.current = next.factor;
+    setExplosionState(next);
+    setComponentTransform(null);
+    setComponentRevision((revision) => revision + 1);
+  }, []);
+
+  const configureExplosion = useCallback((explosionMode: ExplosionMode) => {
+    const current = loadedModelRef.current;
+    if (!current) return false;
+    stopExplosionAnimation();
+    const selectedRootId = explosionMode === "selected" ? selectedComponentId : undefined;
+    const result = current.explosion.configure(explosionMode, selectedRootId ?? undefined);
+    explosionFactorRef.current = 0;
+    setExplosionState(current.explosion.getState());
+    setExplosionError(result.error ?? null);
+    setComponentTransform(null);
+    setComponentRevision((revision) => revision + 1);
+    return result.success;
+  }, [selectedComponentId, stopExplosionAnimation]);
+
+  const animateExplosion = useCallback((target: 0 | 1, explosionMode?: ExplosionMode) => {
+    const current = loadedModelRef.current;
+    if (!current) return;
+    if (explosionMode && !configureExplosion(explosionMode)) return;
+    if (!current.explosion.getState().enabled) return;
+    stopExplosionAnimation();
+    setMode("explode");
+    setExplosionError(null);
+    const from = explosionFactorRef.current;
+    const startedAt = performance.now();
+    const duration = 620 * Math.max(0.25, Math.abs(target - from));
+    const state: AssemblyState = target === 1 ? "exploding" : "reassembling";
+    const frame = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      applyExplosionFactor(from + (target - from) * eased, progress === 1 ? (target === 1 ? "exploded" : "assembled") : state);
+      if (progress < 1) explosionAnimationRef.current = requestAnimationFrame(frame);
+      else explosionAnimationRef.current = null;
+    };
+    explosionAnimationRef.current = requestAnimationFrame(frame);
+  }, [applyExplosionFactor, configureExplosion, stopExplosionAnimation]);
+
+  const handleExplosionSlider = useCallback((factor: number) => {
+    stopExplosionAnimation();
+    setMode("explode");
+    applyExplosionFactor(factor);
+  }, [applyExplosionFactor, stopExplosionAnimation]);
+
   const toggleExpanded = useCallback((component: ModelComponent) => {
     if (!component.children.length) return;
     setExpandedComponentIds((current) => {
@@ -327,6 +404,7 @@ export function EngineeringViewPage() {
         <i />
         <span>TRANSFORM</span>
         {(["move", "rotate", "scale"] as const).map((candidate) => <button key={candidate} className={mode === candidate ? "active" : ""} onClick={() => setMode(candidate)}>{candidate.toUpperCase()}</button>)}
+        <button className={mode === "explode" ? "active" : ""} disabled={!loadedModel || !explosionState.enabled} onClick={() => setMode("explode")}>EXPLODE</button>
         <button className={wireframe ? "active" : ""} onClick={() => setWireframe((active) => !active)}>WIREFRAME {wireframe ? "ON" : "OFF"}</button>
         <button className={gridVisible ? "active" : ""} onClick={() => setGridVisible((visible) => !visible)}>GRID {gridVisible ? "ON" : "OFF"}</button>
         <button className={axesVisible ? "active" : ""} onClick={() => setAxesVisible((visible) => !visible)}>AXES {axesVisible ? "ON" : "OFF"}</button>
@@ -336,7 +414,7 @@ export function EngineeringViewPage() {
         <section className="engineering-canvas" aria-label="Viewport tridimensional do Engineering Core">
           <header><span>VIEWPORT // PRIMARY</span><strong>{loadedModel?.metadata.name ?? "TEST-01"} // {objectSnapshot.status.toUpperCase()}</strong></header>
           <div className="engineering-canvas__stage">
-            <EngineeringScene hands={sceneHands} mode={mode} interactionScope={interactionScope} calibration={calibration} model={loadedModel} wireframe={wireframe} gridVisible={gridVisible} axesVisible={axesVisible} resetSignal={resetSignal} selectedComponentId={selectedComponentId} targetedComponentId={targetedComponentId} componentRevision={componentRevision} boundingBoxVisible={boundingBoxVisible} focusRequest={focusRequest} onComponentTarget={setTargetedComponentId} onComponentSelect={selectComponent} onComponentTransform={handleComponentTransform} onObjectChange={setObjectSnapshot} onRendererReady={setRendererReady} />
+            <EngineeringScene hands={sceneHands} mode={mode} interactionScope={interactionScope} calibration={calibration} model={loadedModel} wireframe={wireframe} gridVisible={gridVisible} axesVisible={axesVisible} resetSignal={resetSignal} selectedComponentId={selectedComponentId} targetedComponentId={targetedComponentId} componentRevision={componentRevision} explosionFactor={explosionState.factor} guideLinesVisible={guideLinesVisible} boundingBoxVisible={boundingBoxVisible} focusRequest={focusRequest} onComponentTarget={setTargetedComponentId} onComponentSelect={selectComponent} onComponentTransform={handleComponentTransform} onExplosionFactorChange={handleExplosionSlider} onExplosionGestureState={setExplosionGestureState} onObjectChange={setObjectSnapshot} onRendererReady={setRendererReady} />
             <span className="engineering-canvas__axis engineering-canvas__axis--x">AXIS X // INTERACTION PLANE</span>
             <span className="engineering-canvas__axis engineering-canvas__axis--y">AXIS Y // SCREEN SPACE</span>
             {sceneHands.map((hand) => <div key={hand.id} className={`engineering-hand-cursor engineering-hand-cursor--${hand.id} ${hand.gesture === "pinch" ? "engineering-hand-cursor--pinch" : ""}`} style={{ left: `${hand.cursor.x * 100}%`, top: `${hand.cursor.y * 100}%` }} aria-hidden="true"><i /><small>{hand.id.toUpperCase()}</small></div>)}
@@ -348,6 +426,7 @@ export function EngineeringViewPage() {
                 <span>POSITION</span><strong>{selectedComponent.position.x.toFixed(2)} / {selectedComponent.position.y.toFixed(2)} / {selectedComponent.position.z.toFixed(2)}</strong>
                 <span>ROTATION</span><strong>{selectedComponent.rotation.x.toFixed(2)} / {selectedComponent.rotation.y.toFixed(2)} / {selectedComponent.rotation.z.toFixed(2)}</strong>
                 <span>SCALE</span><strong>{selectedComponent.scale.x.toFixed(2)} / {selectedComponent.scale.y.toFixed(2)} / {selectedComponent.scale.z.toFixed(2)}</strong>
+                <span>EXPLOSION OFFSET</span><strong>{loadedModel!.explosion.getOffset(selectedComponent.id).x.toFixed(2)} / {loadedModel!.explosion.getOffset(selectedComponent.id).y.toFixed(2)} / {loadedModel!.explosion.getOffset(selectedComponent.id).z.toFixed(2)}</strong>
               </> : <>
                 <span>OBJECT</span><strong>{loadedModel?.metadata.name ?? "TEST-01"}</strong>
                 <span>STATUS</span><strong data-status={objectSnapshot.status}>{objectSnapshot.status.toUpperCase()}</strong>
@@ -358,7 +437,7 @@ export function EngineeringViewPage() {
               </>}
             </div>
           </div>
-          <footer><span>SCOPE {interactionScope.toUpperCase()} // {mode.toUpperCase()}</span><span>{interactionScope === "component" ? "PINCH SELECT // RELEASE // PINCH TRANSFORM" : "MOUSE DRAG ORBIT // WHEEL ZOOM"}</span><span>RENDERER {rendererReady ? "ONLINE" : "ERROR"}</span></footer>
+          <footer><span>SCOPE {interactionScope.toUpperCase()} // {mode.toUpperCase()}</span><span>{mode === "explode" ? "TWO HAND DISTANCE // SLIDER FALLBACK" : interactionScope === "component" ? "PINCH SELECT // RELEASE // PINCH TRANSFORM" : "MOUSE DRAG ORBIT // WHEEL ZOOM"}</span><span>RENDERER {rendererReady ? "ONLINE" : "ERROR"}</span></footer>
         </section>
 
         <aside className="engineering-module__rail">
@@ -376,6 +455,33 @@ export function EngineeringViewPage() {
               <div><dt>DIMENSIONS</dt><dd>{loadedModel.metadata.dimensions.x.toFixed(2)} × {loadedModel.metadata.dimensions.y.toFixed(2)} × {loadedModel.metadata.dimensions.z.toFixed(2)}</dd></div>
               <div><dt>STATUS</dt><dd data-state="online">{loadedModel.metadata.complexity === "high" ? "HIGH COMPLEXITY" : "READY"}</dd></div>
             </dl> : <p className="engineering-model-empty">SEM MODELO CARREGADO<br /><small>TEST-01 ATIVO COMO FALLBACK</small></p>}
+          </section>
+
+          <section className="engineering-register engineering-explosion-panel">
+            <header><strong>EXPLOSION CORE</strong><span data-state={loadedModel && explosionState.enabled ? "online" : "offline"}>{loadedModel && explosionState.enabled ? "ONLINE" : "OFFLINE"}</span></header>
+            <dl>
+              <div><dt>ASSEMBLY</dt><dd>{explosionState.assemblyState.toUpperCase()}</dd></div>
+              <div><dt>FACTOR</dt><dd>{Math.round(explosionState.factor * 100)}%</dd></div>
+              <div><dt>MODE</dt><dd>{explosionState.mode.toUpperCase()}</dd></div>
+              <div><dt>UNITS</dt><dd>{loadedModel?.explosion.getMetadata().length ?? 0}</dd></div>
+              <div><dt>GESTURE</dt><dd>{explosionGestureState.toUpperCase()}</dd></div>
+            </dl>
+            <div className="engineering-explosion-controls">
+              <div className="engineering-explosion-mode">
+                <button className={explosionState.mode === "all" ? "active" : ""} disabled={!loadedModel} onClick={() => configureExplosion("all")}>ALL</button>
+                <button className={explosionState.mode === "selected" ? "active" : ""} disabled={!loadedModel || !selectedComponent} onClick={() => configureExplosion("selected")}>SELECTED</button>
+              </div>
+              <label><span>EXPLOSION FACTOR</span><output>{Math.round(explosionState.factor * 100)}%</output><input type="range" min="0" max="100" step="1" value={Math.round(explosionState.factor * 100)} disabled={!loadedModel || !explosionState.enabled} onChange={(event) => handleExplosionSlider(Number(event.target.value) / 100)} /></label>
+              <div className="engineering-explosion-presets">
+                {[25, 50, 100].map((value) => <button key={value} disabled={!explosionState.enabled} onClick={() => handleExplosionSlider(value / 100)}>{value}%</button>)}
+              </div>
+              <button disabled={!loadedModel} onClick={() => animateExplosion(1, "all")}>EXPLODIR MONTAGEM</button>
+              <button disabled={!loadedModel || !selectedComponent} onClick={() => animateExplosion(1, "selected")}>EXPLODIR SELECIONADO</button>
+              <button disabled={!loadedModel || explosionState.factor === 0} onClick={() => animateExplosion(0)}>RECONSTRUIR</button>
+              <button className={guideLinesVisible ? "active" : ""} disabled={!loadedModel} onClick={() => setGuideLinesVisible((visible) => !visible)}>GUIDE LINES {guideLinesVisible ? "ON" : "OFF"}</button>
+              {explosionState.factor > 0 && <small>TRANSFORMAÇÃO INDIVIDUAL SUSPENSA // MODEL ROOT DISPONÍVEL</small>}
+              {explosionError && <small className="engineering-explosion-error">{explosionError}</small>}
+            </div>
           </section>
 
           {loadedModel && <section className="engineering-register engineering-model-tree">
@@ -414,6 +520,7 @@ export function EngineeringViewPage() {
                 <div><dt>ORIGINAL POS.</dt><dd>{selectedComponent.originalPosition.x.toFixed(2)} / {selectedComponent.originalPosition.y.toFixed(2)} / {selectedComponent.originalPosition.z.toFixed(2)}</dd></div>
                 <div><dt>ORIGINAL ROT.</dt><dd>{selectedComponent.originalRotation.x.toFixed(2)} / {selectedComponent.originalRotation.y.toFixed(2)} / {selectedComponent.originalRotation.z.toFixed(2)}</dd></div>
                 <div><dt>ORIGINAL SCALE</dt><dd>{selectedComponent.originalScale.x.toFixed(2)} / {selectedComponent.originalScale.y.toFixed(2)} / {selectedComponent.originalScale.z.toFixed(2)}</dd></div>
+                <div><dt>EXPLOSION OFFSET</dt><dd>{loadedModel.explosion.getOffset(selectedComponent.id).x.toFixed(2)} / {loadedModel.explosion.getOffset(selectedComponent.id).y.toFixed(2)} / {loadedModel.explosion.getOffset(selectedComponent.id).z.toFixed(2)}</dd></div>
                 <div><dt>DIMENSIONS</dt><dd>{selectedComponent.dimensions.x.toFixed(2)} × {selectedComponent.dimensions.y.toFixed(2)} × {selectedComponent.dimensions.z.toFixed(2)}</dd></div>
               </dl>
               <div className="engineering-material-list">
@@ -426,7 +533,7 @@ export function EngineeringViewPage() {
                 <button onClick={() => focusComponent(selectedComponent.id)}>FOCAR</button>
                 <button className={boundingBoxVisible ? "active" : ""} onClick={() => setBoundingBoxVisible((visible) => !visible)}>BOUNDING BOX {boundingBoxVisible ? "ON" : "OFF"}</button>
                 <button onClick={() => focusComponent(null)}>FOCAR MODELO</button>
-                <button onClick={() => { mutateComponents((current) => current.components.restore()); selectComponent(null); }}>RESTAURAR COMPONENTES</button>
+                <button onClick={() => { mutateComponents((current) => { current.explosion.applyFactor(0); current.components.restore(); setExplosionState(current.explosion.getState()); explosionFactorRef.current = 0; }); selectComponent(null); }}>RESTAURAR COMPONENTES</button>
               </div>
             </> : <p className="engineering-model-empty">SELECIONE UMA PEÇA NA ÁRVORE OU NO VIEWPORT</p>}
           </section>}
@@ -462,6 +569,7 @@ export function EngineeringViewPage() {
               <div><dt>MODELO</dt><dd data-state={modelState}>{loadedModel ? "ONLINE" : "NÃO CARREGADO"}</dd></div><div><dt>TELEMETRIA</dt><dd>DESVINCULADA</dd></div>
               <div><dt>RENDERIZADOR 3D</dt><dd>{rendererReady ? "ONLINE" : "ERROR"}</dd></div><div><dt>HAND TRACKING</dt><dd>{trackingOnline ? "ONLINE" : "OFFLINE"}</dd></div>
               <div><dt>COMPONENT CORE</dt><dd>{loadedModel ? "ONLINE" : "OFFLINE"}</dd></div><div><dt>SELECTED</dt><dd>{selectedComponent?.name ?? "NONE"}</dd></div>
+              <div><dt>EXPLOSION CORE</dt><dd>{loadedModel && explosionState.enabled ? "ONLINE" : "OFFLINE"}</dd></div><div><dt>ASSEMBLY</dt><dd>{explosionState.assemblyState.toUpperCase()}</dd></div>
             </dl>
           </section>
         </aside>

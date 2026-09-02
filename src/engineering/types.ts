@@ -4,12 +4,15 @@ export type HandState = "not_detected" | "detected";
 export type HandSide = "left" | "right";
 export type GestureState = "none" | "pinch" | "point" | "open_hand";
 export type ManipulationMode = "move" | "rotate" | "scale";
+export type EngineeringControlMode = ManipulationMode | "explode";
 export type ObjectControlState = "none" | "translate" | "rotate" | "scale";
 export type EngineeringObjectState = "ready" | "targeted" | "grabbed";
 export type ModelCoreState = "empty" | "loading" | "ready" | "error";
 export type ModelFormat = "GLB" | "GLTF";
 export type EngineeringInteractionScope = "model" | "component";
 export type ComponentVisualState = "normal" | "targeted" | "selected" | "hidden" | "isolated";
+export type ExplosionMode = "all" | "selected";
+export type AssemblyState = "assembled" | "exploding" | "exploded" | "reassembling" | "partial";
 
 export interface HandLandmark {
   x: number;
@@ -125,6 +128,32 @@ export interface ComponentTransformSnapshot {
   position: ScenePoint;
   rotation: ScenePoint;
   scale: ScenePoint;
+}
+
+export interface ExplosionMetadata {
+  componentId: string;
+  originalPosition: ScenePoint;
+  worldCenter: ScenePoint;
+  direction: ScenePoint;
+  localOffset: ScenePoint;
+  originalCenterInParent: ScenePoint;
+  distanceMultiplier: number;
+  depth: number;
+}
+
+export interface ExplosionState {
+  enabled: boolean;
+  factor: number;
+  mode: ExplosionMode;
+  selectedRootId?: string;
+  assemblyState: AssemblyState;
+}
+
+export interface ExplosionGuideLine {
+  componentId: string;
+  parentComponentId?: string;
+  from: ScenePoint;
+  to: ScenePoint;
 }
 
 export interface ModelMetadata {

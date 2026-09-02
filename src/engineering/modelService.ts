@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { analyzeModel, prepareModelRoot } from "./modelMath";
 import { ComponentService } from "./componentService";
+import { ExplosionService } from "./explosionService";
 import type { ModelFormat, ModelMetadata, ModelNode } from "./types";
 import type { ModelCoreState } from "./types";
 
@@ -12,6 +13,7 @@ export interface LoadedEngineeringModel {
   metadata: ModelMetadata;
   nodes: ModelNode[];
   components: ComponentService;
+  explosion: ExplosionService;
 }
 
 const extensionPattern = /\.([^.]+)$/;
@@ -82,11 +84,13 @@ export async function loadEngineeringModelBytes(bytes: Uint8Array, fileName: str
     throw new Error("O modelo não contém geometria 3D utilizável.");
   }
   const components = new ComponentService(source);
+  const explosion = new ExplosionService(components);
   return {
     root: prepareModelRoot(source, analysis.center, analysis.normalizationScale),
     metadata: { name: fileName, format, ...analysis.metadata },
     nodes: analysis.nodes,
     components,
+    explosion,
   };
 }
 

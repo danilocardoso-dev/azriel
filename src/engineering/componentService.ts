@@ -103,6 +103,10 @@ export class ComponentService {
     return result;
   }
 
+  descendantsOf(id: string): string[] {
+    return this.descendants(id);
+  }
+
   state(id: string, targetedId: string | null, selectedId: string | null): ComponentVisualState {
     if (!this.isEffectivelyVisible(id)) return "hidden";
     if (this.isolatedComponentId === id) return "isolated";
@@ -150,15 +154,20 @@ export class ComponentService {
   restore(): void {
     this.isolationVisibility = null;
     this.isolatedComponentId = null;
+    this.restoreTransforms();
     for (const [id, visible] of this.originalVisibility) {
       const object = this.objects.get(id);
-      const component = this.components.get(id);
-      if (object && component) {
-        object.visible = visible;
-        object.position.set(component.originalPosition.x, component.originalPosition.y, component.originalPosition.z);
-        object.rotation.set(component.originalRotation.x, component.originalRotation.y, component.originalRotation.z);
-        object.scale.set(component.originalScale.x, component.originalScale.y, component.originalScale.z);
-      }
+      if (object) object.visible = visible;
+    }
+  }
+
+  restoreTransforms(): void {
+    for (const [id, component] of this.components) {
+      const object = this.objects.get(id);
+      if (!object) continue;
+      object.position.set(component.originalPosition.x, component.originalPosition.y, component.originalPosition.z);
+      object.rotation.set(component.originalRotation.x, component.originalRotation.y, component.originalRotation.z);
+      object.scale.set(component.originalScale.x, component.originalScale.y, component.originalScale.z);
     }
   }
 
