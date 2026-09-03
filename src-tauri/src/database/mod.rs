@@ -71,6 +71,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         "engineering_core",
         include_str!("../../migrations/0009_engineering_core.sql"),
     ),
+    (
+        10,
+        "assembly_intelligence",
+        include_str!("../../migrations/0010_assembly_intelligence.sql"),
+    ),
 ];
 
 pub fn open(path: &Path) -> Result<Connection, String> {
@@ -419,6 +424,40 @@ mod tests {
                     [],
                     |row| row.get::<_, i64>(0)
                 )
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn migration_ten_preserves_engineering_calibration() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 9).unwrap();
+        connection
+            .execute(
+                "UPDATE engineering_calibration SET calibrated=1 WHERE id=1",
+                [],
+            )
+            .unwrap();
+
+        apply_migrations_through(&mut connection, 10).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 10);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT calibrated FROM engineering_calibration WHERE id=1",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM engineering_models", [], |row| row
+                    .get::<_, i64>(0))
                 .unwrap(),
             0
         );

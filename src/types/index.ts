@@ -104,6 +104,7 @@ export type AIToolName =
   | "list_workspaces" | "get_workspace_status" | "get_git_status" | "get_recent_commits" | "get_ollama_status"
   | "get_azriel_status" | "get_azriel_version"
   | "get_loaded_model" | "get_model_summary" | "list_components" | "find_component" | "get_component_details" | "get_selected_component" | "get_explosion_state"
+  | "get_component_semantics" | "get_subsystems" | "get_subsystem_components" | "get_component_relationships" | "get_unclassified_components" | "get_semantic_coverage" | "get_assembly_graph_summary"
   | "select_component" | "focus_component" | "isolate_component" | "show_all_components" | "hide_component" | "show_component"
   | "set_explosion_factor" | "explode_all" | "explode_component" | "reassemble" | "reset_model_view"
   | "list_routines" | "run_routine" | AutomationActionId;

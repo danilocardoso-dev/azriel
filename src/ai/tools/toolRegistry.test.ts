@@ -33,9 +33,10 @@ const dependencies: ToolDependencies = {
 describe("Tool Registry", () => {
   it("expõe consultas, cinco safe actions e execução controlada de rotina", () => {
     const tools = new ToolRegistry(dependencies).list();
-    expect(tools).toHaveLength(55);
+    expect(tools).toHaveLength(62);
     expect(tools.filter((tool) => tool.permission === "visual_action")).toHaveLength(11);
     expect(tools.filter((tool) => tool.domain === "Engineering Core" && tool.readonly)).toHaveLength(7);
+    expect(tools.filter((tool) => tool.domain === "Assembly Intelligence" && tool.readonly)).toHaveLength(7);
     expect(tools.filter((tool) => !tool.readonly).map((tool) => tool.name)).toEqual([
       "select_component", "focus_component", "isolate_component", "show_all_components", "hide_component", "show_component",
       "set_explosion_factor", "explode_all", "explode_component", "reassemble", "reset_model_view",
@@ -92,5 +93,10 @@ describe("Tool Registry", () => {
       { command: "select_component", value: "component-rotor" },
       { command: "set_explosion_factor", value: 0.5 },
     ]);
+  });
+  it("expõe Assembly Intelligence somente por tools de leitura", () => {
+    const tools = new ToolRegistry({ ...dependencies, engineering: new FakeEngineeringService() }).list().filter((tool) => tool.domain === "Assembly Intelligence");
+    expect(tools).toHaveLength(7);
+    expect(tools.every((tool) => tool.readonly && tool.permission === "read")).toBe(true);
   });
 });

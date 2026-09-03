@@ -1,5 +1,6 @@
 import type { LoadedEngineeringModel } from "./modelService";
-import type { EngineeringInteractionScope, EngineeringObjectSnapshot, ExplosionState, ModelComponent } from "./types";
+import { bindAssemblyIntelligence, semanticCoverage } from "./assemblyIntelligence";
+import type { AssemblyIntelligenceSnapshot, EngineeringInteractionScope, EngineeringObjectSnapshot, ExplosionState, ModelComponent } from "./types";
 
 export type EngineeringCommandSource = "ai" | "ui";
 export type EngineeringCommandStatus = "success" | "error";
@@ -63,6 +64,13 @@ export interface EngineeringToolGateway {
   getComponentDetails(reference?: string): unknown;
   getSelectedComponent(): unknown;
   getExplosionState(): unknown;
+  getComponentSemantics(reference?: string): unknown;
+  getSubsystems(): unknown;
+  getSubsystemComponents(reference?: string): unknown;
+  getComponentRelationships(reference?: string): unknown;
+  getUnclassifiedComponents(): unknown;
+  getSemanticCoverage(): unknown;
+  getAssemblyGraphSummary(): unknown;
   selectComponent(reference?: string, source?: EngineeringCommandSource): EngineeringActionResult;
   focusComponent(reference?: string, source?: EngineeringCommandSource): EngineeringActionResult;
   isolateComponent(reference?: string, source?: EngineeringCommandSource): EngineeringActionResult;
@@ -97,6 +105,7 @@ export class EngineeringSessionService {
   private commandSequence = 0;
   private commands: EngineeringCommandLog[] = [];
   private objectSnapshot = initialObject();
+  private assemblyIntelligence: AssemblyIntelligenceSnapshot = { semantics: [], subsystems: [], relationships: [] };
   private readonly listeners = new Set<() => void>();
 
   subscribe = (listener: () => void) => {
@@ -141,6 +150,7 @@ export class EngineeringSessionService {
     this.resetSignal += 1;
     this.commands = [];
     this.objectSnapshot = initialObject();
+    this.assemblyIntelligence = { semantics: [], subsystems: [], relationships: [] };
     this.emit();
     return previous;
   }
@@ -155,6 +165,7 @@ export class EngineeringSessionService {
     this.resetSignal += 1;
     this.commands = [];
     this.objectSnapshot = initialObject();
+    this.assemblyIntelligence = { semantics: [], subsystems: [], relationships: [] };
     this.emit();
     return previous;
   }
@@ -185,6 +196,10 @@ export class EngineeringSessionService {
 
   updateObjectSnapshot(snapshot: EngineeringObjectSnapshot): void {
     this.objectSnapshot = { ...snapshot, position: { ...snapshot.position }, rotation: { ...snapshot.rotation } };
+  }
+
+  setAssemblyIntelligence(snapshot: AssemblyIntelligenceSnapshot): void {
+    this.assemblyIntelligence = { semantics: snapshot.semantics.map((item) => ({ ...item })), subsystems: snapshot.subsystems.map((item) => ({ ...item })), relationships: snapshot.relationships.map((item) => ({ ...item })) };
   }
 
   getLoadedModel() {
@@ -275,6 +290,51 @@ export class EngineeringSessionService {
     if (!this.model) return { available: false, code: "NO_MODEL", message: "Nenhum modelo está carregado no Engineering Core." };
     const state = this.model.explosion.getState();
     return { available: true, ...state, selectedRoot: state.selectedRootId ?? null };
+  }
+
+  getComponentSemantics(reference?: string) {
+    const resolution = this.resolve(reference, true);
+    if (!resolution.component) return this.resolutionError(resolution, reference);
+    const semantic = this.assemblyIntelligence.semantics.find((item) => item.componentIdentity === resolution.component!.persistentIdentity);
+    const subsystem = semantic?.subsystemId ? this.assemblyIntelligence.subsystems.find((item) => item.id === semantic.subsystemId) : undefined;
+    return { success: true, component: this.summary(resolution.component), semantic: semantic ?? null, subsystem: subsystem ?? null };
+  }
+
+  getSubsystems() {
+    if (!this.model) return { code: "NO_MODEL", message: "Nenhum modelo está carregado no Engineering Core." };
+    const views = bindAssemblyIntelligence(this.model.components.list(), this.assemblyIntelligence);
+    return this.assemblyIntelligence.subsystems.map((item) => ({ ...item, components: views.filter((view) => view.semantic?.subsystemId === item.id).length }));
+  }
+
+  getSubsystemComponents(reference?: string) {
+    if (!this.model) return { code: "NO_MODEL", message: "Nenhum modelo está carregado no Engineering Core." };
+    const normalized = normalize(reference ?? "");
+    const matches = this.assemblyIntelligence.subsystems.filter((item) => normalize(item.id) === normalized || normalize(item.name) === normalized || normalize(item.name).includes(normalized));
+    if (matches.length !== 1) return { success: false, code: matches.length ? "AMBIGUOUS" : "NOT_FOUND", message: matches.length ? "Mais de um subsistema corresponde à consulta." : "Subsistema não encontrado.", candidates: matches.map((item) => item.name) };
+    const views = bindAssemblyIntelligence(this.model.components.list(), this.assemblyIntelligence).filter((view) => view.semantic?.subsystemId === matches[0].id);
+    return { success: true, subsystem: matches[0], components: views.map((view) => ({ ...this.summary(view.component), role: view.semantic?.role })) };
+  }
+
+  getComponentRelationships(reference?: string) {
+    const resolution = this.resolve(reference, true);
+    if (!resolution.component) return this.resolutionError(resolution, reference);
+    const identity = resolution.component.persistentIdentity;
+    return { success: true, component: this.summary(resolution.component), relationships: this.assemblyIntelligence.relationships.filter((item) => item.sourceComponentIdentity === identity || item.targetComponentIdentity === identity) };
+  }
+
+  getUnclassifiedComponents() {
+    if (!this.model) return { code: "NO_MODEL", message: "Nenhum modelo está carregado no Engineering Core." };
+    return bindAssemblyIntelligence(this.model.components.list(), this.assemblyIntelligence).filter((view) => view.component.selectable && view.component.children.length === 0 && view.status !== "classified").map((view) => ({ ...this.summary(view.component), status: view.status }));
+  }
+
+  getSemanticCoverage() {
+    if (!this.model) return { code: "NO_MODEL", message: "Nenhum modelo está carregado no Engineering Core." };
+    return semanticCoverage(bindAssemblyIntelligence(this.model.components.list(), this.assemblyIntelligence));
+  }
+
+  getAssemblyGraphSummary() {
+    if (!this.model) return { code: "NO_MODEL", message: "Nenhum modelo está carregado no Engineering Core." };
+    return { model: this.model.metadata.name, subsystems: this.assemblyIntelligence.subsystems.length, relationships: this.assemblyIntelligence.relationships.length, coverage: this.getSemanticCoverage(), relationshipTypes: [...new Set(this.assemblyIntelligence.relationships.map((item) => item.relationshipType))] };
   }
 
   selectComponent(reference: string | undefined, source: EngineeringCommandSource = "ai"): EngineeringActionResult {

@@ -20,6 +20,8 @@ function model(names = ["Rotor", "Shaft", "Bearing"]): LoadedEngineeringModel {
   root.updateMatrixWorld(true);
   const components = new ComponentService(root);
   return {
+    identity: "test-model-identity",
+    byteSize: 1024,
     root,
     components,
     explosion: new ExplosionService(components),

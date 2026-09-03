@@ -11,7 +11,7 @@ function termFrom(query: string) {
     ?? normalized.match(/trabalham? ([a-z0-9 ]+)/)?.[1];
 }
 
-const contextualComponent = /\b(?:essa|esta) peca\b|\b(?:esse|este) componente\b|\bpeca selecionada\b|\bcomponente selecionado\b|\b(?:isso|ela|ele)\b/;
+const contextualComponent = /\b(?:essa|esta|desta) peca\b|\b(?:esse|este|desse) componente\b|\bpeca selecionada\b|\bcomponente selecionado\b|\b(?:isso|ela|ele)\b/;
 
 function engineeringComponentTerm(value: string, verbs: string): string | undefined {
   if (contextualComponent.test(value)) return undefined;
@@ -20,6 +20,14 @@ function engineeringComponentTerm(value: string, verbs: string): string | undefi
 }
 
 function engineeringIntent(value: string): RoutedIntent | null {
+  const subsystemTerm = value.match(/subsistema\s+(.+?)(?:\?|$)/)?.[1]?.trim();
+  if (/\b(?:cobertura|percentual)\b/.test(value) && /\b(?:semantica|classificad)/.test(value)) return { intent: "semantic_coverage", scope: "azriel", tools: ["get_semantic_coverage"] };
+  if (/\b(?:nao (?:foram )?classificados?|sem classificacao|pendentes? de classificacao)\b/.test(value)) return { intent: "unclassified_components", scope: "azriel", tools: ["get_unclassified_components"] };
+  if (/\b(?:resuma|resumo)\b/.test(value) && /\b(?:montagem|assembly|estrutura)\b/.test(value)) return { intent: "assembly_graph_summary", scope: "azriel", tools: ["get_assembly_graph_summary"] };
+  if (/\b(?:quais|liste|listar)\b/.test(value) && /\bsubsistemas?\b/.test(value) && !/\bcomponentes?\b/.test(value)) return { intent: "subsystem_list", scope: "azriel", tools: ["get_subsystems"] };
+  if (/\bcomponentes?\b/.test(value) && /\b(?:pertencem|pertencentes|subsistema)\b/.test(value) && subsystemTerm) return { intent: "subsystem_components", scope: "azriel", term: subsystemTerm, tools: ["get_subsystem_components"] };
+  if (/\b(?:relacoes|relacionamentos|conexoes|conectad[oa])\b/.test(value) && /\b(?:peca|componente|selecionad[ao]|essa|este|esta)\b/.test(value)) return { intent: "component_relationships", scope: "azriel", term: engineeringComponentTerm(value, "relacoes|relacionamentos|conexoes"), tools: ["get_component_relationships"] };
+  if (/\b(?:funcao|papel|semantica|subsistema)\b/.test(value) && /\b(?:peca|componente|selecionad[ao]|essa|este|esta|desta|desse)\b/.test(value)) return { intent: "component_semantics", scope: "azriel", term: engineeringComponentTerm(value, "funcao|papel|semantica"), tools: ["get_component_semantics"] };
   const percentage = value.match(/(\d{1,3})(?:\s*por cento)?\b/);
   if (percentage && /\b(?:abra|abrir|exploda|explodir|explosao|fator)\b/.test(value)) return { intent: "explosion_adjust", scope: "azriel", tools: ["set_explosion_factor"], factor: Number(percentage[1]) / 100 };
   if (/\b(?:abra|abrir)\s+(?:um\s+)?(?:pouco\s+)?mais\b/.test(value)) return { intent: "explosion_adjust", scope: "azriel", tools: ["set_explosion_factor"], delta: 0.15 };

@@ -9,6 +9,8 @@ import type { ModelFormat, ModelMetadata, ModelNode } from "./types";
 import type { ModelCoreState } from "./types";
 
 export interface LoadedEngineeringModel {
+  identity: string;
+  byteSize: number;
   root: THREE.Group;
   metadata: ModelMetadata;
   nodes: ModelNode[];
@@ -85,7 +87,11 @@ export async function loadEngineeringModelBytes(bytes: Uint8Array, fileName: str
   }
   const components = new ComponentService(source);
   const explosion = new ExplosionService(components);
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes.slice().buffer);
+  const identity = [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
   return {
+    identity,
+    byteSize: bytes.byteLength,
     root: prepareModelRoot(source, analysis.center, analysis.normalizationScale),
     metadata: { name: fileName, format, ...analysis.metadata },
     nodes: analysis.nodes,

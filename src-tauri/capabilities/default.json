@@ -12,6 +12,7 @@
     "core:window:allow-show",
     "core:window:allow-start-dragging",
     "core:window:allow-unminimize",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "dialog:allow-save"
   ]
 }

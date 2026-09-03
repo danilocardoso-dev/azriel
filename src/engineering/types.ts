@@ -98,6 +98,9 @@ export interface ComponentMaterialInfo {
 
 export interface ModelComponent {
   id: string;
+  persistentIdentity: string;
+  structuralPath: string;
+  originalName: string;
   name: string;
   semanticLabel?: string;
   type: string;
@@ -120,6 +123,51 @@ export interface ModelComponent {
   directionFromModelCenter: ScenePoint;
   dimensions: ModelDimensions;
   materials: ComponentMaterialInfo[];
+}
+
+export type SemanticCoverageStatus = "unclassified" | "partial" | "classified";
+export type ComponentRelationshipType = "connected_to" | "contains" | "supports" | "drives" | "mounted_on" | "adjacent_to" | "depends_on" | "custom";
+
+export interface ComponentSemantic {
+  modelIdentity: string;
+  componentIdentity: string;
+  originalName: string;
+  structuralPath: string;
+  componentType: string;
+  semanticLabel: string;
+  subsystemId?: string | null;
+  role: string;
+  description: string;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EngineeringSubsystem {
+  id: string;
+  modelIdentity: string;
+  name: string;
+  description: string;
+  parentSubsystemId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ComponentRelationship {
+  id: string;
+  modelIdentity: string;
+  sourceComponentIdentity: string;
+  targetComponentIdentity: string;
+  relationshipType: ComponentRelationshipType;
+  description: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AssemblyIntelligenceSnapshot {
+  semantics: ComponentSemantic[];
+  subsystems: EngineeringSubsystem[];
+  relationships: ComponentRelationship[];
 }
 
 export interface ComponentTransformSnapshot {

@@ -52,7 +52,8 @@ export class ComponentService {
     const modelBox = new THREE.Box3().setFromObject(sceneRoot);
     const modelCenter = modelBox.isEmpty() ? new THREE.Vector3() : modelBox.getCenter(new THREE.Vector3());
     this.modelCenter = scenePoint(modelCenter);
-    this.mapScene(sceneRoot, undefined, 0, modelCenter);
+    const rootName = sceneRoot.name.trim() || fallbackName(sceneRoot, 1);
+    this.mapScene(sceneRoot, undefined, 0, modelCenter, `${sceneRoot.type}:${encodeURIComponent(rootName)}:0`, `${rootName}[0]`);
   }
 
   list(): ModelComponent[] {
@@ -184,7 +185,11 @@ export class ComponentService {
     return this.isolatedComponentId;
   }
 
-  private mapScene(object: THREE.Object3D, parentId: string | undefined, depth: number, modelCenter: THREE.Vector3): string {
+  applySemanticLabels(labels: ReadonlyMap<string, string>): void {
+    for (const component of this.components.values()) component.semanticLabel = labels.get(component.persistentIdentity) || undefined;
+  }
+
+  private mapScene(object: THREE.Object3D, parentId: string | undefined, depth: number, modelCenter: THREE.Vector3, persistentIdentity: string, structuralPath: string): string {
     const index = this.components.size + 1;
     const id = `component-${(index - 1).toString().padStart(4, "0")}`;
     const children: string[] = [];
@@ -195,9 +200,13 @@ export class ComponentService {
     if (direction.lengthSq() > 0) direction.normalize();
     const stats = geometryStats(object);
     const dimensions: ModelDimensions = dimensionsFromBox(box);
+    const originalName = object.name.trim() || fallbackName(object, index);
     const component: ModelComponent = {
       id,
-      name: object.name.trim() || fallbackName(object, index),
+      persistentIdentity,
+      structuralPath,
+      originalName,
+      name: originalName,
       type: object.type || "Object3D",
       parentId,
       children,
@@ -223,7 +232,14 @@ export class ComponentService {
     this.objects.set(id, object);
     this.idsByUuid.set(object.uuid, id);
     this.originalVisibility.set(id, object.visible);
-    for (const child of object.children) children.push(this.mapScene(child, id, depth + 1, modelCenter));
+    const occurrences = new Map<string, number>();
+    for (const child of object.children) {
+      const childName = child.name.trim() || fallbackName(child, this.components.size + 1);
+      const key = `${child.type}\u0000${childName}`;
+      const ordinal = occurrences.get(key) ?? 0;
+      occurrences.set(key, ordinal + 1);
+      children.push(this.mapScene(child, id, depth + 1, modelCenter, `${persistentIdentity}/${child.type}:${encodeURIComponent(childName)}:${ordinal}`, `${structuralPath}/${childName}[${ordinal}]`));
+    }
     return id;
   }
 

@@ -24,6 +24,13 @@ export class FakeEngineeringService {
   getComponentDetails(reference?: string) { const component = this.resolve(reference); return component ? { success: true, component } : { success: false, code: "NOT_FOUND", message: "Componente não encontrado." }; }
   getSelectedComponent() { const component = this.selected(); return component ? { selected: true, component } : { selected: false, code: "NO_SELECTION", message: "Nenhum componente está selecionado." }; }
   getExplosionState() { return { available: true, enabled: true, factor: this.factor, mode: "all", selectedRoot: null, assemblyState: this.factor === 0 ? "assembled" : "partial" }; }
+  getComponentSemantics(reference?: string) { return { success: true, component: this.resolve(reference), semantic: null, subsystem: null }; }
+  getSubsystems() { return []; }
+  getSubsystemComponents() { return { success: false, code: "NOT_FOUND", candidates: [] }; }
+  getComponentRelationships(reference?: string) { return { success: true, component: this.resolve(reference), relationships: [] }; }
+  getUnclassifiedComponents() { return fixture; }
+  getSemanticCoverage() { return { total: 3, classified: 0, partial: 0, unclassified: 3, percent: 0 }; }
+  getAssemblyGraphSummary() { return { model: "MotorAssembly.glb", subsystems: 0, relationships: 0 }; }
   selectComponent(reference?: string) { const component = this.resolve(reference); if (component) this.selectedId = component.id; return this.action("select_component", component); }
   focusComponent(reference?: string) { return this.action("focus_component", this.resolve(reference)); }
   isolateComponent(reference?: string) { return this.action("isolate_component", this.resolve(reference)); }

@@ -26,6 +26,16 @@ describe("Tool Router", () => {
     ["Qual peça está selecionada?", "get_selected_component"],
   ])("roteia %s para %s", (query, tool) => expect(routeIntent(query).tools).toContain(tool));
 
+  it.each([
+    ["Qual é a função desta peça?", "get_component_semantics"],
+    ["Quais subsistemas existem?", "get_subsystems"],
+    ["Quais componentes pertencem ao subsistema Drive Train?", "get_subsystem_components"],
+    ["Quais relações possui esse componente?", "get_component_relationships"],
+    ["Quais componentes ainda não foram classificados?", "get_unclassified_components"],
+    ["Qual a cobertura semântica?", "get_semantic_coverage"],
+    ["Resuma a estrutura da montagem.", "get_assembly_graph_summary"],
+  ])("roteia leitura semântica %s", (query, tool) => expect(routeIntent(query).tools).toEqual([tool]));
+
   it("resolve fatores absolutos e incrementais no software", () => {
     expect(routeIntent("Abra em 50%.")).toMatchObject({ tools: ["set_explosion_factor"], factor: 0.5 });
     expect(routeIntent("Exploda a montagem em 70%.")).toMatchObject({ tools: ["set_explosion_factor"], factor: 0.7 });

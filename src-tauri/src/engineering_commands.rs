@@ -42,6 +42,92 @@ pub fn read_engineering_model(path: String) -> Result<tauri::ipc::Response, Stri
     read_model_bytes(std::path::Path::new(&path)).map(tauri::ipc::Response::new)
 }
 
+#[tauri::command]
+pub fn register_engineering_model(
+    state: State<'_, DatabaseState>,
+    input: RegisterEngineeringModelInput,
+) -> Result<AssemblyIntelligenceSnapshot, String> {
+    let mut connection = lock(&state)?;
+    engineering_repository::register_model(&mut connection, &input)
+}
+
+#[tauri::command]
+pub fn get_assembly_intelligence(
+    state: State<'_, DatabaseState>,
+    model_identity: String,
+) -> Result<AssemblyIntelligenceSnapshot, String> {
+    let connection = lock(&state)?;
+    engineering_repository::get_snapshot(&connection, &model_identity)
+}
+
+#[tauri::command]
+pub fn save_component_semantic(
+    state: State<'_, DatabaseState>,
+    input: ComponentSemanticInput,
+) -> Result<ComponentSemantic, String> {
+    let connection = lock(&state)?;
+    engineering_repository::save_semantic(&connection, &input)
+}
+
+#[tauri::command]
+pub fn save_engineering_subsystem(
+    state: State<'_, DatabaseState>,
+    input: EngineeringSubsystemInput,
+) -> Result<EngineeringSubsystem, String> {
+    let connection = lock(&state)?;
+    engineering_repository::save_subsystem(&connection, &input)
+}
+
+#[tauri::command]
+pub fn delete_engineering_subsystem(
+    state: State<'_, DatabaseState>,
+    model_identity: String,
+    id: String,
+) -> Result<(), String> {
+    let connection = lock(&state)?;
+    engineering_repository::delete_subsystem(&connection, &model_identity, &id)
+}
+
+#[tauri::command]
+pub fn save_component_relationship(
+    state: State<'_, DatabaseState>,
+    input: ComponentRelationshipInput,
+) -> Result<ComponentRelationship, String> {
+    let connection = lock(&state)?;
+    engineering_repository::save_relationship(&connection, &input)
+}
+
+#[tauri::command]
+pub fn delete_component_relationship(
+    state: State<'_, DatabaseState>,
+    model_identity: String,
+    id: String,
+) -> Result<(), String> {
+    let connection = lock(&state)?;
+    engineering_repository::delete_relationship(&connection, &model_identity, &id)
+}
+
+#[tauri::command]
+pub fn write_engineering_semantics_export(path: String, content: String) -> Result<(), String> {
+    if content.len() > 10 * 1024 * 1024 {
+        return Err("A exportação excede o limite de 10 MB".into());
+    }
+    let target = std::path::Path::new(&path);
+    if target
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+        != Some("json")
+    {
+        return Err("A exportação deve usar a extensão .json".into());
+    }
+    if !target.parent().is_some_and(std::path::Path::exists) {
+        return Err("A pasta de destino não existe".into());
+    }
+    std::fs::write(target, content).map_err(|error| format!("Falha ao exportar semântica: {error}"))
+}
+
 fn read_model_bytes(path: &std::path::Path) -> Result<Vec<u8>, String> {
     let extension = path
         .extension()

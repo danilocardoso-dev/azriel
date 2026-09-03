@@ -94,6 +94,8 @@ describe("Engineering Core Model Core", () => {
     try {
       const model = await loadEngineeringModelBytes(new TextEncoder().encode(fixture), "fixture.gltf");
       expect(model.metadata.name).toBe("fixture.gltf");
+      expect(model.identity).toMatch(/^[a-f0-9]{64}$/);
+      expect(model.byteSize).toBe(new TextEncoder().encode(fixture).byteLength);
       expect(model.metadata.meshes).toBe(1);
       expect(model.metadata.triangles).toBe(1);
       expect(model.nodes.some((node) => node.name === "Triangle")).toBe(true);

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CameraPreview } from "../components/engineering/CameraPreview";
+import { AssemblyIntelligencePanel } from "../components/engineering/AssemblyIntelligencePanel";
 import { EngineeringScene, type EngineeringHandControl } from "../components/engineering/EngineeringScene";
 import { EngineeringSettings } from "../components/engineering/EngineeringSettings";
 import { ModuleIntro } from "../components/layout/ModuleIntro";
@@ -11,8 +12,9 @@ import { HandTrackingService } from "../engineering/handTrackingService";
 import { engineeringSessionService, type EngineeringCommandLog } from "../engineering/engineeringSessionService";
 import { ModelService, resolveModelCoreState, type LoadedEngineeringModel } from "../engineering/modelService";
 import { normalizedToViewport, smoothLandmark } from "../engineering/trackingMath";
-import type { AssemblyState, CameraState, ComponentTransformSnapshot, EngineeringCalibration, EngineeringCalibrationInput, EngineeringControlMode, EngineeringInteractionScope, EngineeringObjectSnapshot, ExplosionMode, ExplosionState, GestureState, HandLandmark, HandSide, ModelComponent, ModelCoreState, TrackedHand, ViewportPoint } from "../engineering/types";
-import { engineeringRepository } from "../repositories/engineeringRepository";
+import { semanticLabelsForComponents } from "../engineering/assemblyIntelligence";
+import type { AssemblyIntelligenceSnapshot, AssemblyState, CameraState, ComponentTransformSnapshot, EngineeringCalibration, EngineeringCalibrationInput, EngineeringControlMode, EngineeringInteractionScope, EngineeringObjectSnapshot, ExplosionMode, ExplosionState, GestureState, HandLandmark, HandSide, ModelComponent, ModelCoreState, TrackedHand, ViewportPoint } from "../engineering/types";
+import { componentRegistryInput, engineeringRepository } from "../repositories/engineeringRepository";
 
 const futureInterfaces = [
   { code: "CAD", label: "Modelos e componentes" },
@@ -77,6 +79,7 @@ export function EngineeringViewPage() {
   const [calibration, setCalibration] = useState<EngineeringCalibration>(() => defaultCalibration());
   const [savingCalibration, setSavingCalibration] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [assemblySnapshot, setAssemblySnapshot] = useState<AssemblyIntelligenceSnapshot | undefined>();
 
   useEffect(() => { calibrationRef.current = calibration; }, [calibration]);
 
@@ -105,6 +108,29 @@ export function EngineeringViewPage() {
       .then((settings) => { if (active) setCalibration(settings); })
       .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : String(reason)); });
     return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!loadedModel) return;
+    let active = true;
+    void engineeringRepository.registerModel({ modelIdentity: loadedModel.identity, fileName: loadedModel.metadata.name, format: loadedModel.metadata.format, byteSize: loadedModel.byteSize, components: componentRegistryInput(loadedModel.components.list()) })
+      .then((snapshot) => {
+        if (!active) return;
+        loadedModel.components.applySemanticLabels(semanticLabelsForComponents(loadedModel.components.list(), snapshot));
+        setAssemblySnapshot(snapshot);
+        engineeringSessionService.setAssemblyIntelligence(snapshot);
+        engineeringSessionService.touch();
+      })
+      .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : String(reason)); });
+    return () => { active = false; };
+  }, [loadedModel]);
+
+  const updateAssemblySnapshot = useCallback((snapshot: AssemblyIntelligenceSnapshot) => {
+    const current = loadedModelRef.current;
+    if (current) current.components.applySemanticLabels(semanticLabelsForComponents(current.components.list(), snapshot));
+    setAssemblySnapshot(snapshot);
+    engineeringSessionService.setAssemblyIntelligence(snapshot);
+    engineeringSessionService.touch();
   }, []);
 
   const handleTrackingFrame = useCallback(({ hands, fps: currentFps }: { hands: TrackedHand[]; fps: number }) => {
@@ -205,6 +231,7 @@ export function EngineeringViewPage() {
         return;
       }
       const previous = loadedModelRef.current;
+      setAssemblySnapshot(undefined);
       engineeringSessionService.attachModel(next);
       setComponentTransform(null);
       setTargetedComponentId(null);
@@ -230,6 +257,7 @@ export function EngineeringViewPage() {
     explosionFactorRef.current = 0;
     setExplosionError(null);
     setExplosionGestureState("idle");
+    setAssemblySnapshot(undefined);
     setModelState(resolveModelCoreState("unloaded", false));
     setError(null);
     if (previous) window.setTimeout(() => modelService.current.unload(previous), 0);
@@ -599,6 +627,7 @@ export function EngineeringViewPage() {
           </section>
         </aside>
       </div>
+      {loadedModel && <AssemblyIntelligencePanel modelIdentity={loadedModel.identity} modelName={loadedModel.metadata.name} modelFormat={loadedModel.metadata.format} components={components} selectedComponentId={selectedComponentId} snapshot={assemblySnapshot} onSnapshotChange={updateAssemblySnapshot} onSelectComponent={selectComponent} />}
     </section>
   );
 }
