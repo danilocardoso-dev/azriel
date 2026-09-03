@@ -11,6 +11,7 @@ mod ollama;
 mod routine_commands;
 mod system_commands;
 mod system_monitor;
+mod stark_commands;
 
 use database::DatabaseState;
 use tauri::Manager;
@@ -66,6 +67,15 @@ pub fn run() {
             commands::list_education,
             commands::save_education,
             commands::delete_education,
+            stark_commands::list_knowledge_baselines,
+            stark_commands::list_knowledge_events,
+            stark_commands::list_study_roadmaps,
+            stark_commands::save_study_roadmap,
+            stark_commands::delete_study_roadmap,
+            stark_commands::list_research_items,
+            stark_commands::save_research_item,
+            stark_commands::delete_research_item,
+            stark_commands::get_stark_summary,
             daily_commands::list_tasks,
             daily_commands::get_task,
             daily_commands::save_task,

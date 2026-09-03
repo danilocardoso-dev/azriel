@@ -3,9 +3,7 @@ import { getCurrentWindow, Window } from "@tauri-apps/api/window";
 import { modules } from "./data/system";
 import { CommandCenter } from "./pages/CommandCenter";
 import { EducationPage } from "./pages/EducationPage";
-import { KnowledgePage } from "./pages/KnowledgePage";
 import { ProjectsPage } from "./pages/ProjectsPage";
-import { ResearchPage } from "./pages/ResearchPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { StarkMapPage } from "./pages/StarkMapPage";
 import { SystemPage } from "./pages/SystemPage";
@@ -80,7 +78,7 @@ function App() {
 
   const renderModule = () => {
     const empty = activeModule === "stark" && knowledgeAreas.length === 0;
-    if (["command", "projects", "knowledge", "stark", "education"].includes(activeModule) && (loading || error || empty)) {
+    if (["command", "projects", "stark", "education"].includes(activeModule) && (loading || error || empty)) {
       return <DataState loading={loading} error={error} empty={empty} onRetry={() => void reload()} />;
     }
     switch (activeModule) {
@@ -88,14 +86,12 @@ function App() {
       case "projects": return <ProjectsPage openCreate={moduleAction === "new-project"} />;
       case "ai": return <AICorePage />;
       case "daily": return <DailyOperationsPage initialCapture={moduleAction === "new-task" ? "task" : moduleAction === "new-note" ? "note" : undefined} />;
-      case "knowledge": return <KnowledgePage />;
       case "stark": return <StarkMapPage />;
       case "education": return <EducationPage />;
-      case "research": return <ResearchPage />;
       case "system": return <SystemPage coreState={coreState} onOpenAI={() => setActiveModule("ai")} />;
       case "automation": return <AutomationPage />;
       case "settings": return <SettingsPage />;
-      default: return <CommandCenter coreState={displayState} onOpenAI={() => { setModuleAction(null); setActiveModule("ai"); }} onOpenDaily={() => { setModuleAction(null); setActiveModule("daily"); }} onNewProject={() => { setModuleAction("new-project"); setActiveModule("projects"); }} onNewTask={() => { setModuleAction("new-task"); setActiveModule("daily"); }} onNewNote={() => { setModuleAction("new-note"); setActiveModule("daily"); }} />;
+      default: return <CommandCenter coreState={displayState} onOpenAI={() => { setModuleAction(null); setActiveModule("ai"); }} onOpenStark={() => { setModuleAction(null); setActiveModule("stark"); }} onOpenDaily={() => { setModuleAction(null); setActiveModule("daily"); }} onNewProject={() => { setModuleAction("new-project"); setActiveModule("projects"); }} onNewTask={() => { setModuleAction("new-task"); setActiveModule("daily"); }} onNewNote={() => { setModuleAction("new-note"); setActiveModule("daily"); }} />;
     }
   };
 
@@ -107,7 +103,7 @@ function App() {
         </button>
         <div className="topbar__context"><span>{currentModule.code}</span>{currentModule.description}</div>
         <div className="topbar__system">
-          <div className="topbar__status"><span className="live-dot" /><div><strong>SISTEMA ONLINE</strong><small>HUD V0.8.1 / SQLite {databaseInfo ? `S${databaseInfo.schemaVersion}` : ""}</small></div></div>
+          <div className="topbar__status"><span className="live-dot" /><div><strong>SISTEMA ONLINE</strong><small>HUD V0.8.2 / SQLite {databaseInfo ? `S${databaseInfo.schemaVersion}` : ""}</small></div></div>
           <div className="topbar__window-actions">
             <button className="topbar__window-control" onClick={() => void enterOrbMode()} aria-label="Minimizar para o orbe" title="Minimizar para o orbe">&minus;</button>
             <button className={`topbar__window-control ${isFullscreen ? "active" : ""}`} onClick={() => void changeFullscreen()} aria-label={isFullscreen ? "Sair da tela cheia" : "Entrar em tela cheia"} aria-pressed={isFullscreen} title={isFullscreen ? "Sair da tela cheia (Esc)" : "Tela cheia (F11)"}>⛶</button>

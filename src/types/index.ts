@@ -1,4 +1,4 @@
-export type ModuleId = "command" | "engineering" | "ai" | "daily" | "projects" | "knowledge" | "stark" | "education" | "research" | "system" | "automation" | "settings";
+export type ModuleId = "command" | "engineering" | "ai" | "daily" | "projects" | "stark" | "education" | "system" | "automation" | "settings";
 export type AzrielState = "idle" | "processing" | "tool" | "executing" | "engineering" | "routine" | "alert" | "offline";
 export type AIToolPermission = "read" | "visual_action" | "safe_write" | "confirm_write";
 export type ProjectStatus = "active" | "research" | "paused" | "planned" | "completed";
@@ -15,7 +15,8 @@ export type ProjectInput = Omit<Project, "createdAt" | "updatedAt">;
 
 export interface KnowledgeArea {
   id: string; name: string; category: string; description: string; coverage: number; depth: number;
-  priority: Priority; projectIds: string[]; createdAt: string; updatedAt: string;
+  priority: Priority; nodeType: KnowledgeNodeType; parentId: string | null;
+  projectIds: string[]; createdAt: string; updatedAt: string;
 }
 export type KnowledgeInput = Omit<KnowledgeArea, "projectIds" | "createdAt" | "updatedAt">;
 
@@ -99,6 +100,7 @@ export type AIToolName =
   | "get_today_tasks" | "get_overdue_tasks" | "get_upcoming_tasks" | "get_recent_notes" | "get_daily_operations_summary"
   | "list_projects" | "get_project" | "get_project_tasks" | "get_project_knowledge"
   | "list_knowledge_areas" | "get_knowledge_area" | "get_knowledge_gaps" | "get_stark_map" | "get_knowledge_history"
+  | "list_study_roadmaps" | "get_study_roadmap" | "list_research_items" | "get_knowledge_origin"
   | "get_education" | "get_current_education" | "get_planned_education"
   | "get_system_status" | "get_cpu_status" | "get_memory_status" | "get_storage_status" | "get_network_status" | "get_process_summary"
   | "list_workspaces" | "get_workspace_status" | "get_git_status" | "get_recent_commits" | "get_ollama_status"
@@ -112,7 +114,23 @@ export interface AIToolInput { query: string; term?: string; entityId?: string; 
 export interface AIToolResult { name: AIToolName; domain: string; data: unknown; empty: boolean }
 export interface RoutedIntent { intent: string; scope: "azriel" | "general"; tools: AIToolName[]; term?: string; factor?: number; delta?: number }
 
-export interface ResearchItem {
-  id: string; title: string; domain: string; objective: string;
-  status: "project" | "study" | "queue"; impact: string;
-}
+export type KnowledgeNodeType = "area" | "discipline" | "topic" | "competency";
+export interface KnowledgeBaseline { knowledgeAreaId: string; coverage: number; depth: number; recordedAt: string }
+export type KnowledgeEventSource = "baseline" | "roadmap" | "project" | "research" | "manual" | "education";
+export interface KnowledgeEvent { id: string; knowledgeNodeId: string; sourceType: KnowledgeEventSource; sourceId: string | null; eventType: string; coverageDelta: number; depthDelta: number; integrationDelta: number; description: string; createdAt: string }
+
+export type RoadmapStatus = "planned" | "active" | "paused" | "completed";
+export type RoadmapTopicState = "NOT_STARTED" | "EXPOSED" | "UNDERSTOOD" | "PRACTICED" | "APPLIED" | "MASTERED";
+export type RoadmapActivityType = "READING" | "LESSON" | "QUIZ" | "EXERCISE" | "SIMULATION" | "EXPERIMENT" | "PROJECT" | "DOCUMENTATION" | "RESEARCH" | "OTHER";
+export type RoadmapActivityStatus = "pending" | "in_progress" | "completed";
+export interface RoadmapActivity { id: string; title: string; description: string; activityType: RoadmapActivityType; status: RoadmapActivityStatus; completedAt: string | null; order: number }
+export interface RoadmapTopic { id: string; name: string; description: string; knowledgeNodeId: string | null; state: RoadmapTopicState; order: number; activities: RoadmapActivity[] }
+export interface RoadmapStage { id: string; name: string; description: string; order: number; topics: RoadmapTopic[] }
+export interface StudyRoadmap { id: string; name: string; description: string; status: RoadmapStatus; completedActivities: number; totalActivities: number; progress: number; stages: RoadmapStage[]; createdAt: string; updatedAt: string }
+export type StudyRoadmapInput = Pick<StudyRoadmap, "id" | "name" | "description" | "status" | "stages">;
+
+export type ResearchKind = "project" | "study" | "research";
+export type ResearchStatus = "planned" | "active" | "paused" | "completed";
+export interface ResearchItem { id: string; title: string; domain: string; objective: string; description: string; kind: ResearchKind; status: ResearchStatus; impact: string; knowledgeNodeId: string | null; roadmapId: string | null; roadmapTopicId: string | null; projectId: string | null; createdAt: string; updatedAt: string }
+export type ResearchInput = Omit<ResearchItem, "createdAt" | "updatedAt">;
+export interface StarkSummary { roadmapCount: number; activeRoadmapCount: number; researchCount: number; activeResearchCount: number; baselineCount: number; eventCount: number }

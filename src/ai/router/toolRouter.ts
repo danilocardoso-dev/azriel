@@ -81,6 +81,13 @@ export function routeIntent(query: string): RoutedIntent {
   if (value.includes("commit")) return { intent: "git_commits", scope: "azriel", term: value, tools: ["list_workspaces", "get_recent_commits"] };
   if (value.includes("git") || value.includes("repositorio")) return { intent: "git", scope: "azriel", term: value, tools: ["list_workspaces", "get_git_status"] };
   if (value.includes("workspace") || value.includes("pasta autorizada")) return { intent: "workspaces", scope: "azriel", term: value, tools: ["list_workspaces", "get_workspace_status"] };
+  if (value.includes("por que") && (value.includes("cobertura") || value.includes("profundidade") || value.includes("nivel"))) return { intent: "knowledge_origin", scope: "azriel", term, tools: ["get_knowledge_origin"] };
+  if (value.includes("roadmap")) {
+    const details = value.includes("como esta") || value.includes("topico") || value.includes("atividade") || value.includes("conhecimento");
+    return { intent: details ? "roadmap_details" : "roadmaps", scope: "azriel", term, tools: [details ? "get_study_roadmap" : "list_study_roadmaps"] };
+  }
+  if (value.includes("topico") && (value.includes("nao comecei") || value.includes("nao iniciado"))) return { intent: "roadmap_topics_not_started", scope: "azriel", tools: ["list_study_roadmaps"] };
+  if ((value.includes("pesquisa") || value.includes("pesquisas")) && (value.includes("minha") || value.includes("minhas") || value.includes("relacionad") || term)) return { intent: "research", scope: "azriel", term, tools: ["list_research_items"] };
   if (value.includes("rotina")) return { intent: "routines", scope: "azriel", term: value, tools: ["list_routines"] };
   if (value.includes("projet") && value.includes("lacuna")) return { intent: "projects_for_gaps", scope: "azriel", tools: ["list_projects", "list_knowledge_areas", "get_knowledge_gaps"] };
   if ((value.includes("fazendo") || value.includes("atividade") || value.includes("trabalhando")) && term) {

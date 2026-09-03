@@ -11,7 +11,7 @@ const dependencies: ToolDependencies = {
   },
   notes: { list: async () => [] },
   projects: { list: async () => [{ id: "p1", name: "GeneScope", category: "bio", description: "", status: "active", knowledgeAreaIds: ["k1"], objective: "", progress: 20, nextStep: "", createdAt: "", updatedAt: "" }], get: async () => null },
-  knowledge: { list: async () => [{ id: "k1", name: "Genética", category: "bio", description: "", coverage: 60, depth: 20, priority: "high", projectIds: ["p1"], createdAt: "", updatedAt: "" }], get: async () => null, history: async () => [] },
+  knowledge: { list: async () => [{ id: "k1", name: "Genética", category: "bio", description: "", coverage: 60, depth: 20, priority: "high", nodeType: "area", parentId: null, projectIds: ["p1"], createdAt: "", updatedAt: "" }], get: async () => null, history: async () => [] },
   education: { list: async () => [] },
   databaseInfo: async () => ({ schemaVersion: 5, integrationValue: 1 }),
   system: {
@@ -33,7 +33,7 @@ const dependencies: ToolDependencies = {
 describe("Tool Registry", () => {
   it("expõe consultas, cinco safe actions e execução controlada de rotina", () => {
     const tools = new ToolRegistry(dependencies).list();
-    expect(tools).toHaveLength(62);
+    expect(tools).toHaveLength(66);
     expect(tools.filter((tool) => tool.permission === "visual_action")).toHaveLength(11);
     expect(tools.filter((tool) => tool.domain === "Engineering Core" && tool.readonly)).toHaveLength(7);
     expect(tools.filter((tool) => tool.domain === "Assembly Intelligence" && tool.readonly)).toHaveLength(7);
@@ -79,6 +79,19 @@ describe("Tool Registry", () => {
   it("recupera conhecimentos por relação persistida", async () => {
     const result = await new ToolRegistry(dependencies).execute("get_project_knowledge", { query: "GeneScope", term: "GeneScope" });
     expect(result.data).toEqual([expect.objectContaining({ name: "Genética" })]);
+  });
+  it("consulta roadmaps, pesquisas e origem sem criar evolução", async () => {
+    const registry = new ToolRegistry({ ...dependencies, stark: {
+      roadmaps: async () => [
+        { id: "control", name: "Controle e Automação", description: "", status: "active", completedActivities: 1, totalActivities: 2, progress: 50, stages: [], createdAt: "", updatedAt: "" },
+        { id: "future", name: "Futuro", description: "", status: "planned", completedActivities: 0, totalActivities: 0, progress: 0, stages: [], createdAt: "", updatedAt: "" },
+      ],
+      research: async () => [{ id: "pid", title: "Controle PID", domain: "Controle", objective: "", description: "", kind: "research", status: "active", impact: "", knowledgeNodeId: "k1", roadmapId: "control", roadmapTopicId: null, projectId: "p1", createdAt: "", updatedAt: "" }],
+      baselines: async () => [{ knowledgeAreaId: "k1", coverage: 60, depth: 20, recordedAt: "" }], events: async () => [],
+    } });
+    expect((await registry.execute("list_study_roadmaps", { query: "ativos" })).data).toEqual([expect.objectContaining({ id: "control" })]);
+    expect((await registry.execute("list_research_items", { query: "pesquisas" })).empty).toBe(false);
+    expect(await registry.execute("get_knowledge_origin", { query: "Genética", term: "genética" })).toMatchObject({ data: { baseline: { coverage: 60, depth: 20 }, automaticLearningEnabled: false } });
   });
   it("não envia caminhos ao listar workspaces para a IA", async () => {
     const result = await new ToolRegistry(dependencies).execute("list_workspaces", { query: "workspaces" });

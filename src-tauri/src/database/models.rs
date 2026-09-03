@@ -10,6 +10,8 @@ pub struct KnowledgeArea {
     pub coverage: i64,
     pub depth: i64,
     pub priority: String,
+    pub node_type: String,
+    pub parent_id: Option<String>,
     pub project_ids: Vec<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -36,7 +38,13 @@ pub struct KnowledgeInput {
     pub coverage: i64,
     pub depth: i64,
     pub priority: String,
+    #[serde(default = "default_node_type")]
+    pub node_type: String,
+    #[serde(default)]
+    pub parent_id: Option<String>,
 }
+
+fn default_node_type() -> String { "area".into() }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

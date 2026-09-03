@@ -8,8 +8,9 @@ import { localDateKey } from "../../services/dateService";
 import { systemService } from "../../services/systemService";
 import { aiRepository } from "../../repositories/aiRepository";
 import { automationService } from "../../services/automationService";
+import { starkService } from "../../services/starkService";
 import { engineeringSessionService, type EngineeringToolGateway } from "../../engineering/engineeringSessionService";
-import type { ActionRequest, ActionResult, AISettings, AIToolInput, AIToolName, AIToolPermission, AIToolResult, Application, DailyCounters, EducationItem, KnowledgeArea, KnowledgeHistory, Note, OllamaStatus, ProcessSnapshot, Project, RegisteredUrl, Routine, RoutineExecutionResult, RunRoutineRequest, SystemSnapshot, Task, Workspace, WorkspaceStatus } from "../../types";
+import type { ActionRequest, ActionResult, AISettings, AIToolInput, AIToolName, AIToolPermission, AIToolResult, Application, DailyCounters, EducationItem, KnowledgeArea, KnowledgeBaseline, KnowledgeEvent, KnowledgeHistory, Note, OllamaStatus, ProcessSnapshot, Project, RegisteredUrl, ResearchItem, Routine, RoutineExecutionResult, RunRoutineRequest, StudyRoadmap, SystemSnapshot, Task, Workspace, WorkspaceStatus } from "../../types";
 
 export interface AzrielTool {
   name: AIToolName;
@@ -25,6 +26,7 @@ export interface ToolDependencies {
   notes: { list(includeArchived?: boolean): Promise<Note[]> };
   projects: { list(): Promise<Project[]>; get(id: string): Promise<Project | null> };
   knowledge: { list(): Promise<KnowledgeArea[]>; get(id: string): Promise<KnowledgeArea | null>; history(id: string): Promise<KnowledgeHistory[]> };
+  stark?: { roadmaps(): Promise<StudyRoadmap[]>; research(): Promise<ResearchItem[]>; baselines(): Promise<KnowledgeBaseline[]>; events(): Promise<KnowledgeEvent[]> };
   education: { list(): Promise<EducationItem[]> };
   databaseInfo(): Promise<{ schemaVersion: number; integrationValue: number }>;
   system: { snapshot(): Promise<SystemSnapshot>; processes(): Promise<ProcessSnapshot[]>; listWorkspaces(): Promise<Workspace[]>; workspaceStatus(id: string): Promise<WorkspaceStatus> };
@@ -38,6 +40,7 @@ const productionDependencies: ToolDependencies = {
   notes: noteService,
   projects: projectService,
   knowledge: knowledgeService,
+  stark: starkService,
   education: educationService,
   databaseInfo: getDatabaseInfo,
   system: systemService,
@@ -81,6 +84,7 @@ const engineeringReference = (input: AIToolInput) => input.entityId || input.ter
 
 function createTools(dependencies: ToolDependencies): AzrielTool[] {
   const engineering = dependencies.engineering ?? engineeringSessionService;
+  const stark = dependencies.stark ?? starkService;
   return [
     { name: "get_today_tasks", domain: "Operações Diárias", description: "Tarefas de hoje e atrasadas ainda abertas", readonly: true, execute: () => dependencies.tasks.today() },
     { name: "get_overdue_tasks", domain: "Operações Diárias", description: "Tarefas atrasadas", readonly: true, execute: async () => { const today = localDateKey(); return (await dependencies.tasks.list()).filter((task) => unfinished(task) && task.dueDate !== null && task.dueDate < today); } },
@@ -96,6 +100,10 @@ function createTools(dependencies: ToolDependencies): AzrielTool[] {
     { name: "get_knowledge_gaps", domain: "Knowledge Core", description: "Maiores lacunas calculadas", readonly: true, execute: async () => diagnoseGaps(await dependencies.knowledge.list()) },
     { name: "get_stark_map", domain: "Knowledge Core", description: "Dados reais do Mapa Stark", readonly: true, execute: async () => { const areas = await dependencies.knowledge.list(); const average = (field: "coverage" | "depth") => areas.length ? Math.round(areas.reduce((total, area) => total + area[field], 0) / areas.length) : 0; return { areas, coverageAverage: average("coverage"), depthAverage: average("depth") }; } },
     { name: "get_knowledge_history", domain: "Knowledge Core", description: "Histórico de uma área", readonly: true, execute: async (input) => { const area = await findKnowledge(dependencies, input); return area ? dependencies.knowledge.history(area.id) : []; } },
+    { name: "list_study_roadmaps", domain: "Mapa Stark", description: "Roadmaps de estudo e seu progresso estrutural", readonly: true, execute: async (input) => { const items = await stark.roadmaps(); const query = normalize(input.query); return query.includes("ativ") ? items.filter((item) => item.status === "active") : items; } },
+    { name: "get_study_roadmap", domain: "Mapa Stark", description: "Detalhes, etapas, tópicos e atividades de um roadmap", readonly: true, execute: async (input) => { const needle = normalize(input.entityId || input.term || input.query); return (await stark.roadmaps()).find((item) => item.id === input.entityId || normalize(item.name).includes(needle) || needle.includes(normalize(item.name))) ?? null; } },
+    { name: "list_research_items", domain: "Mapa Stark", description: "Pesquisas persistentes e seus vínculos", readonly: true, execute: async (input) => { const items = await stark.research(); const needle = normalize(input.term ?? ""); return needle ? items.filter((item) => normalize(`${item.title} ${item.domain} ${item.objective}`).includes(needle)) : items; } },
+    { name: "get_knowledge_origin", domain: "Mapa Stark", description: "Origem auditável dos valores de um conhecimento", readonly: true, execute: async (input) => { const area = await findKnowledge(dependencies, input); if (!area) return null; const [baselines, events, history] = await Promise.all([stark.baselines(), stark.events(), dependencies.knowledge.history(area.id)]); return { knowledge: area, baseline: baselines.find((item) => item.knowledgeAreaId === area.id) ?? null, manualHistory: history, events: events.filter((item) => item.knowledgeNodeId === area.id), automaticLearningEnabled: false }; } },
     { name: "get_education", domain: "Formação", description: "Formação completa", readonly: true, execute: () => dependencies.education.list() },
     { name: "get_current_education", domain: "Formação", description: "Formação atual", readonly: true, execute: async () => (await dependencies.education.list()).filter((item) => item.status === "in_progress") },
     { name: "get_planned_education", domain: "Formação", description: "Formação planejada", readonly: true, execute: async () => (await dependencies.education.list()).filter((item) => item.status === "planned") },
@@ -110,8 +118,8 @@ function createTools(dependencies: ToolDependencies): AzrielTool[] {
     { name: "get_git_status", domain: "System Core", description: "Estado Git dos workspaces autorizados", readonly: true, execute: async (input) => { const workspace = await findWorkspace(dependencies, input); if (workspace) return dependencies.system.workspaceStatus(workspace.id); const enabled = (await dependencies.system.listWorkspaces()).filter((item) => item.enabled); return Promise.all(enabled.slice(0, 20).map(async (item) => { const status = await dependencies.system.workspaceStatus(item.id); return { workspace: item.name, git: status.git }; })); } },
     { name: "get_recent_commits", domain: "System Core", description: "Commits recentes de um workspace autorizado", readonly: true, execute: async (input) => { const workspace = await findWorkspace(dependencies, input); if (!workspace) return []; return (await dependencies.system.workspaceStatus(workspace.id)).git?.recentCommits ?? []; } },
     { name: "get_ollama_status", domain: "System Core", description: "Estado do Ollama e modelos locais usando as configurações existentes", readonly: true, execute: async () => { const settings = await dependencies.ollama.settings(); return dependencies.ollama.status(settings.endpoint, Math.min(settings.timeoutSeconds, 8)); } },
-    { name: "get_azriel_status", domain: "Azriel", description: "Estado consolidado do Azriel", readonly: true, execute: async () => { const [database, daily, system, workspaces, routines] = await Promise.all([dependencies.databaseInfo(), dependencies.tasks.counters(), dependencies.system.snapshot(), dependencies.system.listWorkspaces(), dependencies.automation.listRoutines()]); return { version: "0.8.1", database, daily, system: { cpuUsagePercent: system.cpu.usagePercent, memory: system.memory, errors: system.errors }, workspaces: { enabled: workspaces.filter((item) => item.enabled).length, total: workspaces.length }, routines: { enabled: routines.filter((item) => item.enabled).length, total: routines.length }, aiCore: "online quando Ollama disponível", automationCore: "rotinas autorizadas", writeAccess: "somente ações previamente autorizadas" }; } },
-    { name: "get_azriel_version", domain: "Azriel", description: "Versão atual", readonly: true, execute: async () => ({ version: "0.8.1", name: "Automation Core / Rotinas" }) },
+    { name: "get_azriel_status", domain: "Azriel", description: "Estado consolidado do Azriel", readonly: true, execute: async () => { const [database, daily, system, workspaces, routines] = await Promise.all([dependencies.databaseInfo(), dependencies.tasks.counters(), dependencies.system.snapshot(), dependencies.system.listWorkspaces(), dependencies.automation.listRoutines()]); return { version: "0.8.2", database, daily, system: { cpuUsagePercent: system.cpu.usagePercent, memory: system.memory, errors: system.errors }, workspaces: { enabled: workspaces.filter((item) => item.enabled).length, total: workspaces.length }, routines: { enabled: routines.filter((item) => item.enabled).length, total: routines.length }, starkKnowledgeSystem: "conhecimento, roadmaps, pesquisa, evolução e lacunas", learningEngine: "planejado para v0.8.3", aiCore: "online quando Ollama disponível", automationCore: "rotinas autorizadas", writeAccess: "somente ações previamente autorizadas" }; } },
+    { name: "get_azriel_version", domain: "Azriel", description: "Versão atual", readonly: true, execute: async () => ({ version: "0.8.2", name: "Stark Knowledge System" }) },
     { name: "get_loaded_model", domain: "Engineering Core", description: "Modelo 3D carregado na sessão local", readonly: true, permission: "read", execute: () => engineering.getLoadedModel() },
     { name: "get_model_summary", domain: "Engineering Core", description: "Resumo compacto do modelo 3D atual", readonly: true, permission: "read", execute: () => engineering.getModelSummary() },
     { name: "list_components", domain: "Engineering Core", description: "Lista compacta dos componentes reais do modelo", readonly: true, permission: "read", execute: () => engineering.listComponents() },

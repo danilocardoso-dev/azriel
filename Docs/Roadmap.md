@@ -9,9 +9,9 @@ Versões podem ser ajustadas conforme novas necessidades técnicas surgirem.
 
 ## Estado atual
 
-Versão atual concluída: **v0.8.1 — Automation Core / Rotinas**
+Versão atual implementada: **v0.8.2 — Stark Knowledge System**
 
-Próxima versão principal planejada: **v0.9 — IoT Core**
+Próxima versão planejada: **v0.8.3 — Learning Engine**
 
 ---
 
@@ -235,6 +235,43 @@ Transformar ações autorizadas em sequências reutilizáveis, previsíveis e au
 - sem rollback, scheduler, recorrência ou gatilhos automáticos
 
 Validação automatizada, empacotamento e aceite operacional concluídos.
+
+---
+
+# v0.8.2 — Stark Knowledge System
+
+Status: 🧪 Implementada em 03 de setembro de 2026; aceite operacional pendente
+
+Objetivo:
+Consolidar conhecimento, roadmaps, pesquisa, evolução e lacunas dentro do Mapa Stark, preservando todos os dados existentes.
+
+### Entregas
+
+- navegação interna unificada com seis áreas
+- baseline idempotente das métricas atuais
+- hierarquia de conhecimento preparada
+- roadmaps persistentes com etapas, tópicos e atividades
+- progresso estrutural separado do nível de conhecimento
+- pesquisa persistente e relacionada a conhecimento, roadmap e projeto
+- Knowledge Events preparados sem automação
+- Gap Diagnostics incorporado ao Mapa Stark
+- consultas compatíveis no AI Core
+- migration aditiva e teste sobre cópia do banco real
+
+### Limites
+
+- sem Learning Engine
+- sem alteração automática das métricas
+- sem geração automática de eventos ou roadmaps
+
+---
+
+# v0.8.3 — Learning Engine
+
+Status: ⏳ Planejado
+
+Objetivo:
+Transformar evidências reais de atividades em Knowledge Events auditáveis e, somente então, calcular evolução de conhecimento.
 
 ---
 

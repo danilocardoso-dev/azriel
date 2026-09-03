@@ -15,13 +15,14 @@ import type { AzrielState } from "../types";
 interface CommandCenterProps {
   coreState: AzrielState;
   onOpenAI: () => void;
+  onOpenStark: () => void;
   onOpenDaily: () => void;
   onNewProject: () => void;
   onNewTask: () => void;
   onNewNote: () => void;
 }
 
-export function CommandCenter({ coreState, onOpenAI, onOpenDaily, onNewProject, onNewTask, onNewNote }: CommandCenterProps) {
+export function CommandCenter({ coreState, onOpenAI, onOpenStark, onOpenDaily, onNewProject, onNewTask, onNewNote }: CommandCenterProps) {
   const { knowledgeAreas, projects, databaseInfo } = useAzrielData();
   const { counters, loading: dailyLoading, error: dailyError } = useDailyOperations();
   const { status: aiStatus, phase: aiPhase } = useAI();
@@ -39,7 +40,7 @@ export function CommandCenter({ coreState, onOpenAI, onOpenDaily, onNewProject, 
   return (
     <>
       <ModuleIntro code="CMD-01" title="Command Center" description="Estação integrada de pesquisa, engenharia e inteligência operacional." metric="ENGINEERING HUD // EXP-01" />
-      <nav className="command-quick-actions" aria-label="Ações rápidas"><span>CAPTURA OPERACIONAL</span><button onClick={onNewProject}>＋ NOVO PROJETO</button><button onClick={onNewTask}>＋ NOVA TAREFA</button><button onClick={onNewNote}>＋ NOVA NOTA</button></nav>
+      <nav className="command-quick-actions" aria-label="Ações rápidas"><span>CAPTURA OPERACIONAL</span><button onClick={onOpenStark}>MAPA STARK</button><button onClick={onNewProject}>＋ NOVO PROJETO</button><button onClick={onNewTask}>＋ NOVA TAREFA</button><button onClick={onNewNote}>＋ NOVA NOTA</button></nav>
 
       <div className="engineering-command">
         <div className="engineering-command__deck">

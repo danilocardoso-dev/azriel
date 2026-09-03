@@ -4,6 +4,7 @@ import type { KnowledgeArea } from "../types";
 
 const area = (id: string, priority: KnowledgeArea["priority"], coverage: number, depth: number): KnowledgeArea => ({
   id, name: id, category: "Teste", description: "", priority, coverage, depth,
+  nodeType: "area", parentId: null,
   projectIds: [], createdAt: "2026-08-31", updatedAt: "2026-08-31",
 });
 

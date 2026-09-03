@@ -12,6 +12,8 @@ pub mod routine_models;
 pub mod routine_repository;
 pub mod system_models;
 pub mod system_repository;
+pub mod stark_models;
+pub mod stark_repository;
 
 use rusqlite::{params, Connection};
 use std::{
@@ -76,6 +78,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         "assembly_intelligence",
         include_str!("../../migrations/0010_assembly_intelligence.sql"),
     ),
+    (
+        11,
+        "stark_knowledge_system",
+        include_str!("../../migrations/0011_stark_knowledge_system.sql"),
+    ),
 ];
 
 pub fn open(path: &Path) -> Result<Connection, String> {
@@ -91,7 +98,9 @@ pub fn open(path: &Path) -> Result<Connection, String> {
 pub fn initialize(connection: &mut Connection) -> Result<(), String> {
     prepare_migration_registry(connection)?;
     apply_migrations_through(connection, i64::MAX)?;
-    repository::seed(connection)
+    repository::seed(connection)?;
+    stark_repository::ensure_baselines(connection)?;
+    stark_repository::ensure_research_seed(connection)
 }
 
 fn prepare_migration_registry(connection: &Connection) -> Result<(), String> {
@@ -461,5 +470,32 @@ mod tests {
                 .unwrap(),
             0
         );
+    }
+
+    #[test]
+    fn migration_eleven_preserves_existing_data_and_creates_one_baseline_per_knowledge() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 10).unwrap();
+        repository::seed(&mut connection).unwrap();
+        connection.execute("INSERT INTO tasks(id,title,status,priority) VALUES ('keep-task-v82','Preservar tarefa','inbox','medium')", []).unwrap();
+        connection.execute("INSERT INTO notes(id,content,status) VALUES ('keep-note-v82','Preservar nota','active')", []).unwrap();
+        connection.execute("INSERT INTO applications(id,name,path,enabled) VALUES ('keep-app-v82','Preservar app','C:\\Azriel.exe',1)", []).unwrap();
+        connection.execute("INSERT INTO workspaces(id,name,path,enabled,application_id) VALUES ('keep-workspace-v82','Preservar workspace','C:\\Projetos',1,'keep-app-v82')", []).unwrap();
+        connection.execute("INSERT INTO routines(id,name) VALUES ('keep-routine-v82','Preservar rotina')", []).unwrap();
+        let old_tables = ["projects", "knowledge_areas", "knowledge_history", "education", "tasks", "notes", "workspaces", "applications", "routines", "engineering_calibration"];
+        let before: Vec<i64> = old_tables.iter().map(|table| connection.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0)).unwrap()).collect();
+
+        apply_migrations_through(&mut connection, 11).unwrap();
+        stark_repository::ensure_baselines(&connection).unwrap();
+        stark_repository::ensure_research_seed(&mut connection).unwrap();
+        let after: Vec<i64> = old_tables.iter().map(|table| connection.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0)).unwrap()).collect();
+        assert_eq!(before, after);
+        let knowledge_count: i64 = connection.query_row("SELECT COUNT(*) FROM knowledge_areas", [], |row| row.get(0)).unwrap();
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM knowledge_baselines", [], |row| row.get::<_, i64>(0)).unwrap(), knowledge_count);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM research_items", [], |row| row.get::<_, i64>(0)).unwrap(), 6);
+        stark_repository::ensure_baselines(&connection).unwrap();
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM knowledge_baselines", [], |row| row.get::<_, i64>(0)).unwrap(), knowledge_count);
+        assert_eq!(schema_version(&connection).unwrap(), 11);
     }
 }

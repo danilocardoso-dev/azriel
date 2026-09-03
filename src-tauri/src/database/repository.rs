@@ -530,7 +530,7 @@ pub fn seed(connection: &mut Connection) -> Result<(), String> {
 }
 
 pub fn list_knowledge(connection: &Connection) -> Result<Vec<KnowledgeArea>, String> {
-    let mut statement = connection.prepare("SELECT id,name,category,description,coverage,depth,priority,created_at,updated_at FROM knowledge_areas ORDER BY category,name").map_err(err)?;
+    let mut statement = connection.prepare("SELECT id,name,category,description,coverage,depth,priority,node_type,parent_id,created_at,updated_at FROM knowledge_areas ORDER BY category,node_type,name").map_err(err)?;
     let rows = statement
         .query_map([], |row| {
             Ok(KnowledgeArea {
@@ -541,9 +541,11 @@ pub fn list_knowledge(connection: &Connection) -> Result<Vec<KnowledgeArea>, Str
                 coverage: row.get(4)?,
                 depth: row.get(5)?,
                 priority: row.get(6)?,
+                node_type: row.get(7)?,
+                parent_id: row.get(8)?,
                 project_ids: vec![],
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
             })
         })
         .map_err(err)?;
@@ -598,11 +600,12 @@ pub fn save_knowledge(connection: &mut Connection, input: &KnowledgeInput) -> Re
         if coverage != input.coverage || depth != input.depth {
             return Err("Use updateKnowledgeMetrics para alterar cobertura ou profundidade".into());
         }
-        connection.execute("UPDATE knowledge_areas SET name=?1,category=?2,description=?3,priority=?4,updated_at=CURRENT_TIMESTAMP WHERE id=?5", params![input.name,input.category,input.description,input.priority,input.id]).map_err(err)?;
+        connection.execute("UPDATE knowledge_areas SET name=?1,category=?2,description=?3,priority=?4,node_type=?5,parent_id=?6,updated_at=CURRENT_TIMESTAMP WHERE id=?7", params![input.name,input.category,input.description,input.priority,input.node_type,input.parent_id,input.id]).map_err(err)?;
         return Ok(());
     }
     let transaction = connection.transaction().map_err(err)?;
-    transaction.execute("INSERT INTO knowledge_areas(id,name,category,description,coverage,depth,priority) VALUES (?1,?2,?3,?4,?5,?6,?7)", params![input.id,input.name,input.category,input.description,input.coverage,input.depth,input.priority]).map_err(err)?;
+    transaction.execute("INSERT INTO knowledge_areas(id,name,category,description,coverage,depth,priority,node_type,parent_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)", params![input.id,input.name,input.category,input.description,input.coverage,input.depth,input.priority,input.node_type,input.parent_id]).map_err(err)?;
+    transaction.execute("INSERT OR IGNORE INTO knowledge_baselines(knowledge_id,coverage,depth) VALUES (?1,?2,?3)", params![input.id,input.coverage,input.depth]).map_err(err)?;
     transaction.execute("INSERT INTO knowledge_history(knowledge_id,coverage,depth,reason) VALUES (?1,?2,?3,'Criação da área')", params![input.id,input.coverage,input.depth]).map_err(err)?;
     transaction.commit().map_err(err)
 }
@@ -793,6 +796,12 @@ fn validate_knowledge(input: &KnowledgeInput) -> Result<(), String> {
     if !["critical", "high", "medium", "low"].contains(&input.priority.as_str()) {
         return Err("Prioridade inválida".into());
     }
+    if !["area", "discipline", "topic", "competency"].contains(&input.node_type.as_str()) {
+        return Err("Tipo de conhecimento inválido".into());
+    }
+    if input.parent_id.as_deref() == Some(input.id.as_str()) {
+        return Err("Um conhecimento não pode ser pai de si mesmo".into());
+    }
     Ok(())
 }
 fn validate_project(input: &ProjectInput) -> Result<(), String> {
@@ -845,7 +854,7 @@ mod tests {
     fn seed_is_idempotent() {
         let mut connection = database();
         seed(&mut connection).unwrap();
-        assert_eq!(database::schema_version(&connection).unwrap(), 10);
+        assert_eq!(database::schema_version(&connection).unwrap(), 11);
         assert_eq!(
             connection
                 .query_row("SELECT COUNT(*) FROM projects", [], |row| row

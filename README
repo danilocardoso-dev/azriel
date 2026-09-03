@@ -840,6 +840,22 @@ Limite: rotinas não criam novas permissões e não aceitam shell, comandos, cam
 
 ---
 
+## Azriel v0.8.2 — Stark Knowledge System
+
+Estado: implementada em 03 de setembro de 2026; aceite operacional pendente.
+
+Objetivos:
+
+* consolidar Conhecimento, Pesquisa, Roadmaps, Evolução e Lacunas no Mapa Stark;
+* preservar métricas anteriores em baselines idempotentes;
+* suportar hierarquia de conhecimento;
+* persistir roadmaps, tópicos, atividades e pesquisas relacionadas;
+* preparar Knowledge Events sem cálculo automático.
+
+Limite: progresso de roadmap não representa nível de conhecimento. O Learning Engine permanece planejado para a v0.8.3.
+
+---
+
 ## Azriel v0.9 — IoT Core
 
 Integração com o mundo físico.
