@@ -6,6 +6,7 @@ pub mod daily_models;
 pub mod daily_repository;
 pub mod engineering_models;
 pub mod engineering_repository;
+pub mod learning_engine;
 pub mod models;
 pub mod repository;
 pub mod routine_models;
@@ -82,6 +83,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         11,
         "stark_knowledge_system",
         include_str!("../../migrations/0011_stark_knowledge_system.sql"),
+    ),
+    (
+        12,
+        "learning_engine",
+        include_str!("../../migrations/0012_learning_engine.sql"),
     ),
 ];
 
@@ -497,5 +503,25 @@ mod tests {
         stark_repository::ensure_baselines(&connection).unwrap();
         assert_eq!(connection.query_row("SELECT COUNT(*) FROM knowledge_baselines", [], |row| row.get::<_, i64>(0)).unwrap(), knowledge_count);
         assert_eq!(schema_version(&connection).unwrap(), 11);
+    }
+
+    #[test]
+    fn migration_twelve_preserves_stark_data_and_initializes_learning_engine() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 11).unwrap();
+        repository::seed(&mut connection).unwrap();
+        stark_repository::ensure_baselines(&connection).unwrap();
+        connection.execute("INSERT INTO study_roadmaps(id,name,status) VALUES ('keep-v83','Preservar roadmap','active')", []).unwrap();
+        connection.execute("INSERT INTO roadmap_stages(id,roadmap_id,name,stage_order) VALUES ('keep-stage-v83','keep-v83','Etapa',1)", []).unwrap();
+        connection.execute("INSERT INTO roadmap_topics(id,stage_id,name,knowledge_node_id,topic_order) VALUES ('keep-topic-v83','keep-stage-v83','Tópico','electronics',1)", []).unwrap();
+        connection.execute("INSERT INTO roadmap_activities(id,topic_id,title,activity_type,status,activity_order) VALUES ('keep-activity-v83','keep-topic-v83','Atividade legada','READING','completed',1)", []).unwrap();
+        let before: i64 = connection.query_row("SELECT COUNT(*) FROM knowledge_areas", [], |row| row.get(0)).unwrap();
+        apply_migrations_through(&mut connection, 12).unwrap();
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM knowledge_areas", [], |row| row.get::<_,i64>(0)).unwrap(), before);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM study_roadmaps WHERE id='keep-v83'", [], |row| row.get::<_,i64>(0)).unwrap(), 1);
+        assert_eq!(connection.query_row("SELECT knowledge_node_id FROM activity_knowledge_nodes WHERE activity_id='keep-activity-v83' AND role='primary'", [], |row| row.get::<_,String>(0)).unwrap(), "electronics");
+        assert_eq!(connection.query_row("SELECT formula_version FROM learning_engine_state WHERE id=1", [], |row| row.get::<_,String>(0)).unwrap(), "LEARNING_ENGINE_V1");
+        assert_eq!(schema_version(&connection).unwrap(), 12);
     }
 }

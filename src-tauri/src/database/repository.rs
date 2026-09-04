@@ -626,12 +626,12 @@ pub fn update_metrics(
     if input.reason.trim().is_empty() {
         return Err("Informe o motivo da atualização".into());
     }
-    let transaction = connection.transaction().map_err(err)?;
-    let changed = transaction.execute("UPDATE knowledge_areas SET coverage=?1,depth=?2,updated_at=CURRENT_TIMESTAMP WHERE id=?3", params![input.coverage,input.depth,input.knowledge_id]).map_err(err)?;
-    if changed == 0 {
+    let exists=connection.query_row("SELECT EXISTS(SELECT 1 FROM knowledge_areas WHERE id=?1)",[&input.knowledge_id],|row|row.get::<_,bool>(0)).map_err(err)?;
+    if !exists {
         return Err("Área de conhecimento não encontrada".into());
     }
-    transaction.execute("INSERT INTO knowledge_history(knowledge_id,coverage,depth,reason) VALUES (?1,?2,?3,?4)", params![input.knowledge_id,input.coverage,input.depth,input.reason.trim()]).map_err(err)?;
+    let transaction = connection.transaction().map_err(err)?;
+    super::learning_engine::manual_adjustment(&transaction,&input.knowledge_id,input.coverage,input.depth,input.reason.trim())?;
     transaction.commit().map_err(err)?;
     list_knowledge(connection)?
         .into_iter()
@@ -854,7 +854,7 @@ mod tests {
     fn seed_is_idempotent() {
         let mut connection = database();
         seed(&mut connection).unwrap();
-        assert_eq!(database::schema_version(&connection).unwrap(), 11);
+        assert_eq!(database::schema_version(&connection).unwrap(), 12);
         assert_eq!(
             connection
                 .query_row("SELECT COUNT(*) FROM projects", [], |row| row

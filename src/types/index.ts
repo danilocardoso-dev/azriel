@@ -101,6 +101,7 @@ export type AIToolName =
   | "list_projects" | "get_project" | "get_project_tasks" | "get_project_knowledge"
   | "list_knowledge_areas" | "get_knowledge_area" | "get_knowledge_gaps" | "get_stark_map" | "get_knowledge_history"
   | "list_study_roadmaps" | "get_study_roadmap" | "list_research_items" | "get_knowledge_origin"
+  | "get_learning_progress" | "get_topic_mastery" | "get_knowledge_evidence" | "get_recent_knowledge_events" | "explain_knowledge_level" | "get_roadmap_learning_status"
   | "get_education" | "get_current_education" | "get_planned_education"
   | "get_system_status" | "get_cpu_status" | "get_memory_status" | "get_storage_status" | "get_network_status" | "get_process_summary"
   | "list_workspaces" | "get_workspace_status" | "get_git_status" | "get_recent_commits" | "get_ollama_status"
@@ -117,13 +118,13 @@ export interface RoutedIntent { intent: string; scope: "azriel" | "general"; too
 export type KnowledgeNodeType = "area" | "discipline" | "topic" | "competency";
 export interface KnowledgeBaseline { knowledgeAreaId: string; coverage: number; depth: number; recordedAt: string }
 export type KnowledgeEventSource = "baseline" | "roadmap" | "project" | "research" | "manual" | "education";
-export interface KnowledgeEvent { id: string; knowledgeNodeId: string; sourceType: KnowledgeEventSource; sourceId: string | null; eventType: string; coverageDelta: number; depthDelta: number; integrationDelta: number; description: string; createdAt: string }
+export interface KnowledgeEvent { id: string; knowledgeNodeId: string; sourceType: KnowledgeEventSource; sourceId: string | null; eventType: string; coverageDelta: number; depthDelta: number; integrationDelta: number; description: string; createdAt: string; activityType: RoadmapActivityType | null; roadmapId: string | null; topicId: string | null; evidenceCycle: number; formulaVersion: string; coverageImpact: number; depthImpact: number; integrationImpact: number; metadataJson: string; reversalOfEventId: string | null }
 
 export type RoadmapStatus = "planned" | "active" | "paused" | "completed";
 export type RoadmapTopicState = "NOT_STARTED" | "EXPOSED" | "UNDERSTOOD" | "PRACTICED" | "APPLIED" | "MASTERED";
 export type RoadmapActivityType = "READING" | "LESSON" | "QUIZ" | "EXERCISE" | "SIMULATION" | "EXPERIMENT" | "PROJECT" | "DOCUMENTATION" | "RESEARCH" | "OTHER";
 export type RoadmapActivityStatus = "pending" | "in_progress" | "completed";
-export interface RoadmapActivity { id: string; title: string; description: string; activityType: RoadmapActivityType; status: RoadmapActivityStatus; completedAt: string | null; order: number }
+export interface RoadmapActivity { id: string; title: string; description: string; activityType: RoadmapActivityType; status: RoadmapActivityStatus; completedAt: string | null; order: number; primaryKnowledgeNodeId?: string | null; secondaryKnowledgeNodeIds?: string[]; projectId?: string | null; researchId?: string | null }
 export interface RoadmapTopic { id: string; name: string; description: string; knowledgeNodeId: string | null; state: RoadmapTopicState; order: number; activities: RoadmapActivity[] }
 export interface RoadmapStage { id: string; name: string; description: string; order: number; topics: RoadmapTopic[] }
 export interface StudyRoadmap { id: string; name: string; description: string; status: RoadmapStatus; completedActivities: number; totalActivities: number; progress: number; stages: RoadmapStage[]; createdAt: string; updatedAt: string }
@@ -134,3 +135,6 @@ export type ResearchStatus = "planned" | "active" | "paused" | "completed";
 export interface ResearchItem { id: string; title: string; domain: string; objective: string; description: string; kind: ResearchKind; status: ResearchStatus; impact: string; knowledgeNodeId: string | null; roadmapId: string | null; roadmapTopicId: string | null; projectId: string | null; createdAt: string; updatedAt: string }
 export type ResearchInput = Omit<ResearchItem, "createdAt" | "updatedAt">;
 export interface StarkSummary { roadmapCount: number; activeRoadmapCount: number; researchCount: number; activeResearchCount: number; baselineCount: number; eventCount: number }
+export interface LearningMutation { createdEvents: KnowledgeEvent[]; affectedKnowledgeIds: string[]; integration: number }
+export interface RoadmapSaveResult { roadmaps: StudyRoadmap[]; learning: LearningMutation }
+export interface LearningEngineStatus { formulaVersion: string; integrationBaseline: number; currentIntegration: number; eventCount: number; lastRecalculatedAt: string | null; status: "ready" | "recalculating" | "error"; lastError: string | null }

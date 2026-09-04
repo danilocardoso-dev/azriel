@@ -20,7 +20,7 @@ describe("Tool Router", () => {
     ["Quais tópicos ainda não comecei?", "list_study_roadmaps"],
     ["Como está meu roadmap de Controle e Automação?", "get_study_roadmap"],
     ["Quais pesquisas estão relacionadas a Bioinformática?", "list_research_items"],
-    ["Por que minha cobertura em Eletrônica está nesse nível?", "get_knowledge_origin"],
+    ["Por que minha cobertura em Eletrônica está nesse nível?", "explain_knowledge_level"],
     ["Qual modelo está carregado?", "get_loaded_model"],
     ["Quantos componentes ele possui?", "get_model_summary"],
     ["Encontre o rotor.", "find_component"],

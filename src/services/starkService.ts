@@ -15,7 +15,7 @@ export const normalizeRoadmapOrder = (input: StudyRoadmapInput): StudyRoadmapInp
     ...stage, order: stageIndex + 1,
     topics: stage.topics.map((topic, topicIndex) => ({
       ...topic, order: topicIndex + 1,
-      activities: topic.activities.map((activity, activityIndex) => ({ ...activity, order: activityIndex + 1 })),
+      activities: topic.activities.map((activity, activityIndex) => ({ ...activity, order: activityIndex + 1, primaryKnowledgeNodeId: activity.primaryKnowledgeNodeId ?? null, secondaryKnowledgeNodeIds: activity.secondaryKnowledgeNodeIds ?? [], projectId: activity.projectId ?? null, researchId: activity.researchId ?? null })),
     })),
   })),
 });

@@ -33,7 +33,7 @@ const dependencies: ToolDependencies = {
 describe("Tool Registry", () => {
   it("expõe consultas, cinco safe actions e execução controlada de rotina", () => {
     const tools = new ToolRegistry(dependencies).list();
-    expect(tools).toHaveLength(66);
+    expect(tools).toHaveLength(72);
     expect(tools.filter((tool) => tool.permission === "visual_action")).toHaveLength(11);
     expect(tools.filter((tool) => tool.domain === "Engineering Core" && tool.readonly)).toHaveLength(7);
     expect(tools.filter((tool) => tool.domain === "Assembly Intelligence" && tool.readonly)).toHaveLength(7);
@@ -91,7 +91,7 @@ describe("Tool Registry", () => {
     } });
     expect((await registry.execute("list_study_roadmaps", { query: "ativos" })).data).toEqual([expect.objectContaining({ id: "control" })]);
     expect((await registry.execute("list_research_items", { query: "pesquisas" })).empty).toBe(false);
-    expect(await registry.execute("get_knowledge_origin", { query: "Genética", term: "genética" })).toMatchObject({ data: { baseline: { coverage: 60, depth: 20 }, automaticLearningEnabled: false } });
+    expect(await registry.execute("get_knowledge_origin", { query: "Genética", term: "genética" })).toMatchObject({ data: { baseline: { coverage: 60, depth: 20 }, automaticLearningEnabled: true } });
   });
   it("não envia caminhos ao listar workspaces para a IA", async () => {
     const result = await new ToolRegistry(dependencies).execute("list_workspaces", { query: "workspaces" });

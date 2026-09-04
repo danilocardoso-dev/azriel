@@ -103,7 +103,7 @@ function App() {
         </button>
         <div className="topbar__context"><span>{currentModule.code}</span>{currentModule.description}</div>
         <div className="topbar__system">
-          <div className="topbar__status"><span className="live-dot" /><div><strong>SISTEMA ONLINE</strong><small>HUD V0.8.2 / SQLite {databaseInfo ? `S${databaseInfo.schemaVersion}` : ""}</small></div></div>
+          <div className="topbar__status"><span className="live-dot" /><div><strong>SISTEMA ONLINE</strong><small>HUD V0.8.3 / SQLite {databaseInfo ? `S${databaseInfo.schemaVersion}` : ""}</small></div></div>
           <div className="topbar__window-actions">
             <button className="topbar__window-control" onClick={() => void enterOrbMode()} aria-label="Minimizar para o orbe" title="Minimizar para o orbe">&minus;</button>
             <button className={`topbar__window-control ${isFullscreen ? "active" : ""}`} onClick={() => void changeFullscreen()} aria-label={isFullscreen ? "Sair da tela cheia" : "Entrar em tela cheia"} aria-pressed={isFullscreen} title={isFullscreen ? "Sair da tela cheia (Esc)" : "Tela cheia (F11)"}>⛶</button>

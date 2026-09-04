@@ -76,6 +76,8 @@ pub fn run() {
             stark_commands::save_research_item,
             stark_commands::delete_research_item,
             stark_commands::get_stark_summary,
+            stark_commands::get_learning_engine_status,
+            stark_commands::rebuild_learning_engine,
             daily_commands::list_tasks,
             daily_commands::get_task,
             daily_commands::save_task,

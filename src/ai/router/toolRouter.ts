@@ -81,9 +81,13 @@ export function routeIntent(query: string): RoutedIntent {
   if (value.includes("commit")) return { intent: "git_commits", scope: "azriel", term: value, tools: ["list_workspaces", "get_recent_commits"] };
   if (value.includes("git") || value.includes("repositorio")) return { intent: "git", scope: "azriel", term: value, tools: ["list_workspaces", "get_git_status"] };
   if (value.includes("workspace") || value.includes("pasta autorizada")) return { intent: "workspaces", scope: "azriel", term: value, tools: ["list_workspaces", "get_workspace_status"] };
-  if (value.includes("por que") && (value.includes("cobertura") || value.includes("profundidade") || value.includes("nivel"))) return { intent: "knowledge_origin", scope: "azriel", term, tools: ["get_knowledge_origin"] };
+  if (value.includes("por que") && (value.includes("cobertura") || value.includes("profundidade") || value.includes("nivel") || value.includes("aument"))) return { intent: "knowledge_explanation", scope: "azriel", term, tools: ["explain_knowledge_level"] };
+  if (value.includes("contribuiu") || value.includes("evidencia")) return { intent: "knowledge_evidence", scope: "azriel", term, tools: ["get_knowledge_evidence"] };
+  if (value.includes("evoluiram") || (value.includes("eventos") && value.includes("conhecimento"))) return { intent: "recent_learning", scope: "azriel", tools: ["get_recent_knowledge_events"] };
+  if (value.includes("dominio") || (value.includes("nivel") && value.includes("topico"))) return { intent: "topic_mastery", scope: "azriel", term, tools: ["get_topic_mastery"] };
   if (value.includes("roadmap")) {
     const details = value.includes("como esta") || value.includes("topico") || value.includes("atividade") || value.includes("conhecimento");
+    if (value.includes("contribuiu") || value.includes("aprendizado") || value.includes("evolucao")) return { intent: "roadmap_learning", scope: "azriel", term, tools: ["get_roadmap_learning_status"] };
     return { intent: details ? "roadmap_details" : "roadmaps", scope: "azriel", term, tools: [details ? "get_study_roadmap" : "list_study_roadmaps"] };
   }
   if (value.includes("topico") && (value.includes("nao comecei") || value.includes("nao iniciado"))) return { intent: "roadmap_topics_not_started", scope: "azriel", tools: ["list_study_roadmaps"] };

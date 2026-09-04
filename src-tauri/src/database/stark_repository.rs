@@ -1,6 +1,6 @@
-use super::stark_models::*;
+use super::{learning_engine, stark_models::*};
 use rusqlite::{params, Connection};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 fn err(error: rusqlite::Error) -> String { error.to_string() }
 fn required(value: &str, label: &str) -> Result<(), String> {
@@ -34,15 +34,20 @@ pub fn list_baselines(connection: &Connection) -> Result<Vec<KnowledgeBaseline>,
 }
 
 pub fn list_events(connection: &Connection) -> Result<Vec<KnowledgeEvent>, String> {
-    let mut statement = connection.prepare("SELECT id,knowledge_node_id,source_type,source_id,event_type,coverage_delta,depth_delta,integration_delta,description,created_at FROM knowledge_events ORDER BY created_at DESC,id DESC").map_err(err)?;
-    let rows = statement.query_map([], |row| Ok(KnowledgeEvent { id: row.get(0)?, knowledge_node_id: row.get(1)?, source_type: row.get(2)?, source_id: row.get(3)?, event_type: row.get(4)?, coverage_delta: row.get(5)?, depth_delta: row.get(6)?, integration_delta: row.get(7)?, description: row.get(8)?, created_at: row.get(9)? })).map_err(err)?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(err)
+    learning_engine::list_events(connection)
 }
 
 fn list_activities(connection: &Connection, topic_id: &str) -> Result<Vec<RoadmapActivity>, String> {
-    let mut statement = connection.prepare("SELECT id,title,description,activity_type,status,completed_at,activity_order FROM roadmap_activities WHERE topic_id=?1 ORDER BY activity_order").map_err(err)?;
-    let rows = statement.query_map([topic_id], |row| Ok(RoadmapActivity { id: row.get(0)?, title: row.get(1)?, description: row.get(2)?, activity_type: row.get(3)?, status: row.get(4)?, completed_at: row.get(5)?, order: row.get(6)? })).map_err(err)?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(err)
+    let mut statement = connection.prepare("SELECT id,title,description,activity_type,status,completed_at,activity_order,project_id,research_id FROM roadmap_activities WHERE topic_id=?1 ORDER BY activity_order").map_err(err)?;
+    let rows = statement.query_map([topic_id], |row| Ok(RoadmapActivity { id: row.get(0)?, title: row.get(1)?, description: row.get(2)?, activity_type: row.get(3)?, status: row.get(4)?, completed_at: row.get(5)?, order: row.get(6)?, project_id: row.get(7)?, research_id: row.get(8)?, primary_knowledge_node_id: None, secondary_knowledge_node_ids: vec![] })).map_err(err)?;
+    let mut activities=rows.collect::<Result<Vec<_>, _>>().map_err(err)?;
+    for activity in &mut activities {
+        let mut relations=connection.prepare("SELECT knowledge_node_id,role FROM activity_knowledge_nodes WHERE activity_id=?1 ORDER BY role,knowledge_node_id").map_err(err)?;
+        let values=relations.query_map([&activity.id],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?))).map_err(err)?.collect::<Result<Vec<_>,_>>().map_err(err)?;
+        activity.primary_knowledge_node_id=values.iter().find(|(_,role)|role=="primary").map(|(id,_)|id.clone());
+        activity.secondary_knowledge_node_ids=values.into_iter().filter(|(_,role)|role=="secondary").map(|(id,_)|id).collect();
+    }
+    Ok(activities)
 }
 
 fn list_topics(connection: &Connection, stage_id: &str) -> Result<Vec<RoadmapTopic>, String> {
@@ -76,7 +81,7 @@ pub fn list_roadmaps(connection: &Connection) -> Result<Vec<StudyRoadmap>, Strin
     Ok(result)
 }
 
-pub fn save_roadmap(connection: &mut Connection, input: &StudyRoadmapInput) -> Result<(), String> {
+pub fn save_roadmap(connection: &mut Connection, input: &StudyRoadmapInput) -> Result<LearningMutation, String> {
     required(&input.id, "o ID do roadmap")?; required(&input.name, "o nome do roadmap")?;
     if !["planned", "active", "paused", "completed"].contains(&input.status.as_str()) { return Err("Status de roadmap inválido".into()); }
     let mut ids = HashSet::new();
@@ -96,9 +101,38 @@ pub fn save_roadmap(connection: &mut Connection, input: &StudyRoadmapInput) -> R
                 if activity.order != activity_index as i64 + 1 || !ids.insert(activity.id.clone()) { return Err("Atividades devem possuir IDs únicos e ordem contínua".into()); }
                 if !["READING", "LESSON", "QUIZ", "EXERCISE", "SIMULATION", "EXPERIMENT", "PROJECT", "DOCUMENTATION", "RESEARCH", "OTHER"].contains(&activity.activity_type.as_str()) { return Err("Tipo de atividade inválido".into()); }
                 if !["pending", "in_progress", "completed"].contains(&activity.status.as_str()) { return Err("Status de atividade inválido".into()); }
+                let primary=activity.primary_knowledge_node_id.as_ref().or(topic.knowledge_node_id.as_ref()).ok_or_else(||format!("A atividade {} exige um conhecimento primário",activity.title))?;
+                let mut relation_ids=HashSet::from([primary.clone()]);
+                for knowledge_id in &activity.secondary_knowledge_node_ids { if !relation_ids.insert(knowledge_id.clone()) { return Err("Conhecimentos relacionados não podem ser repetidos".into()); } }
+                for knowledge_id in relation_ids { let exists=connection.query_row("SELECT EXISTS(SELECT 1 FROM knowledge_areas WHERE id=?1)",[knowledge_id],|row|row.get::<_,bool>(0)).map_err(err)?; if !exists{return Err("Conhecimento relacionado não encontrado".into());} }
             }
         }
     }
+    let old_statuses:HashMap<String,(String,String)>={
+        let mut statement=connection.prepare("SELECT activity.id,activity.status,activity.activity_type FROM roadmap_activities activity JOIN roadmap_topics topic ON topic.id=activity.topic_id JOIN roadmap_stages stage ON stage.id=topic.stage_id WHERE stage.roadmap_id=?1").map_err(err)?;
+        let result=statement.query_map([&input.id],|row|Ok((row.get(0)?,(row.get(1)?,row.get(2)?)))).map_err(err)?.collect::<Result<HashMap<_,_>,_>>().map_err(err)?;
+        result
+    };
+    let old_relations:HashMap<String,HashSet<String>>={
+        let mut statement=connection.prepare("SELECT relation.activity_id,relation.role || ':' || relation.knowledge_node_id FROM activity_knowledge_nodes relation JOIN roadmap_activities activity ON activity.id=relation.activity_id JOIN roadmap_topics topic ON topic.id=activity.topic_id JOIN roadmap_stages stage ON stage.id=topic.stage_id WHERE stage.roadmap_id=?1").map_err(err)?;
+        let rows=statement.query_map([&input.id],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?))).map_err(err)?.collect::<Result<Vec<_>,_>>().map_err(err)?;
+        let mut relations:HashMap<String,HashSet<String>>=HashMap::new(); for (activity,value) in rows { relations.entry(activity).or_default().insert(value); } relations
+    };
+    let new_ids:HashSet<String>=input.stages.iter().flat_map(|stage|&stage.topics).flat_map(|topic|&topic.activities).map(|activity|activity.id.clone()).collect();
+    for (old_id,(old_status,_)) in &old_statuses { if !new_ids.contains(old_id) && old_status=="completed" { return Err("Reabra atividades concluídas antes de removê-las".into()); } }
+    for activity in input.stages.iter().flat_map(|stage|&stage.topics).flat_map(|topic|&topic.activities) {
+        if let Some((old_status,old_type))=old_statuses.get(&activity.id) {
+            if old_status=="completed" && activity.status=="completed" && old_type!=&activity.activity_type { return Err("Reabra a atividade concluída antes de alterar seu tipo de evidência".into()); }
+        }
+    }
+    for topic in input.stages.iter().flat_map(|stage|&stage.topics) { for activity in &topic.activities {
+        if old_statuses.get(&activity.id).is_some_and(|value|value.0=="completed") && activity.status=="completed" {
+            let primary=activity.primary_knowledge_node_id.as_ref().or(topic.knowledge_node_id.as_ref()).expect("validated");
+            let mut current=HashSet::from([format!("primary:{primary}")]); current.extend(activity.secondary_knowledge_node_ids.iter().map(|id|format!("secondary:{id}")));
+            if old_relations.get(&activity.id).is_some_and(|old|old!=&current) { return Err("Reabra a atividade concluída antes de alterar seus conhecimentos relacionados".into()); }
+        }
+    }}
+    let previous_events:HashSet<String>=learning_engine::list_events(connection)?.into_iter().map(|event|event.id).collect();
     let transaction = connection.transaction().map_err(err)?;
     transaction.execute("INSERT INTO study_roadmaps(id,name,description,status) VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO UPDATE SET name=excluded.name,description=excluded.description,status=excluded.status,updated_at=CURRENT_TIMESTAMP", params![input.id,input.name.trim(),input.description.trim(),input.status]).map_err(err)?;
     transaction.execute("DELETE FROM roadmap_stages WHERE roadmap_id=?1", [&input.id]).map_err(err)?;
@@ -108,14 +142,27 @@ pub fn save_roadmap(connection: &mut Connection, input: &StudyRoadmapInput) -> R
             transaction.execute("INSERT INTO roadmap_topics(id,stage_id,name,description,knowledge_node_id,topic_state,topic_order) VALUES (?1,?2,?3,?4,?5,?6,?7)", params![topic.id,stage.id,topic.name.trim(),topic.description.trim(),topic.knowledge_node_id,topic.state,topic.order]).map_err(err)?;
             for activity in &topic.activities {
                 let completed_at = if activity.status == "completed" { activity.completed_at.clone().or_else(|| Some("CURRENT_TIMESTAMP".into())) } else { None };
-                transaction.execute("INSERT INTO roadmap_activities(id,topic_id,title,description,activity_type,status,completed_at,activity_order) VALUES (?1,?2,?3,?4,?5,?6,CASE WHEN ?7='CURRENT_TIMESTAMP' THEN CURRENT_TIMESTAMP ELSE ?7 END,?8)", params![activity.id,topic.id,activity.title.trim(),activity.description.trim(),activity.activity_type,activity.status,completed_at,activity.order]).map_err(err)?;
+                transaction.execute("INSERT INTO roadmap_activities(id,topic_id,title,description,activity_type,status,completed_at,activity_order,project_id,research_id) VALUES (?1,?2,?3,?4,?5,?6,CASE WHEN ?7='CURRENT_TIMESTAMP' THEN CURRENT_TIMESTAMP ELSE ?7 END,?8,?9,?10)", params![activity.id,topic.id,activity.title.trim(),activity.description.trim(),activity.activity_type,activity.status,completed_at,activity.order,activity.project_id,activity.research_id]).map_err(err)?;
+                let primary=activity.primary_knowledge_node_id.as_ref().or(topic.knowledge_node_id.as_ref()).expect("validated");
+                transaction.execute("INSERT INTO activity_knowledge_nodes(activity_id,knowledge_node_id,role) VALUES (?1,?2,'primary')",params![activity.id,primary]).map_err(err)?;
+                for secondary in &activity.secondary_knowledge_node_ids { transaction.execute("INSERT INTO activity_knowledge_nodes(activity_id,knowledge_node_id,role) VALUES (?1,?2,'secondary')",params![activity.id,secondary]).map_err(err)?; }
             }
         }
     }
-    transaction.commit().map_err(err)
+    for activity in input.stages.iter().flat_map(|stage|&stage.topics).flat_map(|topic|&topic.activities) {
+        let old=old_statuses.get(&activity.id).map(|value|value.0.as_str()).unwrap_or("pending");
+        if old!="completed" && activity.status=="completed" { learning_engine::complete_activity(&transaction,&activity.id)?; }
+        if old=="completed" && activity.status!="completed" { learning_engine::reopen_activity(&transaction,&activity.id)?; }
+    }
+    let mut result=learning_engine::recalculate(&transaction,"Learning Engine: atividade de roadmap")?;
+    result.created_events=learning_engine::list_events(&transaction)?.into_iter().filter(|event|!previous_events.contains(&event.id)).collect();
+    transaction.commit().map_err(err)?;
+    Ok(result)
 }
 
 pub fn delete_roadmap(connection: &Connection, id: &str) -> Result<(), String> {
+    let completed=connection.query_row("SELECT EXISTS(SELECT 1 FROM roadmap_activities activity JOIN roadmap_topics topic ON topic.id=activity.topic_id JOIN roadmap_stages stage ON stage.id=topic.stage_id WHERE stage.roadmap_id=?1 AND activity.status='completed')",[id],|row|row.get::<_,bool>(0)).map_err(err)?;
+    if completed { return Err("Reabra as atividades concluídas antes de excluir o roadmap".into()); }
     if connection.execute("DELETE FROM study_roadmaps WHERE id=?1", [id]).map_err(err)? == 0 { return Err("Roadmap não encontrado".into()); }
     Ok(())
 }
@@ -155,21 +202,42 @@ mod tests {
     use crate::database;
 
     fn roadmap() -> StudyRoadmapInput {
-        StudyRoadmapInput { id: "control-roadmap".into(), name: "Controle e Automação".into(), description: "Teste".into(), status: "active".into(), stages: vec![RoadmapStage { id: "electronics-stage".into(), name: "Eletrônica".into(), description: "".into(), order: 1, topics: vec![RoadmapTopic { id: "mosfet-topic".into(), name: "MOSFET".into(), description: "".into(), knowledge_node_id: Some("electronics".into()), state: "EXPOSED".into(), order: 1, activities: vec![RoadmapActivity { id: "read-mosfet".into(), title: "Ler fundamentos".into(), description: "".into(), activity_type: "READING".into(), status: "completed".into(), completed_at: None, order: 1 }, RoadmapActivity { id: "simulate-mosfet".into(), title: "Simular circuito".into(), description: "".into(), activity_type: "SIMULATION".into(), status: "pending".into(), completed_at: None, order: 2 }] }] }] }
+        let activity = |id:&str,title:&str,kind:&str,status:&str,order:i64| RoadmapActivity { id:id.into(),title:title.into(),description:"".into(),activity_type:kind.into(),status:status.into(),completed_at:None,order,primary_knowledge_node_id:None,secondary_knowledge_node_ids:vec![],project_id:None,research_id:None };
+        StudyRoadmapInput { id: "control-roadmap".into(), name: "Controle e Automação".into(), description: "Teste".into(), status: "active".into(), stages: vec![RoadmapStage { id: "electronics-stage".into(), name: "Eletrônica".into(), description: "".into(), order: 1, topics: vec![RoadmapTopic { id: "mosfet-topic".into(), name: "MOSFET".into(), description: "".into(), knowledge_node_id: Some("electronics".into()), state: "EXPOSED".into(), order: 1, activities: vec![activity("read-mosfet","Ler fundamentos","READING","completed",1),activity("simulate-mosfet","Simular circuito","SIMULATION","pending",2)] }] }] }
     }
 
     #[test]
-    fn roadmap_crud_calculates_progress_without_changing_knowledge() {
+    fn roadmap_completion_creates_evidence_and_updates_knowledge() {
         let mut connection = Connection::open_in_memory().unwrap(); database::initialize(&mut connection).unwrap();
         let before: (i64, i64) = connection.query_row("SELECT coverage,depth FROM knowledge_areas WHERE id='electronics'", [], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
         save_roadmap(&mut connection, &roadmap()).unwrap();
         let result = list_roadmaps(&connection).unwrap();
         assert_eq!((result[0].completed_activities, result[0].total_activities, result[0].progress), (1, 2, 50));
         let after: (i64, i64) = connection.query_row("SELECT coverage,depth FROM knowledge_areas WHERE id='electronics'", [], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
-        assert_eq!(before, after);
-        assert_eq!(list_events(&connection).unwrap().len(), 0);
-        delete_roadmap(&connection, "control-roadmap").unwrap();
-        assert!(list_roadmaps(&connection).unwrap().is_empty());
+        assert!(after.0 > before.0);
+        assert!(!list_events(&connection).unwrap().is_empty());
+        assert!(delete_roadmap(&connection, "control-roadmap").unwrap_err().contains("conclu"));
+        let event_count=list_events(&connection).unwrap().len();
+        assert!(save_roadmap(&mut connection,&roadmap()).unwrap().created_events.is_empty());
+        assert_eq!(list_events(&connection).unwrap().len(),event_count);
+        let mut reopened=roadmap(); reopened.stages[0].topics[0].activities[0].status="pending".into();
+        let reversal=save_roadmap(&mut connection,&reopened).unwrap();
+        assert!(reversal.created_events.iter().all(|event|event.event_type=="activity_reopened"));
+        let restored:(i64,i64)=connection.query_row("SELECT coverage,depth FROM knowledge_areas WHERE id='electronics'",[],|row|Ok((row.get(0)?,row.get(1)?))).unwrap();
+        assert_eq!(restored,before);
+        let recompleted=save_roadmap(&mut connection,&roadmap()).unwrap();
+        assert!(recompleted.created_events.iter().all(|event|event.evidence_cycle==2));
+    }
+
+    #[test]
+    fn interdisciplinary_project_distributes_evidence_and_increases_integration() {
+        let mut connection=Connection::open_in_memory().unwrap(); database::initialize(&mut connection).unwrap();
+        let mut input=roadmap(); let evidence=&mut input.stages[0].topics[0].activities[0];
+        evidence.activity_type="PROJECT".into(); evidence.secondary_knowledge_node_ids=vec!["control".into()];
+        let result=save_roadmap(&mut connection,&input).unwrap();
+        assert!(result.integration>0.0);
+        assert!(result.created_events.iter().any(|event|event.knowledge_node_id=="electronics"));
+        assert!(result.created_events.iter().any(|event|event.knowledge_node_id=="control"));
     }
 
     #[test]
@@ -190,6 +258,6 @@ mod tests {
         assert_eq!(saved.knowledge_node_id.as_deref(), Some("control"));
         assert_eq!(saved.roadmap_id.as_deref(), Some("control-roadmap"));
         assert_eq!(saved.project_id.as_deref(), Some("arccore"));
-        assert!(list_events(&connection).unwrap().is_empty());
+        assert!(!list_events(&connection).unwrap().is_empty());
     }
 }

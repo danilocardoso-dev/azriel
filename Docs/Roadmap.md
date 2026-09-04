@@ -11,7 +11,7 @@ Versões podem ser ajustadas conforme novas necessidades técnicas surgirem.
 
 Versão atual implementada: **v0.8.2 — Stark Knowledge System**
 
-Próxima versão planejada: **v0.8.3 — Learning Engine**
+Versão em desenvolvimento: **v0.8.3 — Learning Engine**
 
 ---
 
@@ -268,7 +268,7 @@ Consolidar conhecimento, roadmaps, pesquisa, evolução e lacunas dentro do Mapa
 
 # v0.8.3 — Learning Engine
 
-Status: ⏳ Planejado
+Status: 🚧 Em desenvolvimento
 
 Objetivo:
 Transformar evidências reais de atividades em Knowledge Events auditáveis e, somente então, calcular evolução de conhecimento.
