@@ -8,19 +8,19 @@ import { KnowledgeMetrics } from "../components/knowledge/KnowledgeMetrics";
 import { StarkChart } from "../components/knowledge/StarkChart";
 import { ModuleIntro } from "../components/layout/ModuleIntro";
 import { RoadmapEditor } from "../components/stark/RoadmapEditor";
+import { RoadmapWorkspace } from "../components/stark/roadmap/RoadmapWorkspace";
 import { ResearchEditor } from "../components/stark/ResearchEditor";
 import { useAzrielData } from "../contexts/useAzrielData";
 import { knowledgeService } from "../services/knowledgeService";
 import { starkService } from "../services/starkService";
-import type { KnowledgeArea, KnowledgeBaseline, KnowledgeEvent, KnowledgeHistory, KnowledgeInput, ResearchInput, ResearchItem, StarkSummary, StudyRoadmap, StudyRoadmapInput } from "../types";
+import type { KnowledgeArea, KnowledgeBaseline, KnowledgeEvent, KnowledgeHistory, KnowledgeInput, LearningMutation, ResearchInput, ResearchItem, RoadmapActivity, RoadmapActivityStatus, StarkSummary, StudyRoadmap, StudyRoadmapInput } from "../types";
 
 type StarkTab = "overview" | "knowledge" | "roadmaps" | "research" | "evolution" | "gaps";
 const tabs: Array<{ id: StarkTab; label: string }> = [{ id: "overview", label: "VISÃO GERAL" }, { id: "knowledge", label: "CONHECIMENTO" }, { id: "roadmaps", label: "ROADMAPS" }, { id: "research", label: "PESQUISA" }, { id: "evolution", label: "EVOLUÇÃO" }, { id: "gaps", label: "LACUNAS" }];
-const roadmapStatus = { planned: "PLANEJADO", active: "ATIVO", paused: "PAUSADO", completed: "CONCLUÍDO" };
 const researchStatus = { planned: "PLANEJADA", active: "ATIVA", paused: "PAUSADA", completed: "CONCLUÍDA" };
 
 export function StarkMapPage() {
-  const { knowledgeAreas, projects, databaseInfo, saveKnowledge, deleteKnowledge } = useAzrielData();
+  const { knowledgeAreas, projects, databaseInfo, saveKnowledge, deleteKnowledge, refreshKnowledge } = useAzrielData();
   const [tab, setTab] = useState<StarkTab>("overview");
   const [roadmaps, setRoadmaps] = useState<StudyRoadmap[]>([]);
   const [research, setResearch] = useState<ResearchItem[]>([]);
@@ -36,6 +36,8 @@ export function StarkMapPage() {
   const [history, setHistory] = useState<KnowledgeHistory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [busyActivityId, setBusyActivityId] = useState<string | null>(null);
+  const [lastLearningMutation, setLastLearningMutation] = useState<LearningMutation | null>(null);
 
   const loadStark = async () => {
     setLoading(true); setError(null);
@@ -78,6 +80,16 @@ export function StarkMapPage() {
     setSummary(await starkService.summary());
     setEditingRoadmap(null);
   }
+  async function updateRoadmapActivity(activity: RoadmapActivity, status: RoadmapActivityStatus) {
+    setBusyActivityId(activity.id); setError(null); setLastLearningMutation(null);
+    try {
+      const result = await starkService.updateActivityStatus({ activityId: activity.id, status });
+      setRoadmaps(result.roadmaps); setLastLearningMutation(result.learning);
+      const [nextEvents, nextSummary] = await Promise.all([starkService.events(), starkService.summary(), refreshKnowledge()]);
+      setEvents(nextEvents); setSummary(nextSummary);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    finally { setBusyActivityId(null); }
+  }
   async function saveResearch(input: ResearchInput) { setResearch(await starkService.saveResearch(input)); setSummary(await starkService.summary()); setEditingResearch(null); }
   async function saveKnowledgeInput(input: KnowledgeInput) { await saveKnowledge(input); setEditingKnowledge(null); setSelectedKnowledge(null); }
   async function remove() {
@@ -105,7 +117,7 @@ export function StarkMapPage() {
 
       {tab === "knowledge" && <div className="stark-section"><div className="core-actions"><button onClick={() => setEditingKnowledge("new")}>＋ NOVO CONHECIMENTO</button></div><div className="knowledge-groups">{groups.map((group) => <section className="knowledge-cluster" key={group}><header><span>{group}</span><i>{knowledgeAreas.filter((area) => area.category === group).length} NÓS</i></header><div>{knowledgeAreas.filter((area) => area.category === group).map((area) => <button key={area.id} onClick={() => setSelectedKnowledge(area)}><span className={`priority-light priority-light--${area.priority}`} /><strong>{area.name}</strong><small>{area.nodeType.toUpperCase()} · C {area.coverage} / P {area.depth}</small></button>)}</div></section>)}</div></div>}
 
-      {tab === "roadmaps" && <div className="stark-section"><div className="core-actions"><button onClick={() => setEditingRoadmap("new")}>＋ NOVO ROADMAP</button></div><div className="roadmap-grid">{roadmaps.map((roadmap) => <article className="roadmap-record" key={roadmap.id}><header><span>{roadmapStatus[roadmap.status]}</span><b>{roadmap.progress}%</b></header><h2>{roadmap.name}</h2><p>{roadmap.description || "Sem descrição."}</p><div className="roadmap-progress"><i style={{ width: `${roadmap.progress}%` }} /></div><small>{roadmap.completedActivities} / {roadmap.totalActivities} ATIVIDADES · EVIDÊNCIAS AUDITÁVEIS</small><div className="roadmap-tree">{roadmap.stages.map((stage) => <section key={stage.id}><strong>{String(stage.order).padStart(2, "0")} · {stage.name}</strong>{stage.topics.map((topic) => <div key={topic.id}><span>{topic.name}</span><i>{topic.state}</i><small>{knowledgeName(topic.knowledgeNodeId)}</small></div>)}</section>)}</div><footer><button onClick={() => setEditingRoadmap(roadmap)}>EDITAR</button><button className="danger-link" onClick={() => setDeleteTarget({ kind: "roadmap", id: roadmap.id, title: roadmap.name })}>EXCLUIR</button></footer></article>)}{!roadmaps.length && <div className="core-empty">Nenhum roadmap cadastrado. Crie o primeiro caminho de estudo.</div>}</div></div>}
+      {tab === "roadmaps" && <RoadmapWorkspace roadmaps={roadmaps} knowledge={knowledgeAreas} projects={projects} events={events} busyActivityId={busyActivityId} lastMutation={lastLearningMutation} onNew={() => setEditingRoadmap("new")} onEdit={setEditingRoadmap} onDelete={(roadmap) => setDeleteTarget({ kind: "roadmap", id: roadmap.id, title: roadmap.name })} onActivityStatus={updateRoadmapActivity} onKnowledge={(knowledge) => { setSelectedKnowledge(knowledge); setTab("knowledge"); }} />}
 
       {tab === "research" && <div className="stark-section"><div className="core-actions"><button onClick={() => setEditingResearch("new")}>＋ NOVA PESQUISA</button></div><div className="research-table-wrap"><table className="research-table"><thead><tr><th>ID</th><th>Pesquisa</th><th>Domínio</th><th>Status</th><th>Conhecimento</th><th>Roadmap</th><th>Projeto</th><th /></tr></thead><tbody>{research.map((item) => <tr key={item.id}><td>{item.id}</td><td><strong>{item.title}</strong><small>{item.objective}</small></td><td>{item.domain}</td><td><span data-status={item.status}>{researchStatus[item.status]}</span></td><td>{knowledgeName(item.knowledgeNodeId)}</td><td>{roadmapName(item.roadmapId)}</td><td>{projectName(item.projectId)}</td><td><button onClick={() => setEditingResearch(item)}>EDITAR</button><button className="danger-link" onClick={() => setDeleteTarget({ kind: "research", id: item.id, title: item.title })}>×</button></td></tr>)}</tbody></table></div><p className="stark-boundary">CONCLUIR PESQUISA NÃO MODIFICA CONHECIMENTO AUTOMATICAMENTE NA v0.8.2.</p></div>}
 

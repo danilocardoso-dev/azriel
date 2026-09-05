@@ -101,7 +101,7 @@ export type AIToolName =
   | "list_projects" | "get_project" | "get_project_tasks" | "get_project_knowledge"
   | "list_knowledge_areas" | "get_knowledge_area" | "get_knowledge_gaps" | "get_stark_map" | "get_knowledge_history"
   | "list_study_roadmaps" | "get_study_roadmap" | "list_research_items" | "get_knowledge_origin"
-  | "get_learning_progress" | "get_topic_mastery" | "get_knowledge_evidence" | "get_recent_knowledge_events" | "explain_knowledge_level" | "get_roadmap_learning_status"
+  | "get_learning_progress" | "get_topic_mastery" | "get_knowledge_evidence" | "get_recent_knowledge_events" | "explain_knowledge_level" | "get_roadmap_learning_status" | "get_current_study_position"
   | "get_education" | "get_current_education" | "get_planned_education"
   | "get_system_status" | "get_cpu_status" | "get_memory_status" | "get_storage_status" | "get_network_status" | "get_process_summary"
   | "list_workspaces" | "get_workspace_status" | "get_git_status" | "get_recent_commits" | "get_ollama_status"
@@ -125,7 +125,7 @@ export type RoadmapTopicState = "NOT_STARTED" | "EXPOSED" | "UNDERSTOOD" | "PRAC
 export type RoadmapActivityType = "READING" | "LESSON" | "QUIZ" | "EXERCISE" | "SIMULATION" | "EXPERIMENT" | "PROJECT" | "DOCUMENTATION" | "RESEARCH" | "OTHER";
 export type RoadmapActivityStatus = "pending" | "in_progress" | "completed";
 export interface RoadmapActivity { id: string; title: string; description: string; activityType: RoadmapActivityType; status: RoadmapActivityStatus; completedAt: string | null; order: number; primaryKnowledgeNodeId?: string | null; secondaryKnowledgeNodeIds?: string[]; projectId?: string | null; researchId?: string | null }
-export interface RoadmapTopic { id: string; name: string; description: string; knowledgeNodeId: string | null; state: RoadmapTopicState; order: number; activities: RoadmapActivity[] }
+export interface RoadmapTopic { id: string; name: string; description: string; knowledgeNodeId: string | null; state: RoadmapTopicState; order: number; prerequisiteTopicIds?: string[]; activities: RoadmapActivity[] }
 export interface RoadmapStage { id: string; name: string; description: string; order: number; topics: RoadmapTopic[] }
 export interface StudyRoadmap { id: string; name: string; description: string; status: RoadmapStatus; completedActivities: number; totalActivities: number; progress: number; stages: RoadmapStage[]; createdAt: string; updatedAt: string }
 export type StudyRoadmapInput = Pick<StudyRoadmap, "id" | "name" | "description" | "status" | "stages">;
@@ -137,4 +137,6 @@ export type ResearchInput = Omit<ResearchItem, "createdAt" | "updatedAt">;
 export interface StarkSummary { roadmapCount: number; activeRoadmapCount: number; researchCount: number; activeResearchCount: number; baselineCount: number; eventCount: number }
 export interface LearningMutation { createdEvents: KnowledgeEvent[]; affectedKnowledgeIds: string[]; integration: number }
 export interface RoadmapSaveResult { roadmaps: StudyRoadmap[]; learning: LearningMutation }
+export interface RoadmapActivityStatusInput { activityId: string; status: RoadmapActivityStatus }
+export interface CurrentStudyPosition { roadmapId: string; stageId: string | null; topicId: string | null; activityId: string | null }
 export interface LearningEngineStatus { formulaVersion: string; integrationBaseline: number; currentIntegration: number; eventCount: number; lastRecalculatedAt: string | null; status: "ready" | "recalculating" | "error"; lastError: string | null }

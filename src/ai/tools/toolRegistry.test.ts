@@ -33,7 +33,7 @@ const dependencies: ToolDependencies = {
 describe("Tool Registry", () => {
   it("expõe consultas, cinco safe actions e execução controlada de rotina", () => {
     const tools = new ToolRegistry(dependencies).list();
-    expect(tools).toHaveLength(72);
+    expect(tools).toHaveLength(73);
     expect(tools.filter((tool) => tool.permission === "visual_action")).toHaveLength(11);
     expect(tools.filter((tool) => tool.domain === "Engineering Core" && tool.readonly)).toHaveLength(7);
     expect(tools.filter((tool) => tool.domain === "Assembly Intelligence" && tool.readonly)).toHaveLength(7);
@@ -92,6 +92,15 @@ describe("Tool Registry", () => {
     expect((await registry.execute("list_study_roadmaps", { query: "ativos" })).data).toEqual([expect.objectContaining({ id: "control" })]);
     expect((await registry.execute("list_research_items", { query: "pesquisas" })).empty).toBe(false);
     expect(await registry.execute("get_knowledge_origin", { query: "Genética", term: "genética" })).toMatchObject({ data: { baseline: { coverage: 60, depth: 20 }, automaticLearningEnabled: true } });
+  });
+  it("expõe a posição atual de estudo sem permitir escrita pela IA", async () => {
+    const registry = new ToolRegistry({ ...dependencies, stark: {
+      roadmaps: async () => [{ id: "esp32", name: "Eletrônica com ESP32", description: "", status: "active", completedActivities: 0, totalActivities: 1, progress: 0, stages: [{ id: "s1", name: "Fundamentos", description: "", order: 1, topics: [{ id: "t1", name: "Circuitos", description: "", knowledgeNodeId: "k1", state: "EXPOSED", order: 1, activities: [{ id: "a1", title: "Lei de Ohm", description: "", activityType: "EXERCISE", status: "in_progress", completedAt: null, order: 1 }] }] }], createdAt: "", updatedAt: "" }],
+      research: async () => [], baselines: async () => [], events: async () => [],
+    } });
+    const tool = registry.list().find((item) => item.name === "get_current_study_position");
+    expect(tool?.readonly).toBe(true);
+    expect(await registry.execute("get_current_study_position", { query: "Qual é minha próxima atividade?" })).toMatchObject({ data: { current: { activity: { id: "a1", status: "in_progress" } } } });
   });
   it("não envia caminhos ao listar workspaces para a IA", async () => {
     const result = await new ToolRegistry(dependencies).execute("list_workspaces", { query: "workspaces" });

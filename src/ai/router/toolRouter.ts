@@ -84,6 +84,7 @@ export function routeIntent(query: string): RoutedIntent {
   if (value.includes("por que") && (value.includes("cobertura") || value.includes("profundidade") || value.includes("nivel") || value.includes("aument"))) return { intent: "knowledge_explanation", scope: "azriel", term, tools: ["explain_knowledge_level"] };
   if (value.includes("contribuiu") || value.includes("evidencia")) return { intent: "knowledge_evidence", scope: "azriel", term, tools: ["get_knowledge_evidence"] };
   if (value.includes("evoluiram") || (value.includes("eventos") && value.includes("conhecimento"))) return { intent: "recent_learning", scope: "azriel", tools: ["get_recent_knowledge_events"] };
+  if ((value.includes("onde") && (value.includes("parei") || value.includes("estou"))) || value.includes("proxima atividade") || value.includes("roadmap estou estudando") || (value.includes("topicos") && value.includes("conclui")) || value.includes("quanto falta")) return { intent: "current_study_position", scope: "azriel", term, tools: ["get_current_study_position"] };
   if (value.includes("dominio") || (value.includes("nivel") && value.includes("topico"))) return { intent: "topic_mastery", scope: "azriel", term, tools: ["get_topic_mastery"] };
   if (value.includes("roadmap")) {
     const details = value.includes("como esta") || value.includes("topico") || value.includes("atividade") || value.includes("conhecimento");

@@ -69,6 +69,13 @@ pub struct RoadmapSaveResult {
     pub learning: LearningMutation,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoadmapActivityStatusInput {
+    pub activity_id: String,
+    pub status: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LearningEngineStatus {
@@ -90,6 +97,8 @@ pub struct RoadmapTopic {
     pub knowledge_node_id: Option<String>,
     pub state: String,
     pub order: i64,
+    #[serde(default)]
+    pub prerequisite_topic_ids: Vec<String>,
     #[serde(default)]
     pub activities: Vec<RoadmapActivity>,
 }

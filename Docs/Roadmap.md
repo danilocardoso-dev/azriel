@@ -9,9 +9,9 @@ Versões podem ser ajustadas conforme novas necessidades técnicas surgirem.
 
 ## Estado atual
 
-Versão atual implementada: **v0.8.2 — Stark Knowledge System**
+Versão atual implementada: **v0.8.4 — Interactive Roadmap Experience**
 
-Versão em desenvolvimento: **v0.8.3 — Learning Engine**
+Versão em desenvolvimento: **v0.8.4 — validação operacional pendente**
 
 ---
 
@@ -240,7 +240,7 @@ Validação automatizada, empacotamento e aceite operacional concluídos.
 
 # v0.8.2 — Stark Knowledge System
 
-Status: 🧪 Implementada em 03 de setembro de 2026; aceite operacional pendente
+Status: ✅ Concluída
 
 Objetivo:
 Consolidar conhecimento, roadmaps, pesquisa, evolução e lacunas dentro do Mapa Stark, preservando todos os dados existentes.
@@ -268,10 +268,36 @@ Consolidar conhecimento, roadmaps, pesquisa, evolução e lacunas dentro do Mapa
 
 # v0.8.3 — Learning Engine
 
-Status: 🚧 Em desenvolvimento
+Status: ✅ Concluída
 
 Objetivo:
 Transformar evidências reais de atividades em Knowledge Events auditáveis e, somente então, calcular evolução de conhecimento.
+
+---
+
+# v0.8.4 — Interactive Roadmap Experience
+
+Status: 🧪 Implementada em 04 de setembro de 2026; aceite operacional pendente
+
+Objetivo:
+Transformar roadmaps extensos em uma experiência navegável, com posição atual, estrutura recolhível, inspetor de tópico e transições de atividade integradas ao Learning Engine.
+
+### Entregas
+
+- Roadmap Navigator com busca, filtros e seleção persistida localmente
+- estrutura central recolhível por etapa, sem abrir centenas de atividades simultaneamente
+- Topic Inspector com visão geral, domínio, progresso, relações, pré-requisitos e atividades
+- início, conclusão e reabertura transacionais, com evidência e reversão auditáveis
+- Continue Study determinístico, priorizando atividade em andamento e depois a primeira pendente
+- feedback de impacto do Learning Engine sem recarregar a página
+- consulta somente leitura da posição de estudo pelo AI Core
+- layout responsivo para desktop amplo, intermediário e compacto
+
+### Limites
+
+- AI Core não conclui nem reabre atividades
+- pré-requisitos informam pendências, mas não bloqueiam o estudo nesta versão
+- atalho compacto no Command Center permanece opcional
 
 ---
 

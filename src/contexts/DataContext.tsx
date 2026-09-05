@@ -26,6 +26,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     } catch (reason) { setError(messageOf(reason)); }
     finally { setLoading(false); }
   }, []);
+  const refreshKnowledge = useCallback(async () => setKnowledgeAreas(await knowledgeService.list()), []);
 
   useEffect(() => {
     const initialization = window.setTimeout(() => void reload(), 0);
@@ -33,7 +34,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [reload]);
 
   const value = useMemo<DataContextValue>(() => ({
-    projects, knowledgeAreas, education, databaseInfo, loading, error, reload,
+    projects, knowledgeAreas, education, databaseInfo, loading, error, reload, refreshKnowledge,
     updateMetrics: async (input) => {
       const updated = await knowledgeService.updateMetrics(input);
       setKnowledgeAreas((current) => current.map((area) => area.id === updated.id ? updated : area));
@@ -58,7 +59,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     },
     saveEducation: async (input) => setEducation(await educationService.save(input)),
     deleteEducation: async (id) => setEducation(await educationService.remove(id)),
-  }), [projects, knowledgeAreas, education, databaseInfo, loading, error, reload]);
+  }), [projects, knowledgeAreas, education, databaseInfo, loading, error, reload, refreshKnowledge]);
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }

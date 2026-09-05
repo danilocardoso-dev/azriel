@@ -31,6 +31,12 @@ pub fn save_study_roadmap(state: State<'_, DatabaseState>, input: StudyRoadmapIn
 }
 
 #[tauri::command]
+pub fn update_roadmap_activity_status(state: State<'_, DatabaseState>, input: RoadmapActivityStatusInput) -> Result<RoadmapSaveResult, String> {
+    let mut connection = lock(&state)?;
+    stark_repository::update_activity_status(&mut connection, &input)
+}
+
+#[tauri::command]
 pub fn delete_study_roadmap(state: State<'_, DatabaseState>, id: String) -> Result<Vec<StudyRoadmap>, String> {
     let connection = lock(&state)?;
     stark_repository::delete_roadmap(&connection, &id)?;

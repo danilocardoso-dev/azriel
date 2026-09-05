@@ -1,4 +1,4 @@
-import type { KnowledgeBaseline, KnowledgeEvent, LearningEngineStatus, LearningMutation, ResearchInput, ResearchItem, RoadmapSaveResult, StarkSummary, StudyRoadmap, StudyRoadmapInput } from "../types";
+import type { KnowledgeBaseline, KnowledgeEvent, LearningEngineStatus, LearningMutation, ResearchInput, ResearchItem, RoadmapActivityStatusInput, RoadmapSaveResult, StarkSummary, StudyRoadmap, StudyRoadmapInput } from "../types";
 import { invokeDatabase } from "./tauri";
 
 export const starkRepository = {
@@ -6,6 +6,7 @@ export const starkRepository = {
   events: () => invokeDatabase<KnowledgeEvent[]>("list_knowledge_events"),
   roadmaps: () => invokeDatabase<StudyRoadmap[]>("list_study_roadmaps"),
   saveRoadmap: (input: StudyRoadmapInput) => invokeDatabase<RoadmapSaveResult>("save_study_roadmap", { input }),
+  updateActivityStatus: (input: RoadmapActivityStatusInput) => invokeDatabase<RoadmapSaveResult>("update_roadmap_activity_status", { input }),
   deleteRoadmap: (id: string) => invokeDatabase<StudyRoadmap[]>("delete_study_roadmap", { id }),
   research: () => invokeDatabase<ResearchItem[]>("list_research_items"),
   saveResearch: (input: ResearchInput) => invokeDatabase<ResearchItem[]>("save_research_item", { input }),

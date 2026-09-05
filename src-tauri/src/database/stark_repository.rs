@@ -1,5 +1,5 @@
 use super::{learning_engine, stark_models::*};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::{HashMap, HashSet};
 
 fn err(error: rusqlite::Error) -> String { error.to_string() }
@@ -52,9 +52,13 @@ fn list_activities(connection: &Connection, topic_id: &str) -> Result<Vec<Roadma
 
 fn list_topics(connection: &Connection, stage_id: &str) -> Result<Vec<RoadmapTopic>, String> {
     let mut statement = connection.prepare("SELECT id,name,description,knowledge_node_id,topic_state,topic_order FROM roadmap_topics WHERE stage_id=?1 ORDER BY topic_order").map_err(err)?;
-    let rows = statement.query_map([stage_id], |row| Ok(RoadmapTopic { id: row.get(0)?, name: row.get(1)?, description: row.get(2)?, knowledge_node_id: row.get(3)?, state: row.get(4)?, order: row.get(5)?, activities: vec![] })).map_err(err)?;
+    let rows = statement.query_map([stage_id], |row| Ok(RoadmapTopic { id: row.get(0)?, name: row.get(1)?, description: row.get(2)?, knowledge_node_id: row.get(3)?, state: row.get(4)?, order: row.get(5)?, prerequisite_topic_ids: vec![], activities: vec![] })).map_err(err)?;
     let mut topics = rows.collect::<Result<Vec<_>, _>>().map_err(err)?;
-    for topic in &mut topics { topic.activities = list_activities(connection, &topic.id)?; }
+    for topic in &mut topics {
+        let mut prerequisites = connection.prepare("SELECT prerequisite_topic_id FROM roadmap_topic_prerequisites WHERE topic_id=?1 ORDER BY prerequisite_topic_id").map_err(err)?;
+        topic.prerequisite_topic_ids = prerequisites.query_map([&topic.id], |row| row.get(0)).map_err(err)?.collect::<Result<Vec<_>, _>>().map_err(err)?;
+        topic.activities = list_activities(connection, &topic.id)?;
+    }
     Ok(topics)
 }
 
@@ -85,6 +89,7 @@ pub fn save_roadmap(connection: &mut Connection, input: &StudyRoadmapInput) -> R
     required(&input.id, "o ID do roadmap")?; required(&input.name, "o nome do roadmap")?;
     if !["planned", "active", "paused", "completed"].contains(&input.status.as_str()) { return Err("Status de roadmap inválido".into()); }
     let mut ids = HashSet::new();
+    let topic_ids: HashSet<String> = input.stages.iter().flat_map(|stage| &stage.topics).map(|topic| topic.id.clone()).collect();
     for (stage_index, stage) in input.stages.iter().enumerate() {
         required(&stage.id, "o ID da etapa")?; required(&stage.name, "o nome da etapa")?;
         if stage.order != stage_index as i64 + 1 || !ids.insert(stage.id.clone()) { return Err("Etapas devem possuir IDs únicos e ordem contínua".into()); }
@@ -95,6 +100,10 @@ pub fn save_roadmap(connection: &mut Connection, input: &StudyRoadmapInput) -> R
             if let Some(knowledge_id) = &topic.knowledge_node_id {
                 let exists = connection.query_row("SELECT EXISTS(SELECT 1 FROM knowledge_areas WHERE id=?1)", [knowledge_id], |row| row.get::<_, bool>(0)).map_err(err)?;
                 if !exists { return Err(format!("Conhecimento não encontrado no tópico {}", topic.name)); }
+            }
+            for prerequisite_id in &topic.prerequisite_topic_ids {
+                if prerequisite_id == &topic.id { return Err("Um tópico não pode ser pré-requisito de si mesmo".into()); }
+                if !topic_ids.contains(prerequisite_id) { return Err(format!("Pré-requisito não encontrado no tópico {}", topic.name)); }
             }
             for (activity_index, activity) in topic.activities.iter().enumerate() {
                 required(&activity.id, "o ID da atividade")?; required(&activity.title, "o título da atividade")?;
@@ -149,6 +158,11 @@ pub fn save_roadmap(connection: &mut Connection, input: &StudyRoadmapInput) -> R
             }
         }
     }
+    for topic in input.stages.iter().flat_map(|stage| &stage.topics) {
+        for prerequisite_id in &topic.prerequisite_topic_ids {
+            transaction.execute("INSERT INTO roadmap_topic_prerequisites(topic_id,prerequisite_topic_id) VALUES (?1,?2)", params![topic.id,prerequisite_id]).map_err(err)?;
+        }
+    }
     for activity in input.stages.iter().flat_map(|stage|&stage.topics).flat_map(|topic|&topic.activities) {
         let old=old_statuses.get(&activity.id).map(|value|value.0.as_str()).unwrap_or("pending");
         if old!="completed" && activity.status=="completed" { learning_engine::complete_activity(&transaction,&activity.id)?; }
@@ -158,6 +172,27 @@ pub fn save_roadmap(connection: &mut Connection, input: &StudyRoadmapInput) -> R
     result.created_events=learning_engine::list_events(&transaction)?.into_iter().filter(|event|!previous_events.contains(&event.id)).collect();
     transaction.commit().map_err(err)?;
     Ok(result)
+}
+
+pub fn update_activity_status(connection: &mut Connection, input: &RoadmapActivityStatusInput) -> Result<RoadmapSaveResult, String> {
+    if !["pending", "in_progress", "completed"].contains(&input.status.as_str()) { return Err("Status de atividade inválido".into()); }
+    let current_status = connection.query_row("SELECT status FROM roadmap_activities WHERE id=?1", [&input.activity_id], |row| row.get::<_,String>(0)).optional().map_err(err)?.ok_or_else(|| "Atividade não encontrada".to_string())?;
+    if current_status == input.status {
+        let integration = connection.query_row("SELECT value FROM app_metrics WHERE key='integration'", [], |row| row.get::<_,f64>(0)).map_err(err)?;
+        return Ok(RoadmapSaveResult { roadmaps: list_roadmaps(connection)?, learning: LearningMutation { created_events: vec![], affected_knowledge_ids: vec![], integration } });
+    }
+    let previous_events: HashSet<String> = learning_engine::list_events(connection)?.into_iter().map(|event| event.id).collect();
+    let transaction = connection.transaction().map_err(err)?;
+    transaction.execute(
+        "UPDATE roadmap_activities SET status=?1,completed_at=CASE WHEN ?1='completed' THEN CURRENT_TIMESTAMP ELSE NULL END WHERE id=?2",
+        params![input.status,input.activity_id],
+    ).map_err(err)?;
+    if current_status != "completed" && input.status == "completed" { learning_engine::complete_activity(&transaction, &input.activity_id)?; }
+    if current_status == "completed" && input.status != "completed" { learning_engine::reopen_activity(&transaction, &input.activity_id)?; }
+    let mut learning = learning_engine::recalculate(&transaction, "Learning Engine: transição de atividade no roadmap")?;
+    learning.created_events = learning_engine::list_events(&transaction)?.into_iter().filter(|event| !previous_events.contains(&event.id)).collect();
+    transaction.commit().map_err(err)?;
+    Ok(RoadmapSaveResult { roadmaps: list_roadmaps(connection)?, learning })
 }
 
 pub fn delete_roadmap(connection: &Connection, id: &str) -> Result<(), String> {
@@ -203,7 +238,7 @@ mod tests {
 
     fn roadmap() -> StudyRoadmapInput {
         let activity = |id:&str,title:&str,kind:&str,status:&str,order:i64| RoadmapActivity { id:id.into(),title:title.into(),description:"".into(),activity_type:kind.into(),status:status.into(),completed_at:None,order,primary_knowledge_node_id:None,secondary_knowledge_node_ids:vec![],project_id:None,research_id:None };
-        StudyRoadmapInput { id: "control-roadmap".into(), name: "Controle e Automação".into(), description: "Teste".into(), status: "active".into(), stages: vec![RoadmapStage { id: "electronics-stage".into(), name: "Eletrônica".into(), description: "".into(), order: 1, topics: vec![RoadmapTopic { id: "mosfet-topic".into(), name: "MOSFET".into(), description: "".into(), knowledge_node_id: Some("electronics".into()), state: "EXPOSED".into(), order: 1, activities: vec![activity("read-mosfet","Ler fundamentos","READING","completed",1),activity("simulate-mosfet","Simular circuito","SIMULATION","pending",2)] }] }] }
+        StudyRoadmapInput { id: "control-roadmap".into(), name: "Controle e Automação".into(), description: "Teste".into(), status: "active".into(), stages: vec![RoadmapStage { id: "electronics-stage".into(), name: "Eletrônica".into(), description: "".into(), order: 1, topics: vec![RoadmapTopic { id: "mosfet-topic".into(), name: "MOSFET".into(), description: "".into(), knowledge_node_id: Some("electronics".into()), state: "EXPOSED".into(), order: 1, prerequisite_topic_ids: vec![], activities: vec![activity("read-mosfet","Ler fundamentos","READING","completed",1),activity("simulate-mosfet","Simular circuito","SIMULATION","pending",2)] }] }] }
     }
 
     #[test]
@@ -238,6 +273,37 @@ mod tests {
         assert!(result.integration>0.0);
         assert!(result.created_events.iter().any(|event|event.knowledge_node_id=="electronics"));
         assert!(result.created_events.iter().any(|event|event.knowledge_node_id=="control"));
+    }
+
+    #[test]
+    fn direct_activity_transition_is_atomic_and_idempotent() {
+        let mut connection = Connection::open_in_memory().unwrap(); database::initialize(&mut connection).unwrap();
+        let mut input = roadmap(); input.stages[0].topics[0].activities[0].status = "pending".into(); input.stages[0].topics[0].activities[0].completed_at = None;
+        save_roadmap(&mut connection, &input).unwrap();
+        let started = update_activity_status(&mut connection, &RoadmapActivityStatusInput { activity_id: "read-mosfet".into(), status: "in_progress".into() }).unwrap();
+        assert!(started.learning.created_events.is_empty());
+        let completed = update_activity_status(&mut connection, &RoadmapActivityStatusInput { activity_id: "read-mosfet".into(), status: "completed".into() }).unwrap();
+        assert!(!completed.learning.created_events.is_empty());
+        let event_count: i64 = connection.query_row("SELECT COUNT(*) FROM knowledge_events WHERE source_id='read-mosfet' AND event_type='activity_completed'", [], |row| row.get(0)).unwrap();
+        let duplicate = update_activity_status(&mut connection, &RoadmapActivityStatusInput { activity_id: "read-mosfet".into(), status: "completed".into() }).unwrap();
+        assert!(duplicate.learning.created_events.is_empty());
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM knowledge_events WHERE source_id='read-mosfet' AND event_type='activity_completed'", [], |row| row.get::<_,i64>(0)).unwrap(), event_count);
+        let reopened = update_activity_status(&mut connection, &RoadmapActivityStatusInput { activity_id: "read-mosfet".into(), status: "pending".into() }).unwrap();
+        assert!(reopened.learning.created_events.iter().any(|event| event.event_type == "activity_reopened"));
+        assert_eq!(reopened.roadmaps[0].progress, 0);
+    }
+
+    #[test]
+    fn roadmap_prerequisites_are_structured_and_validated() {
+        let mut connection = Connection::open_in_memory().unwrap(); database::initialize(&mut connection).unwrap();
+        let mut input = roadmap();
+        let mut second = input.stages[0].topics[0].clone(); second.id = "driver-topic".into(); second.name = "Drivers".into(); second.order = 2; second.activities.clear(); second.prerequisite_topic_ids = vec!["mosfet-topic".into()];
+        input.stages[0].topics.push(second);
+        save_roadmap(&mut connection, &input).unwrap();
+        let saved = list_roadmaps(&connection).unwrap();
+        assert_eq!(saved[0].stages[0].topics[1].prerequisite_topic_ids, vec!["mosfet-topic"]);
+        input.stages[0].topics[1].prerequisite_topic_ids = vec!["inexistente".into()];
+        assert!(save_roadmap(&mut connection, &input).unwrap_err().contains("Pré-requisito"));
     }
 
     #[test]

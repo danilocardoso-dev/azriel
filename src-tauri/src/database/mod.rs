@@ -89,6 +89,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         "learning_engine",
         include_str!("../../migrations/0012_learning_engine.sql"),
     ),
+    (
+        13,
+        "interactive_roadmaps",
+        include_str!("../../migrations/0013_interactive_roadmaps.sql"),
+    ),
 ];
 
 pub fn open(path: &Path) -> Result<Connection, String> {
@@ -523,5 +528,23 @@ mod tests {
         assert_eq!(connection.query_row("SELECT knowledge_node_id FROM activity_knowledge_nodes WHERE activity_id='keep-activity-v83' AND role='primary'", [], |row| row.get::<_,String>(0)).unwrap(), "electronics");
         assert_eq!(connection.query_row("SELECT formula_version FROM learning_engine_state WHERE id=1", [], |row| row.get::<_,String>(0)).unwrap(), "LEARNING_ENGINE_V1");
         assert_eq!(schema_version(&connection).unwrap(), 12);
+    }
+
+    #[test]
+    fn migration_thirteen_preserves_roadmaps_and_promotes_legacy_prerequisite() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 12).unwrap();
+        repository::seed(&mut connection).unwrap();
+        connection.execute("INSERT INTO study_roadmaps(id,name,status) VALUES ('keep-v84','Roadmap v0.8.4','active')", []).unwrap();
+        connection.execute("INSERT INTO roadmap_stages(id,roadmap_id,name,stage_order) VALUES ('stage-v84','keep-v84','Etapa',1)", []).unwrap();
+        connection.execute("INSERT INTO roadmap_topics(id,stage_id,name,description,knowledge_node_id,topic_order) VALUES ('topic-a-v84','stage-v84','Base','','electronics',1)", []).unwrap();
+        connection.execute("INSERT INTO roadmap_topics(id,stage_id,name,description,knowledge_node_id,topic_order) VALUES ('topic-b-v84','stage-v84','Avançado','Conteúdo. Pré-requisitos: topic-a-v84','electronics',2)", []).unwrap();
+
+        apply_migrations_through(&mut connection, 13).unwrap();
+
+        assert_eq!(connection.query_row("SELECT prerequisite_topic_id FROM roadmap_topic_prerequisites WHERE topic_id='topic-b-v84'", [], |row| row.get::<_,String>(0)).unwrap(), "topic-a-v84");
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM study_roadmaps WHERE id='keep-v84'", [], |row| row.get::<_,i64>(0)).unwrap(), 1);
+        assert_eq!(schema_version(&connection).unwrap(), 13);
     }
 }

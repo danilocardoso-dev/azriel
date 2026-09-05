@@ -71,6 +71,7 @@ pub fn run() {
             stark_commands::list_knowledge_events,
             stark_commands::list_study_roadmaps,
             stark_commands::save_study_roadmap,
+            stark_commands::update_roadmap_activity_status,
             stark_commands::delete_study_roadmap,
             stark_commands::list_research_items,
             stark_commands::save_research_item,

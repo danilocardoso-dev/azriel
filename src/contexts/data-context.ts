@@ -4,6 +4,7 @@ import type { DatabaseInfo, EducationInput, EducationItem, KnowledgeArea, Knowle
 export interface DataContextValue {
   projects: Project[]; knowledgeAreas: KnowledgeArea[]; education: EducationItem[];
   databaseInfo: DatabaseInfo | null; loading: boolean; error: string | null; reload: () => Promise<void>;
+  refreshKnowledge: () => Promise<void>;
   updateMetrics: (input: MetricsInput) => Promise<KnowledgeArea>;
   loadHistory: (knowledgeId: string) => Promise<KnowledgeHistory[]>;
   saveKnowledge: (input: KnowledgeInput) => Promise<void>; deleteKnowledge: (id: string) => Promise<void>;
