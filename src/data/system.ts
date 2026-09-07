@@ -8,6 +8,7 @@ export const modules: Array<{ id: ModuleId; label: string; code: string; descrip
   { id: "projects", label: "Projetos", code: "PRJ", description: "Projetos e objetivos" },
   { id: "stark", label: "Mapa Stark", code: "STK", description: "Conhecimento, roadmaps, pesquisa e evolução" },
   { id: "education", label: "Formação", code: "EDU", description: "Trajetória acadêmica" },
+  { id: "market", label: "Market Lab", code: "LAB", description: "Backtests determinísticos e experimentais" },
   { id: "system", label: "Sistema", code: "SYS", description: "Estado simulado dos núcleos" },
   { id: "automation", label: "Automação", code: "AUT", description: "Ações locais autorizadas" },
   { id: "settings", label: "Configurações", code: "CFG", description: "Preferências da interface" },

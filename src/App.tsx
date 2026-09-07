@@ -18,6 +18,7 @@ import { useAutomation } from "./contexts/useAutomation";
 import { RoutineConfirmationDialog } from "./components/automation/RoutineConfirmationDialog";
 
 const EngineeringViewPage = lazy(() => import("./pages/EngineeringViewPage").then((module) => ({ default: module.EngineeringViewPage })));
+const MarketLabPage = lazy(() => import("./pages/MarketLabPage").then((module) => ({ default: module.MarketLabPage })));
 
 function App() {
   const { loading, error, reload, databaseInfo, knowledgeAreas } = useAzrielData();
@@ -88,6 +89,7 @@ function App() {
       case "daily": return <DailyOperationsPage initialCapture={moduleAction === "new-task" ? "task" : moduleAction === "new-note" ? "note" : undefined} />;
       case "stark": return <StarkMapPage />;
       case "education": return <EducationPage />;
+      case "market": return <Suspense fallback={<div className="data-state"><span className="live-dot" /><strong>INICIALIZANDO MARKET LAB</strong></div>}><MarketLabPage /></Suspense>;
       case "system": return <SystemPage coreState={coreState} onOpenAI={() => setActiveModule("ai")} />;
       case "automation": return <AutomationPage />;
       case "settings": return <SettingsPage />;

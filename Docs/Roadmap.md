@@ -364,3 +364,20 @@ Não adicionar funcionalidades apenas porque são tecnicamente possíveis.
 Prioridade:
 
 **utilidade → integração → confiabilidade → evolução.**
+
+---
+
+# Trilha experimental — Market Lab
+
+O Market Lab evolui fora do núcleo central e não altera a sequência oficial até a v1.0.
+
+## Market Lab v0.1 — Deterministic Backtest Core
+
+Status: implementação técnica concluída em 06/09/2026; validação operacional pendente.
+
+- importação e validação de candles históricos em CSV local;
+- replay cronológico sem look-ahead;
+- cinco estratégias determinísticas registradas dinamicamente;
+- Risk Engine único, execução simulada e portfolios isolados;
+- fees, slippage, auditoria, métricas, histórico e reexecução;
+- nenhuma conexão com corretora, dinheiro real, AI Core ou internet.

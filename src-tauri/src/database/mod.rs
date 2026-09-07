@@ -7,6 +7,10 @@ pub mod daily_repository;
 pub mod engineering_models;
 pub mod engineering_repository;
 pub mod learning_engine;
+pub mod market_models;
+pub mod market_repository;
+#[cfg(test)]
+mod market_tests;
 pub mod models;
 pub mod repository;
 pub mod routine_models;
@@ -93,6 +97,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         13,
         "interactive_roadmaps",
         include_str!("../../migrations/0013_interactive_roadmaps.sql"),
+    ),
+    (
+        14,
+        "market_lab",
+        include_str!("../../migrations/0014_market_lab.sql"),
     ),
 ];
 
@@ -546,5 +555,21 @@ mod tests {
         assert_eq!(connection.query_row("SELECT prerequisite_topic_id FROM roadmap_topic_prerequisites WHERE topic_id='topic-b-v84'", [], |row| row.get::<_,String>(0)).unwrap(), "topic-a-v84");
         assert_eq!(connection.query_row("SELECT COUNT(*) FROM study_roadmaps WHERE id='keep-v84'", [], |row| row.get::<_,i64>(0)).unwrap(), 1);
         assert_eq!(schema_version(&connection).unwrap(), 13);
+    }
+
+    #[test]
+    fn migration_fourteen_preserves_roadmaps_and_seeds_market_registry() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 13).unwrap();
+        repository::seed(&mut connection).unwrap();
+        connection.execute("INSERT INTO study_roadmaps(id,name,status) VALUES ('keep-market','Preservar roadmap','active')", []).unwrap();
+
+        apply_migrations_through(&mut connection, 14).unwrap();
+
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM study_roadmaps WHERE id='keep-market'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_agents", [], |row| row.get::<_, i64>(0)).unwrap(), 5);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_risk_profiles", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(schema_version(&connection).unwrap(), 14);
     }
 }

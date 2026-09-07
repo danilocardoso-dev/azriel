@@ -7,6 +7,7 @@ mod daily_commands;
 mod database;
 mod engineering_commands;
 mod git_monitor;
+mod market_commands;
 mod ollama;
 mod routine_commands;
 mod system_commands;
@@ -137,6 +138,15 @@ pub fn run() {
             routine_commands::run_routine,
             routine_commands::confirm_routine_execution,
             routine_commands::cancel_routine_execution,
+            market_commands::import_market_dataset,
+            market_commands::list_market_datasets,
+            market_commands::list_market_agents,
+            market_commands::list_market_risk_profiles,
+            market_commands::run_market_experiment,
+            market_commands::list_market_experiments,
+            market_commands::get_market_experiment,
+            market_commands::rerun_market_experiment,
+            market_commands::activate_market_kill_switch,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao executar o Azriel");

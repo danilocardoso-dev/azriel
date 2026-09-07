@@ -1,4 +1,4 @@
-export type ModuleId = "command" | "engineering" | "ai" | "daily" | "projects" | "stark" | "education" | "system" | "automation" | "settings";
+export type ModuleId = "command" | "engineering" | "ai" | "daily" | "projects" | "stark" | "education" | "market" | "system" | "automation" | "settings";
 export type AzrielState = "idle" | "processing" | "tool" | "executing" | "engineering" | "routine" | "alert" | "offline";
 export type AIToolPermission = "read" | "visual_action" | "safe_write" | "confirm_write";
 export type ProjectStatus = "active" | "research" | "paused" | "planned" | "completed";
@@ -140,3 +140,14 @@ export interface RoadmapSaveResult { roadmaps: StudyRoadmap[]; learning: Learnin
 export interface RoadmapActivityStatusInput { activityId: string; status: RoadmapActivityStatus }
 export interface CurrentStudyPosition { roadmapId: string; stageId: string | null; topicId: string | null; activityId: string | null }
 export interface LearningEngineStatus { formulaVersion: string; integrationBaseline: number; currentIntegration: number; eventCount: number; lastRecalculatedAt: string | null; status: "ready" | "recalculating" | "error"; lastError: string | null }
+
+export interface MarketDataset { id: string; name: string; asset: string; timeframe: string; currency: string; startAt: string; endAt: string; candleCount: number; fingerprint: string; sourcePath: string; importedAt: string }
+export interface MarketAgentDefinition { id: string; name: string; strategyType: string; strategyVersion: string; defaultConfigJson: string; enabled: boolean }
+export interface MarketRiskProfile { id: string; name: string; maxPositionPct: number; maxTotalExposurePct: number; maxDailyLossPct: number; maxDrawdownPct: number; maxTradesPerDay: number | null; allowLeverage: boolean; allowShort: boolean; allowedAssets: string[] }
+export interface ImportMarketDatasetInput { path: string; name: string; asset: string; timeframe: string; currency?: string }
+export interface MarketExperimentInput { name: string; datasetId: string; riskProfileId: string; agentIds: string[]; initialCapital: number; randomSeed: number; feePct: number; slippagePct: number }
+export interface MarketAgentMetric { agentId: string; agentName: string; status: string; finalEquity: number; totalReturnPct: number; maxDrawdownPct: number; decisionCount: number; holdCount: number; tradeCount: number; winRatePct: number; profitFactor: number | null; realizedPnl: number; unrealizedPnl: number; averageExposurePct: number; maxExposurePct: number }
+export interface MarketEquityPoint { timestamp: string; agentId: string; equity: number }
+export interface MarketDecisionLog { id: number; timestamp: string; agentId: string; action: "BUY" | "SELL" | "HOLD"; observedPrice: number; desiredPositionPct: number | null; reasoning: string; riskResult: "APPROVED" | "MODIFIED" | "REJECTED"; riskReason: string; approvedPositionPct: number | null; executionPrice: number | null; quantity: number | null; fees: number | null }
+export interface MarketExperimentSummary { id: string; name: string; datasetId: string; datasetName: string; asset: string; timeframe: string; currency: string; initialCapital: number; riskProfileId: string; randomSeed: number; feePct: number; slippagePct: number; agentIds: string[]; status: "pending" | "running" | "completed" | "failed" | "aborted"; error: string | null; startedAt: string | null; completedAt: string | null; createdAt: string }
+export interface MarketExperimentResult { experiment: MarketExperimentSummary; metrics: MarketAgentMetric[]; equity: MarketEquityPoint[]; decisions: MarketDecisionLog[] }
