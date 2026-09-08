@@ -56,13 +56,19 @@ fn timestamp_key(value: &str) -> Result<String, String> {
     let value=value.trim();
     if !value.is_empty() && value.chars().all(|c| c.is_ascii_digit()) { return Ok(format!("N{:0>20}", value)); }
     let core=value.strip_suffix('Z').unwrap_or(value); let parts: Vec<&str>=core.split(['T',' ']).collect();
-    if parts.len()!=2 { return Err(format!("timestamp inválido: {value}")); }
-    let date: Vec<&str>=parts[0].split('-').collect(); let time: Vec<&str>=parts[1].split(':').collect();
-    if date.len()!=3 || time.len()<2 || time.len()>3 { return Err(format!("timestamp inválido: {value}")); }
-    let numbers: Result<Vec<u32>,_>=date.iter().chain(time.iter()).map(|part| part.split('.').next().unwrap_or("").parse()).collect();
-    let n=numbers.map_err(|_| format!("timestamp inválido: {value}"))?;
-    if n[1]==0 || n[1]>12 || n[2]==0 || n[2]>31 || n[3]>23 || n[4]>59 || n.get(5).copied().unwrap_or(0)>59 { return Err(format!("timestamp inválido: {value}")); }
-    Ok(format!("D{:04}{:02}{:02}{:02}{:02}{:02}",n[0],n[1],n[2],n[3],n[4],n.get(5).copied().unwrap_or(0)))
+    if parts.is_empty() || parts.len()>2 { return Err(format!("data/timestamp inválido: {value}")); }
+    let date: Vec<&str>=parts[0].split('-').collect();
+    if date.len()!=3 { return Err(format!("data/timestamp inválido: {value}")); }
+    let date_numbers: Result<Vec<u32>,_>=date.iter().map(|part|part.parse()).collect();
+    let date_values=date_numbers.map_err(|_|format!("data/timestamp inválido: {value}"))?;
+    if date_values[1]==0 || date_values[1]>12 || date_values[2]==0 || date_values[2]>31 { return Err(format!("data/timestamp inválido: {value}")); }
+    if parts.len()==1 { return Ok(format!("D{:04}{:02}{:02}000000",date_values[0],date_values[1],date_values[2])); }
+    let time: Vec<&str>=parts[1].split(':').collect();
+    if time.len()<2 || time.len()>3 { return Err(format!("data/timestamp inválido: {value}")); }
+    let time_numbers: Result<Vec<u32>,_>=time.iter().map(|part|part.split('.').next().unwrap_or("").parse()).collect();
+    let time_values=time_numbers.map_err(|_|format!("data/timestamp inválido: {value}"))?;
+    if time_values[0]>23 || time_values[1]>59 || time_values.get(2).copied().unwrap_or(0)>59 { return Err(format!("data/timestamp inválido: {value}")); }
+    Ok(format!("D{:04}{:02}{:02}{:02}{:02}{:02}",date_values[0],date_values[1],date_values[2],time_values[0],time_values[1],time_values.get(2).copied().unwrap_or(0)))
 }
 
 fn parse_csv(content: &str) -> Result<Vec<Candle>, String> {
@@ -70,7 +76,7 @@ fn parse_csv(content: &str) -> Result<Vec<Candle>, String> {
     let delimiter=if header_line.matches(';').count()>header_line.matches(',').count(){';'}else{','};
     let headers=split_csv(header_line.trim_start_matches('\u{feff}'),delimiter)?; let normalized: Vec<String>=headers.iter().map(|h|h.trim().to_ascii_lowercase()).collect();
     let index=|name:&str| normalized.iter().position(|h|h==name).ok_or_else(||format!("coluna obrigatória ausente: {name}"));
-    let ti=index("timestamp")?; let oi=index("open")?; let hi=index("high")?; let li=index("low")?; let ci=index("close")?; let vi=normalized.iter().position(|h|h=="volume");
+    let ti=normalized.iter().position(|h|h=="timestamp").or_else(||normalized.iter().position(|h|h=="date")).ok_or("coluna temporal obrigatória ausente: use timestamp ou date")?; let oi=index("open")?; let hi=index("high")?; let li=index("low")?; let ci=index("close")?; let vi=normalized.iter().position(|h|h=="volume");
     let mut candles=Vec::new(); let mut previous=None; let mut seen=HashSet::new();
     for (offset,line) in lines.enumerate() { let row=split_csv(line,delimiter)?; let row_number=offset+2; let get=|i:usize|row.get(i).map(String::as_str).ok_or_else(||format!("linha {row_number}: coluna ausente"));
         let timestamp=get(ti)?.trim().to_string(); let key=timestamp_key(&timestamp).map_err(|e|format!("linha {row_number}: {e}"))?;
@@ -147,3 +153,35 @@ pub fn get_experiment(connection:&Connection,id:&str)->Result<MarketExperimentRe
 pub fn rerun(connection:&mut Connection,id:&str)->Result<MarketExperimentResult,String>{let old=get_experiment(connection,id)?.experiment;run_experiment(connection,&MarketExperimentInput{name:format!("{} / RERUN",old.name),dataset_id:old.dataset_id,risk_profile_id:old.risk_profile_id,agent_ids:old.agent_ids,initial_capital:old.initial_capital,random_seed:old.random_seed,fee_pct:old.fee_pct,slippage_pct:old.slippage_pct})}
 
 #[cfg(test)] mod tests{use super::*;fn csv()->String{"timestamp,open,high,low,close,volume\n2026-01-01T00:00:00Z,10,11,9,10,100\n2026-01-02T00:00:00Z,11,12,10,11,110\n2026-01-03T00:00:00Z,12,13,11,12,120\n".into()}#[test]fn validates_ohlc_and_order(){assert_eq!(parse_csv(&csv()).unwrap().len(),3);assert!(parse_csv("timestamp,open,high,low,close\n2,10,9,8,10").is_err());assert!(parse_csv("timestamp,open,high,low,close\n2,10,11,9,10\n1,10,11,9,10").is_err())}#[test]fn features_have_real_warmup(){let c=parse_csv(&csv()).unwrap();let f=feature_at(&c,1);assert!(f.sma_long.is_none());assert_eq!(round(f.returns.unwrap()),0.1)}#[test]fn deterministic_random_is_repeatable(){assert_eq!(random_unit(42,7,"random-controlled"),random_unit(42,7,"random-controlled"));assert_ne!(random_unit(42,7,"random-controlled"),random_unit(43,7,"random-controlled"));}#[test]fn risk_modifies_excess_position(){let p=Portfolio{cash:100.0,quantity:0.0,average_entry:0.0,realized:0.0,peak_equity:100.0,trades:0,wins:0,gross_profit:0.0,gross_loss:0.0};let profile=MarketRiskProfile{id:"r".into(),name:"R".into(),max_position_pct:10.0,max_total_exposure_pct:20.0,max_daily_loss_pct:5.0,max_drawdown_pct:20.0,max_trades_per_day:None,allow_leverage:false,allow_short:false,allowed_assets:vec![]};let d=Decision{action:"BUY",desired_pct:Some(90.0),confidence:None,reasoning:"test".into()};assert_eq!(risk(&d,&p,10.0,&profile,"TEST",false).2,Some(10.0));}#[test]fn execution_uses_next_open(){let mut p=Portfolio{cash:100.0,quantity:0.0,average_entry:0.0,realized:0.0,peak_equity:100.0,trades:0,wins:0,gross_profit:0.0,gross_loss:0.0};let candle=Candle{timestamp:"T+1".into(),open:20.0,high:20.0,low:20.0,close:20.0,volume:None};let ex=execute(&mut p,&PendingOrder{decision_index:0,action:"BUY",approved_pct:50.0},&candle,0.0,0.0).unwrap();assert_eq!(ex.price,20.0);assert_eq!(ex.quantity,2.5);assert_eq!(equity(&p,20.0),100.0);}}
+
+#[cfg(test)]
+mod temporal_column_tests {
+    use super::*;
+
+    #[test]
+    fn accepts_date_alias_with_iso_date_values() {
+        let candles=parse_csv("Date,open,high,low,close,volume\n2026-01-01,10,11,9,10,100\n2026-01-02,11,12,10,11,110").unwrap();
+        assert_eq!(candles.len(),2);
+        assert_eq!(candles[0].timestamp,"2026-01-01");
+    }
+
+    #[test]
+    fn accepts_date_only_values_in_timestamp_column() {
+        let candles=parse_csv("timestamp,open,high,low,close\n2026-01-01,10,11,9,10\n2026-01-02,11,12,10,11").unwrap();
+        assert_eq!(candles.len(),2);
+    }
+
+    #[test]
+    fn timestamp_has_priority_when_both_temporal_columns_exist() {
+        let candles=parse_csv("date,timestamp,open,high,low,close\nnot-a-date,2026-01-01T00:00:00Z,10,11,9,10").unwrap();
+        assert_eq!(candles[0].timestamp,"2026-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn rejects_missing_duplicate_and_unordered_temporal_values() {
+        let missing=parse_csv("open,high,low,close\n10,11,9,10").unwrap_err();
+        assert!(missing.contains("timestamp ou date"));
+        assert!(parse_csv("date,open,high,low,close\n2026-01-01,10,11,9,10\n2026-01-01,11,12,10,11").unwrap_err().contains("duplicado"));
+        assert!(parse_csv("date,open,high,low,close\n2026-01-02,10,11,9,10\n2026-01-01,11,12,10,11").unwrap_err().contains("fora de ordem"));
+    }
+}
