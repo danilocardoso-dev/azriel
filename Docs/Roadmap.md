@@ -430,3 +430,16 @@ Status: 🧪 Implementada em 08/09/2026; validação operacional com Ollama pend
 - comparação A/B entre experimentos V1 e V2, com aviso quando as condições congeladas diferirem;
 - mesma proteção de schema, Risk Engine, execução simulada, portfólio, validação científica e auditoria da v0.4;
 - suíte automatizada validada com provider falso; resposta real do modelo local permanece como aceite operacional.
+
+## Market Lab v0.4.2 — Decision Architecture & Signal Scoring
+
+Status: 🧪 Implementada em 08/09/2026; validação operacional com AAPL 2022/2023 e Ollama pendente.
+
+- `MarketSignalEngine` determinístico e versionado separa evidência técnica da decisão do LLM;
+- tendência e momentum produzem direção, enquanto volatilidade atua somente como contexto e redutor de força;
+- `AI Technical V3` recebe scores pré-calculados, conflito e viés, mas continua livre para retornar BUY, SELL ou HOLD;
+- respostas V3 usam `reason_code` controlado e exposição total desejada, mantendo schema estrito e fallback seguro;
+- traces persistem features, scores, configuração, validação, ação e divergência entre sinal e decisão;
+- diagnóstico inclui matrizes sinal × ação e conflito × ação, distribuição de motivos, response rate e alertas de colapso;
+- comparação A/B/C preserva V1 e V2, exige condições experimentais equivalentes e não promove agente automaticamente;
+- Risk Engine, execução simulada, limites de coorte, ausência de corretora e ausência de dinheiro real permanecem inalterados.

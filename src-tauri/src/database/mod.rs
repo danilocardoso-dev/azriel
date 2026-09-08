@@ -12,6 +12,7 @@ pub mod market_ai;
 pub mod market_observatory;
 pub mod market_regimes;
 pub mod market_repository;
+pub mod market_signals;
 pub mod market_statistics;
 pub mod market_validation;
 #[cfg(test)]
@@ -127,6 +128,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         18,
         "market_ai_calibration",
         include_str!("../../migrations/0018_market_ai_calibration.sql"),
+    ),
+    (
+        19,
+        "market_signal_engine",
+        include_str!("../../migrations/0019_market_signal_engine.sql"),
     ),
 ];
 
@@ -655,5 +661,18 @@ mod tests {
         assert_eq!(connection.query_row("SELECT prompt_version FROM market_ai_agent_configs WHERE agent_id='ai-technical-v1'", [], |row| row.get::<_, String>(0)).unwrap(), "MARKET_AI_AGENT_V1");
         assert_eq!(connection.query_row("SELECT prompt_version FROM market_ai_agent_configs WHERE agent_id='ai-technical-v2'", [], |row| row.get::<_, String>(0)).unwrap(), "MARKET_AI_AGENT_V2");
         assert_eq!(schema_version(&connection).unwrap(), 18);
+    }
+
+    #[test]
+    fn migration_nineteen_preserves_v1_v2_and_adds_v3_signal_engine() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 18).unwrap();
+        connection.execute("UPDATE market_ai_agent_configs SET decision_interval=7 WHERE agent_id='ai-technical-v2'", []).unwrap();
+        apply_migrations_through(&mut connection, 19).unwrap();
+        assert_eq!(schema_version(&connection).unwrap(), 19);
+        assert_eq!(connection.query_row("SELECT decision_interval FROM market_ai_agent_configs WHERE agent_id='ai-technical-v2'", [], |row| row.get::<_,i64>(0)).unwrap(), 7);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_agents WHERE id='ai-technical-v3'", [], |row| row.get::<_,i64>(0)).unwrap(), 1);
+        assert_eq!(connection.query_row("SELECT engine_version FROM market_signal_engine_configs WHERE version='SIGNAL_CONFIG_V1'", [], |row| row.get::<_,String>(0)).unwrap(), "SIGNAL_ENGINE_V1");
     }
 }

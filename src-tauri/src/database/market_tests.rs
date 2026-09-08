@@ -22,6 +22,10 @@ impl market_ai::MarketAiProvider for CalibratedFakeProvider {
 
 fn fake_ai_v2_config()->market_ai::MarketAiConfig{market_ai::MarketAiConfig{agent_id:market_ai::AI_AGENT_V2_ID.into(),provider:"ollama".into(),model:"fake:qwen-v2".into(),prompt_version:market_ai::PROMPT_V2_VERSION.into(),temperature:0.1,decision_interval:5,timeout_ms:5000,max_retries:1}}
 
+struct SignalAwareFakeProvider { prompts:Mutex<Vec<market_ai::MarketAiPrompt>> }
+impl market_ai::MarketAiProvider for SignalAwareFakeProvider { fn complete(&self,prompt:market_ai::MarketAiPrompt,_:&market_ai::MarketAiConfig)->Result<market_ai::MarketAiProviderResponse,market_ai::MarketAiProviderError>{let snapshot:serde_json::Value=serde_json::from_str(&prompt.snapshot_json).unwrap();let bias=snapshot.pointer("/signals/directionalBias").and_then(|value|value.as_str()).unwrap_or("NEUTRAL");let positioned=snapshot.pointer("/portfolio/current_position").and_then(|value|value.as_bool()).unwrap_or(false);let content=match(bias,positioned){("BULLISH",false)=>r#"{"action":"BUY","desired_position_pct":40,"confidence":0.74,"reason_code":"ALIGNED_BULLISH_SIGNAL","reason":"aligned bullish evidence"}"#,("BEARISH",true)=>r#"{"action":"SELL","desired_position_pct":0,"confidence":0.71,"reason_code":"EXIT_SIGNAL","reason":"bearish exit evidence"}"#,_=>r#"{"action":"HOLD","desired_position_pct":0,"confidence":0.46,"reason_code":"INSUFFICIENT_SIGNAL","reason":"signal not actionable"}"#};self.prompts.lock().unwrap().push(prompt);Ok(market_ai::MarketAiProviderResponse{content:content.into(),model:"fake:qwen-v3".into(),input_tokens:Some(40),output_tokens:Some(14)})}}
+fn fake_ai_v3_config()->market_ai::MarketAiConfig{market_ai::MarketAiConfig{agent_id:market_ai::AI_AGENT_V3_ID.into(),provider:"ollama".into(),model:"fake:qwen-v3".into(),prompt_version:market_ai::PROMPT_V3_VERSION.into(),temperature:0.1,decision_interval:5,timeout_ms:5000,max_retries:1}}
+
 fn fixture_csv() -> String {
     let mut output = String::from("timestamp,open,high,low,close,volume\n");
     for day in 1..=30 {
@@ -273,4 +277,16 @@ fn ai_v2_persists_rich_context_distribution_forward_returns_and_ab_metadata() {
     let invalid=MarketExperimentInput{name:"invalid dual AI".into(),agent_ids:vec!["cash".into(),market_ai::AI_AGENT_ID.into(),market_ai::AI_AGENT_V2_ID.into()],dataset_id:dataset.id,risk_profile_id:"balanced-v1".into(),initial_capital:10_000.0,random_seed:42,fee_pct:0.1,slippage_pct:0.05};
     assert!(market_repository::validate_input(&connection,&invalid).unwrap_err().contains("no máximo um AI Agent"));
     let _=fs::remove_file(path);
+}
+
+#[test]
+fn ai_v3_persists_signal_trace_reason_codes_diagnostics_and_frozen_config(){
+    let suffix=SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();let path=std::env::temp_dir().join(format!("azriel-market-ai-v3-{suffix}.csv"));fs::write(&path,fixture_csv()).unwrap();let mut connection=database();
+    let dataset=market_repository::import_dataset(&mut connection,&ImportMarketDatasetInput{path:path.to_string_lossy().into_owned(),name:"Signal fixture".into(),asset:"AAPL".into(),timeframe:"1D".into(),currency:Some("USD".into())}).unwrap();
+    let input=MarketExperimentInput{name:"AI-DECISION-ARCH".into(),dataset_id:dataset.id.clone(),risk_profile_id:"balanced-v1".into(),agent_ids:vec!["cash".into(),"buy-hold".into(),"simple-trend".into(),market_ai::AI_AGENT_V3_ID.into()],initial_capital:10_000.0,random_seed:42,fee_pct:0.1,slippage_pct:0.05};let provider=SignalAwareFakeProvider{prompts:Mutex::new(Vec::new())};
+    let result=market_repository::run_experiment_with_provider(&mut connection,&input,&provider,&fake_ai_v3_config()).unwrap();let decisions=market_repository::list_ai_decisions(&connection,&result.experiment.id).unwrap();let valid=decisions.iter().filter(|item|item.call_status=="VALID").collect::<Vec<_>>();assert_eq!(valid.len(),6);assert!(valid.iter().all(|item|item.reason_code.is_some()));assert!(valid.iter().all(|item|item.input_snapshot.as_ref().and_then(|value|value.get("signals")).is_some()));assert!(valid.iter().all(|item|!item.input_snapshot.as_ref().unwrap().to_string().contains("forward_return")));
+    assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_ai_signal_traces trace JOIN market_decisions decision ON decision.id=trace.decision_id WHERE decision.experiment_id=?1",[&result.experiment.id],|row|row.get::<_,usize>(0)).unwrap(),6);
+    let diagnostics=market_repository::get_signal_diagnostics(&connection,&result.experiment.id).unwrap().unwrap();assert_eq!(diagnostics.signal_engine_version,"SIGNAL_ENGINE_V1");assert_eq!(diagnostics.signal_action_matrix.iter().map(|row|row.buy_count+row.sell_count+row.hold_count).sum::<usize>(),6);assert!(!diagnostics.reason_codes.is_empty());
+    let frozen:String=connection.query_row("SELECT config_json FROM market_experiments WHERE id=?1",[&result.experiment.id],|row|row.get(0)).unwrap();assert!(frozen.contains("SIGNAL_ENGINE_V1"));assert!(frozen.contains("SIGNAL_CONFIG_V1"));let prompts=provider.prompts.lock().unwrap();assert!(prompts.iter().all(|prompt|prompt.system.contains("SIGNAL SCORES ARE PRE-COMPUTED")));drop(prompts);
+    let invalid=MarketExperimentInput{agent_ids:vec!["cash".into(),market_ai::AI_AGENT_V2_ID.into(),market_ai::AI_AGENT_V3_ID.into()],..input};assert!(market_repository::validate_input(&connection,&invalid).unwrap_err().contains("no máximo um AI Agent"));let _=fs::remove_file(path);
 }

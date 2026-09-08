@@ -460,6 +460,8 @@ pub struct MarketAiDecisionLog {
     pub desired_position_pct: Option<f64>,
     pub confidence: Option<f64>,
     pub reason: String,
+    pub reason_code: Option<String>,
+    pub validation_code: Option<String>,
     pub risk_result: String,
     pub risk_reason: String,
     pub approved_position_pct: Option<f64>,
@@ -475,6 +477,7 @@ pub struct MarketAiDecisionLog {
     pub forward_return_1: Option<f64>,
     pub forward_return_5: Option<f64>,
     pub forward_return_10: Option<f64>,
+    pub signal_disagreement: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -506,4 +509,46 @@ pub struct MarketAiExperimentComparison {
     pub max_drawdown_pct: f64,
     pub average_exposure_pct: f64,
     pub average_latency_ms: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketSignalMatrixRow {
+    pub label: String,
+    pub buy_count: usize,
+    pub sell_count: usize,
+    pub hold_count: usize,
+    pub average_forward_5: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketReasonCodeCount { pub reason_code: String, pub count: usize }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketSignalDiagnostics {
+    pub signal_engine_version: String,
+    pub signal_config_version: String,
+    pub bullish_count: usize,
+    pub bearish_count: usize,
+    pub neutral_count: usize,
+    pub strong_count: usize,
+    pub weak_count: usize,
+    pub low_conflict_count: usize,
+    pub medium_conflict_count: usize,
+    pub high_conflict_count: usize,
+    pub action_collapse: bool,
+    pub collapsed_action: Option<String>,
+    pub confidence_collapse: bool,
+    pub collapsed_confidence: Option<f64>,
+    pub disagreement_count: usize,
+    pub disagreement_rate_pct: f64,
+    pub strong_bullish_buy_rate_pct: Option<f64>,
+    pub strong_bullish_hold_rate_pct: Option<f64>,
+    pub strong_bearish_sell_rate_pct: Option<f64>,
+    pub strong_bearish_hold_rate_pct: Option<f64>,
+    pub signal_action_matrix: Vec<MarketSignalMatrixRow>,
+    pub conflict_action_matrix: Vec<MarketSignalMatrixRow>,
+    pub reason_codes: Vec<MarketReasonCodeCount>,
 }

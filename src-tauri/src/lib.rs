@@ -156,6 +156,7 @@ pub fn run() {
             market_commands::list_market_validation_ai_runtime,
             market_commands::list_market_ai_decisions,
             market_commands::list_market_ai_experiment_comparisons,
+            market_commands::get_market_signal_diagnostics,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao executar o Azriel");

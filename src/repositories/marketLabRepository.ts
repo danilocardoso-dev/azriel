@@ -1,5 +1,5 @@
 import { invokeDatabase } from "./tauri";
-import type { ImportMarketDatasetInput, MarketAgentDefinition, MarketAiDecisionLog, MarketAiExperimentComparison, MarketAiRuntimeMetric, MarketAiStatus, MarketDataset, MarketExperimentInput, MarketExperimentResult, MarketExperimentSummary, MarketRiskProfile, MarketValidationInput, MarketValidationResult, MarketValidationSummary, UpdateMarketAiConfigInput } from "../types";
+import type { ImportMarketDatasetInput, MarketAgentDefinition, MarketAiDecisionLog, MarketAiExperimentComparison, MarketAiRuntimeMetric, MarketAiStatus, MarketDataset, MarketExperimentInput, MarketExperimentResult, MarketExperimentSummary, MarketRiskProfile, MarketSignalDiagnostics, MarketValidationInput, MarketValidationResult, MarketValidationSummary, UpdateMarketAiConfigInput } from "../types";
 
 export const marketLabRepository = {
   listDatasets: () => invokeDatabase<MarketDataset[]>("list_market_datasets"),
@@ -20,4 +20,5 @@ export const marketLabRepository = {
   listValidationAiRuntime: (validationId: string) => invokeDatabase<MarketAiRuntimeMetric[]>("list_market_validation_ai_runtime", { validationId }),
   listAiDecisions: (experimentId: string) => invokeDatabase<MarketAiDecisionLog[]>("list_market_ai_decisions", { experimentId }),
   listAiExperimentComparisons: () => invokeDatabase<MarketAiExperimentComparison[]>("list_market_ai_experiment_comparisons"),
+  getSignalDiagnostics: (experimentId: string) => invokeDatabase<MarketSignalDiagnostics | null>("get_market_signal_diagnostics", { experimentId }),
 };
