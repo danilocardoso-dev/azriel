@@ -1,6 +1,13 @@
-use super::{market_models::*, market_repository, *};
+use super::{market_ai, market_models::*, market_repository, *};
 use rusqlite::Connection;
-use std::{fs, time::{SystemTime, UNIX_EPOCH}};
+use std::{fs, sync::Mutex, time::{SystemTime, UNIX_EPOCH}};
+
+struct FakeMarketAiProvider { prompts: Mutex<Vec<String>> }
+impl market_ai::MarketAiProvider for FakeMarketAiProvider {
+    fn complete(&self,prompt:market_ai::MarketAiPrompt,_:&market_ai::MarketAiConfig)->Result<market_ai::MarketAiProviderResponse,market_ai::MarketAiProviderError>{self.prompts.lock().unwrap().push(prompt.snapshot_json);Ok(market_ai::MarketAiProviderResponse{content:r#"{"action":"BUY","desired_position_pct":90,"confidence":0.99,"reason":"strong signal"}"#.into(),model:"fake:market".into(),input_tokens:Some(20),output_tokens:Some(10)})}
+}
+
+fn fake_ai_config()->market_ai::MarketAiConfig{market_ai::MarketAiConfig{provider:"ollama".into(),model:"fake:market".into(),prompt_version:market_ai::PROMPT_VERSION.into(),temperature:0.1,decision_interval:5,timeout_ms:5000,max_retries:1}}
 
 fn fixture_csv() -> String {
     let mut output = String::from("timestamp,open,high,low,close,volume\n");
@@ -161,4 +168,42 @@ fn scientific_regime_fixture_imports_all_candles_in_temporal_order() {
     assert_eq!(dataset.candle_count, 160);
     assert!(dataset.start_at < dataset.end_at);
     let _ = fs::remove_file(path);
+}
+
+#[test]
+fn ai_agent_uses_structured_snapshots_risk_and_persistent_runtime() {
+    let suffix=SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let path=std::env::temp_dir().join(format!("azriel-market-ai-{suffix}.csv"));
+    fs::write(&path,fixture_csv()).unwrap();
+    let mut connection=database();
+    let dataset=market_repository::import_dataset(&mut connection,&ImportMarketDatasetInput{path:path.to_string_lossy().into_owned(),name:"AI fixture".into(),asset:"TST".into(),timeframe:"1D".into(),currency:Some("BRL".into())}).unwrap();
+    let input=MarketExperimentInput{name:"AI-LAB-001".into(),dataset_id:dataset.id.clone(),risk_profile_id:"balanced-v1".into(),agent_ids:vec!["cash".into(),"buy-hold".into(),"simple-trend".into(),"simple-momentum".into(),market_ai::AI_AGENT_ID.into()],initial_capital:1_000.0,random_seed:42,fee_pct:0.1,slippage_pct:0.05};
+    let provider=FakeMarketAiProvider{prompts:Mutex::new(Vec::new())};
+    let result=market_repository::run_experiment_with_provider(&mut connection,&input,&provider,&fake_ai_config()).unwrap();
+    assert_eq!(result.metrics.len(),5);
+    assert!(result.equity.iter().filter(|point|point.timestamp=="2026-01-01T00:00:00Z").all(|point|point.equity==1_000.0));
+    let runtime=market_repository::list_ai_runtime(&connection,&result.experiment.id).unwrap();
+    assert_eq!(runtime[0].call_count,6);
+    assert_eq!(runtime[0].successful_call_count,6);
+    assert_eq!(runtime[0].fallback_count,0);
+    let decisions=market_repository::list_ai_decisions(&connection,&result.experiment.id).unwrap();
+    assert_eq!(decisions.len(),30);
+    assert_eq!(decisions.iter().filter(|decision|decision.call_status=="NO_LLM_CALL").count(),24);
+    assert!(decisions.iter().filter(|decision|decision.call_status=="VALID").all(|decision|decision.approved_position_pct.unwrap_or(0.0)<=50.0));
+    let prompts=provider.prompts.lock().unwrap();
+    assert_eq!(prompts.len(),6);
+    let first:serde_json::Value=serde_json::from_str(&prompts[0]).unwrap();
+    assert_eq!(first["timestamp"],"2026-01-01T00:00:00Z");
+    assert!(first.get("features").is_some());
+    assert!(first.get("candles").is_none());
+    drop(prompts);
+    let validation_input=MarketValidationInput{name:"AI-VAL-001".into(),dataset_id:dataset.id,risk_profile_id:"balanced-v1".into(),agent_ids:input.agent_ids.clone(),initial_capital:1_000.0,random_seed:42,fee_pct:0.1,slippage_pct:0.05,split_config:ValidationSplitConfig{in_sample_pct:60,validation_pct:20,out_of_sample_pct:20},walk_forward_config:WalkForwardConfig{train_window_size:12,test_window_size:6,step_size:6},regime_config:MarketRegimeConfig{trend_window:5,volatility_window:5,bull_threshold_pct:2.0,bear_threshold_pct:-2.0,high_volatility_threshold_pct:1.5,low_volatility_threshold_pct:0.25,minimum_sample_candles:3,minimum_sample_trades:1},rolling_window:5,annualization_factor:252.0};
+    let validation=market_validation::run_with_provider(&mut connection,&validation_input,&provider,&fake_ai_config()).unwrap();
+    assert_eq!(validation.validation.status,"completed");
+    assert!(validation.reports.iter().any(|report|report.agent_id==market_ai::AI_AGENT_ID));
+    let validation_runtime=market_repository::list_validation_ai_runtime(&connection,&validation.validation.id).unwrap();
+    assert_eq!(validation_runtime.len(),1);
+    assert!(validation_runtime[0].call_count>0);
+    assert!(validation.audit.frozen_config_json.contains(market_ai::PROMPT_VERSION));
+    let _=fs::remove_file(path);
 }

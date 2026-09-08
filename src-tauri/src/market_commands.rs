@@ -1,4 +1,4 @@
-use crate::database::{market_models::*, market_repository, market_validation, DatabaseState};
+use crate::{database::{self, market_models::*, market_repository, market_validation, DatabaseState}, ollama};
 use tauri::State;
 
 fn lock<'a>(
@@ -41,14 +41,16 @@ pub fn list_market_risk_profiles(
     market_repository::list_risk_profiles(&connection)
 }
 
+fn worker_connection(path:&std::path::Path)->Result<rusqlite::Connection,String>{let mut connection=rusqlite::Connection::open(path).map_err(|error|error.to_string())?;database::initialize(&mut connection)?;Ok(connection)}
+
 #[tauri::command]
-pub fn run_market_experiment(
+pub async fn run_market_experiment(
     state: State<'_, DatabaseState>,
     input: MarketExperimentInput,
 ) -> Result<MarketExperimentResult, String> {
     market_repository::set_kill_switch(false);
-    let mut connection = lock(&state)?;
-    market_repository::run_experiment(&mut connection, &input)
+    let path=state.path.clone();
+    tauri::async_runtime::spawn_blocking(move||{let mut connection=worker_connection(&path)?;market_repository::run_experiment(&mut connection,&input)}).await.map_err(|error|error.to_string())?
 }
 
 #[tauri::command]
@@ -69,13 +71,13 @@ pub fn get_market_experiment(
 }
 
 #[tauri::command]
-pub fn rerun_market_experiment(
+pub async fn rerun_market_experiment(
     state: State<'_, DatabaseState>,
     id: String,
 ) -> Result<MarketExperimentResult, String> {
     market_repository::set_kill_switch(false);
-    let mut connection = lock(&state)?;
-    market_repository::rerun(&mut connection, &id)
+    let path=state.path.clone();
+    tauri::async_runtime::spawn_blocking(move||{let mut connection=worker_connection(&path)?;market_repository::rerun(&mut connection,&id)}).await.map_err(|error|error.to_string())?
 }
 
 #[tauri::command]
@@ -85,14 +87,31 @@ pub fn activate_market_kill_switch() -> bool {
 }
 
 #[tauri::command]
-pub fn run_market_validation(
+pub async fn run_market_validation(
     state: State<'_, DatabaseState>,
     input: MarketValidationInput,
 ) -> Result<MarketValidationResult, String> {
     market_repository::set_kill_switch(false);
-    let mut connection = lock(&state)?;
-    market_validation::run(&mut connection, &input)
+    let path=state.path.clone();
+    tauri::async_runtime::spawn_blocking(move||{let mut connection=worker_connection(&path)?;market_validation::run(&mut connection,&input)}).await.map_err(|error|error.to_string())?
 }
+
+fn config_probe_input()->MarketExperimentInput{MarketExperimentInput{name:"probe".into(),dataset_id:String::new(),risk_profile_id:String::new(),agent_ids:vec![],initial_capital:1.0,random_seed:42,fee_pct:0.0,slippage_pct:0.0}}
+
+#[tauri::command]
+pub async fn get_market_ai_status(state:State<'_,DatabaseState>)->Result<MarketAiStatus,String>{let(config,endpoint)={let connection=lock(&state)?;market_repository::resolve_ai_config(&connection,&config_probe_input())?};let health=ollama::status(&endpoint,(config.timeout_ms/1000).clamp(5,8)).await?;let model_available=health.available&&health.models.iter().any(|model|model==&config.model);let error=if health.available&&!model_available{Some(format!("O modelo '{}' não está instalado no Ollama",config.model))}else{health.error};Ok(MarketAiStatus{configured:true,available:model_available,provider:config.provider,model:config.model,prompt_version:config.prompt_version,decision_interval:config.decision_interval,timeout_ms:config.timeout_ms,max_retries:config.max_retries,error})}
+
+#[tauri::command]
+pub fn update_market_ai_config(state:State<'_,DatabaseState>,input:UpdateMarketAiConfigInput)->Result<MarketAiStatus,String>{let connection=lock(&state)?;market_repository::update_ai_config(&connection,&input)?;let(config,_)=market_repository::resolve_ai_config(&connection,&config_probe_input())?;Ok(MarketAiStatus{configured:true,available:false,provider:config.provider,model:config.model,prompt_version:config.prompt_version,decision_interval:config.decision_interval,timeout_ms:config.timeout_ms,max_retries:config.max_retries,error:None})}
+
+#[tauri::command]
+pub fn list_market_ai_runtime(state:State<'_,DatabaseState>,experiment_id:String)->Result<Vec<MarketAiRuntimeMetric>,String>{let connection=lock(&state)?;market_repository::list_ai_runtime(&connection,&experiment_id)}
+
+#[tauri::command]
+pub fn list_market_validation_ai_runtime(state:State<'_,DatabaseState>,validation_id:String)->Result<Vec<MarketAiRuntimeMetric>,String>{let connection=lock(&state)?;market_repository::list_validation_ai_runtime(&connection,&validation_id)}
+
+#[tauri::command]
+pub fn list_market_ai_decisions(state:State<'_,DatabaseState>,experiment_id:String)->Result<Vec<MarketAiDecisionLog>,String>{let connection=lock(&state)?;market_repository::list_ai_decisions(&connection,&experiment_id)}
 
 #[tauri::command]
 pub fn list_market_validations(

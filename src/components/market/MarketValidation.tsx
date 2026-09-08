@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { marketLabRepository } from "../../repositories/marketLabRepository";
-import type { MarketAgentDefinition, MarketDataset, MarketRegimeMetric, MarketRiskProfile, MarketRollingMetric, MarketValidationInput, MarketValidationResult, MarketValidationSummary } from "../../types";
+import type { MarketAgentDefinition, MarketAiRuntimeMetric, MarketDataset, MarketRegimeMetric, MarketRiskProfile, MarketRollingMetric, MarketValidationInput, MarketValidationResult, MarketValidationSummary } from "../../types";
 
 type ValidationDetail = "summary" | "windows" | "regimes" | "rolling" | "benchmarks" | "audit";
 type RollingMode = "rollingReturnPct" | "rollingVolatilityPct" | "rollingSharpe" | "rollingDrawdownPct";
@@ -56,6 +56,7 @@ export function MarketValidation({ datasets, agents, profiles, datasetId, riskPr
   const [detail, setDetail] = useState<ValidationDetail>("summary");
   const [rollingMode, setRollingMode] = useState<RollingMode>("rollingReturnPct");
   const [reportSort, setReportSort] = useState<ReportSort>("positiveWindowRatioPct");
+  const [aiRuntime, setAiRuntime] = useState<MarketAiRuntimeMetric | null>(null);
   useEffect(() => { void marketLabRepository.listValidations().then(setHistory).catch(() => undefined); }, []);
 
   const selectedReport = result?.reports.find((item) => item.agentId === selectedAgent) ?? result?.reports[0];
@@ -68,11 +69,11 @@ export function MarketValidation({ datasets, agents, profiles, datasetId, riskPr
     if (agentIds.length < 3 || agentIds.length > 5) { onError("A validação exige uma coorte de 3 a 5 agentes."); return; }
     const input: MarketValidationInput = { name, datasetId, riskProfileId, agentIds, initialCapital, randomSeed, feePct, slippagePct, splitConfig: split, walkForwardConfig: walk, regimeConfig: { trendWindow: Math.min(20, Math.max(3, rollingWindow)), volatilityWindow: Math.min(20, Math.max(3, rollingWindow)), bullThresholdPct: 2, bearThresholdPct: -2, highVolatilityThresholdPct: 1.5, lowVolatilityThresholdPct: 0.25, minimumSampleCandles: Math.min(20, Math.max(3, Math.floor(candleCount * 0.05))), minimumSampleTrades: 2 }, rollingWindow, annualizationFactor };
     setBusy(true);
-    try { const next = await marketLabRepository.runValidation(input); setResult(next); setSelectedAgent(next.reports[0]?.agentId ?? ""); setHistory(await marketLabRepository.listValidations()); }
+    try { const next = await marketLabRepository.runValidation(input); const runtime=await marketLabRepository.listValidationAiRuntime(next.validation.id); setAiRuntime(runtime[0]??null); setResult(next); setSelectedAgent(next.reports[0]?.agentId ?? ""); setHistory(await marketLabRepository.listValidations()); }
     catch (cause) { onError(String(cause)); }
     finally { setBusy(false); }
   };
-  const open = async (id: string) => { setBusy(true); try { const next = await marketLabRepository.getValidation(id); setResult(next); setSelectedAgent(next.reports[0]?.agentId ?? ""); } catch (cause) { onError(String(cause)); } finally { setBusy(false); } };
+  const open = async (id: string) => { setBusy(true); try { const [next,runtime] = await Promise.all([marketLabRepository.getValidation(id),marketLabRepository.listValidationAiRuntime(id)]); setAiRuntime(runtime[0]??null); setResult(next); setSelectedAgent(next.reports[0]?.agentId ?? ""); } catch (cause) { onError(String(cause)); } finally { setBusy(false); } };
 
   return <div className="market-validation">
     <section className="market-validation__config">
@@ -93,6 +94,7 @@ export function MarketValidation({ datasets, agents, profiles, datasetId, riskPr
     {!result && <div className="market-empty market-validation__empty"><span>◇</span><strong>NENHUMA VALIDATION RUN SELECIONADA</strong><p>Configure splits temporais e walk-forward. Nenhum parâmetro será otimizado automaticamente.</p></div>}
     {result && <>
       <section className="market-validation__header"><div><span>VALIDATION RUN</span><strong>{result.validation.name}</strong><small>{result.validation.datasetName} · {result.validation.agentIds.length} agentes</small></div><div><span>METHOD</span><strong>SPLIT + WALK-FORWARD</strong><small>{result.windows.filter((item) => item.windowType === "walk_forward").length} janelas de teste</small></div><div><span>STATUS</span><strong>{result.validation.status.toUpperCase()}</strong><small>{result.audit.validationEngineVersion}</small></div></section>
+      {aiRuntime&&<section className="market-ai-runtime__metrics market-ai-runtime__metrics--validation"><div><span>AI CALLS</span><strong>{aiRuntime.callCount}</strong></div><div><span>VALID</span><strong>{aiRuntime.successfulCallCount}</strong></div><div><span>INVALID</span><strong>{aiRuntime.invalidResponseCount}</strong></div><div><span>TIMEOUT</span><strong>{aiRuntime.timeoutCount}</strong></div><div><span>FALLBACKS</span><strong>{aiRuntime.fallbackCount}</strong></div><div><span>AVG LATENCY</span><strong>{aiRuntime.averageLatencyMs.toFixed(0)} ms</strong></div></section>}
       <section className="market-split"><div className="panel-heading"><strong>TEMPORAL SPLIT</strong><span>SEM SHUFFLE · RANGES REAIS</span></div><div className="market-split__bar">{splitWindows.map((window) => <div key={window.id} className={window.windowType} style={{ flex: window.endIndex - window.startIndex + 1 }}><strong>{label(window.windowType)}</strong><span>{window.startIndex + 1}–{window.endIndex + 1}</span><small>{window.startAt} → {window.endAt}</small></div>)}</div></section>
       <section className="market-validation__report-table"><div className="panel-heading"><strong>AGENT VALIDATION TABLE</strong><label>ORDENAR POR <select value={reportSort} onChange={(event)=>setReportSort(event.target.value as ReportSort)}><option value="positiveWindowRatioPct">Janelas positivas</option><option value="outOfSampleReturnPct">Retorno OOS</option><option value="outOfSampleDrawdownPct">Menor DD OOS</option><option value="returnStdAcrossWindows">Menor dispersão</option></select></label></div><div className="market-metrics"><table><thead><tr><th>AGENT</th><th>IS RETURN</th><th>VAL RETURN</th><th>OOS RETURN</th><th>OOS DD</th><th>SHARPE</th><th>SORTINO</th><th>CALMAR</th><th>POSITIVE WINDOWS</th><th>STATUS</th></tr></thead><tbody>{sortedReports.map((report)=>{const oos=result.metrics.find((metric)=>metric.agentId===report.agentId&&metric.windowType==="out_of_sample");return <tr key={report.agentId} className={selectedId===report.agentId?"selected":""} onClick={()=>setSelectedAgent(report.agentId)}><td><strong>{report.agentName}</strong></td><td>{fmt(report.inSampleReturnPct,"%")}</td><td>{fmt(report.validationReturnPct,"%")}</td><td className="market-validation__oos-cell">{fmt(report.outOfSampleReturnPct,"%")}</td><td>{fmt(report.outOfSampleDrawdownPct,"%")}</td><td>{fmt(oos?.sharpe??null)}</td><td>{fmt(oos?.sortino??null)}</td><td>{fmt(oos?.calmar??null)}</td><td>{fmt(report.positiveWindowRatioPct,"%")}</td><td>{label(report.robustnessStatus)}{report.possibleOverfitting&&<small>POSSIBLE OVERFITTING</small>}</td></tr>})}</tbody></table></div></section>
       <div className="market-validation__agent-tabs">{result.reports.map((report) => <button key={report.agentId} className={selectedId === report.agentId ? "active" : ""} onClick={() => setSelectedAgent(report.agentId)}>{report.agentName}</button>)}</div>

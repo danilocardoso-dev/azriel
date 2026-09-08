@@ -67,6 +67,45 @@ pub struct MarketExperimentInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct MarketAiStatus {
+    pub configured: bool,
+    pub available: bool,
+    pub provider: String,
+    pub model: String,
+    pub prompt_version: String,
+    pub decision_interval: usize,
+    pub timeout_ms: u64,
+    pub max_retries: usize,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateMarketAiConfigInput {
+    pub decision_interval: usize,
+    pub timeout_ms: u64,
+    pub max_retries: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketAiRuntimeMetric {
+    pub agent_id: String,
+    pub call_count: usize,
+    pub successful_call_count: usize,
+    pub invalid_response_count: usize,
+    pub timeout_count: usize,
+    pub retry_count: usize,
+    pub fallback_count: usize,
+    pub average_latency_ms: f64,
+    pub max_latency_ms: u64,
+    pub total_latency_ms: u64,
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MarketAgentMetric {
     pub agent_id: String,
     pub agent_name: String,
@@ -395,4 +434,26 @@ pub struct MarketValidationResult {
     pub rolling_metrics: Vec<MarketRollingMetric>,
     pub reports: Vec<MarketRobustnessReport>,
     pub audit: MarketValidationAudit,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketAiDecisionLog {
+    pub decision_id: i64,
+    pub timestamp: String,
+    pub action: String,
+    pub desired_position_pct: Option<f64>,
+    pub confidence: Option<f64>,
+    pub reason: String,
+    pub risk_result: String,
+    pub risk_reason: String,
+    pub approved_position_pct: Option<f64>,
+    pub execution_price: Option<f64>,
+    pub call_status: String,
+    pub provider: String,
+    pub model: String,
+    pub prompt_version: String,
+    pub latency_ms: u64,
+    pub attempts: usize,
+    pub fallback_used: bool,
 }

@@ -8,6 +8,7 @@ pub mod engineering_models;
 pub mod engineering_repository;
 pub mod learning_engine;
 pub mod market_models;
+pub mod market_ai;
 pub mod market_observatory;
 pub mod market_regimes;
 pub mod market_repository;
@@ -116,6 +117,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         16,
         "market_validation",
         include_str!("../../migrations/0016_market_validation.sql"),
+    ),
+    (
+        17,
+        "market_ai_agent",
+        include_str!("../../migrations/0017_market_ai_agent.sql"),
     ),
 ];
 
@@ -613,5 +619,20 @@ mod tests {
         assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_datasets WHERE id='keep-validation'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
         assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_validation_runs", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
         assert_eq!(schema_version(&connection).unwrap(), 16);
+    }
+
+    #[test]
+    fn migration_seventeen_preserves_validation_and_adds_single_ai_agent() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 16).unwrap();
+        connection.execute("INSERT INTO market_datasets(id,name,asset,timeframe,start_at,end_at,candle_count,fingerprint,source_path) VALUES ('keep-ai','Preservar','TST','1D','2026-01-01','2026-01-02',2,'ai-fingerprint','fixture.csv')", []).unwrap();
+
+        apply_migrations_through(&mut connection, 17).unwrap();
+
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_datasets WHERE id='keep-ai'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_agents WHERE strategy_type='llm'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(connection.query_row("SELECT prompt_version FROM market_ai_agent_configs WHERE agent_id='ai-technical-v1'", [], |row| row.get::<_, String>(0)).unwrap(), "MARKET_AI_AGENT_V1");
+        assert_eq!(schema_version(&connection).unwrap(), 17);
     }
 }

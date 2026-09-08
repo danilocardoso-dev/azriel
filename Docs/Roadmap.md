@@ -405,3 +405,16 @@ Status: ✅ Concluída e validada em 08/09/2026.
 - relatório conservador de robustez, sem promoção automática de estratégias;
 - configurações, versões de fórmulas e identidade do dataset congeladas por Validation Run;
 - nenhuma conexão com corretora, dinheiro real, AI Core ou internet.
+
+## Market Lab v0.4 — AI Agent Integration
+
+Status: 🧪 Implementada em 08/09/2026; validação operacional com Ollama pendente.
+
+- primeiro agente LLM submetido ao mesmo replay, capital, risco e execução dos agentes determinísticos;
+- provider abstrato com adaptador para Ollama local e fake provider para testes;
+- snapshot compacto sem dados futuros e resposta JSON estritamente validada;
+- timeout, retry limitado, fallback `HOLD` e distinção auditável de `NO_LLM_CALL`;
+- configuração e prompt versionados e congelados por experimento e validação;
+- métricas de chamadas, falhas, fallbacks e latência, com Decision Inspector;
+- participação em Observatory, OOS, walk-forward e análise de regimes;
+- limite de um AI Agent e cinco agentes totais, sem corretora ou dinheiro real.

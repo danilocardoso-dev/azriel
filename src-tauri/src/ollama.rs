@@ -113,6 +113,15 @@ pub async fn chat(
             "repeat_last_n": 192,
             "num_predict": 180
         }),
+        "market-agent" => serde_json::json!({
+            "temperature": 0.1,
+            "top_p": 0.8,
+            "top_k": 20,
+            "repeat_penalty": 1.15,
+            "repeat_last_n": 96,
+            "num_predict": 120,
+            "seed": 42
+        }),
         _ => return Err("Perfil de geração inválido para o AI Core".into()),
     };
     let response = client(timeout_seconds)?

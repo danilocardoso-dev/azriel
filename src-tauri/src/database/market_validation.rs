@@ -1,4 +1,4 @@
-use super::{market_models::*, market_regimes, market_repository, market_statistics};
+use super::{market_ai, market_models::*, market_regimes, market_repository, market_statistics};
 use rusqlite::{params, Connection};
 use serde_json::json;
 use std::{
@@ -471,11 +471,22 @@ pub fn run(
     input: &MarketValidationInput,
 ) -> Result<MarketValidationResult, String> {
     let base = experiment_input(input);
+    let (ai_config,endpoint)=market_repository::resolve_ai_config(connection,&base)?;
+    if input.agent_ids.iter().any(|id|id==market_ai::AI_AGENT_ID){let health=tauri::async_runtime::block_on(crate::ollama::status(&endpoint,(ai_config.timeout_ms/1000).clamp(5,8)))?;if health.available&&health.models.iter().any(|model|model==&ai_config.model){let provider=market_ai::OllamaMarketAiProvider::new(endpoint);run_with_provider(connection,input,&provider,&ai_config)}else{run_with_provider(connection,input,&market_ai::UnavailableMarketAiProvider,&ai_config)}}else{run_with_provider(connection,input,&market_ai::UnavailableMarketAiProvider,&ai_config)}
+}
+
+pub(crate) fn run_with_provider(
+    connection: &mut Connection,
+    input: &MarketValidationInput,
+    provider: &dyn market_ai::MarketAiProvider,
+    ai_config: &market_ai::MarketAiConfig,
+) -> Result<MarketValidationResult, String> {
+    let base = experiment_input(input);
     let (dataset, risk, agents, candles) = market_repository::validate_input(connection, &base)?;
     let (splits, walk_forward) = validate(input, candles.len())?;
     let id = new_id();
     let frozen_agents: Vec<_> = agents.iter().map(|agent| json!({"id":agent.id,"strategyType":agent.strategy_type,"strategyVersion":agent.strategy_version,"parameters":serde_json::from_str::<serde_json::Value>(&agent.default_config_json).unwrap_or_default()})).collect();
-    let frozen = json!({"datasetHash":dataset.fingerprint,"agents":frozen_agents,"riskProfile":risk,"initialCapital":input.initial_capital,"seed":input.random_seed,"feePct":input.fee_pct,"slippagePct":input.slippage_pct,"executionTiming":"decision-close-T/execution-open-T+1","riskFreeRate":0.0});
+    let frozen = json!({"datasetHash":dataset.fingerprint,"agents":frozen_agents,"riskProfile":risk,"initialCapital":input.initial_capital,"seed":input.random_seed,"feePct":input.fee_pct,"slippagePct":input.slippage_pct,"executionTiming":"decision-close-T/execution-open-T+1","riskFreeRate":0.0,"aiConfig":ai_config});
     connection.execute("INSERT INTO market_validation_runs(id,name,dataset_id,dataset_hash,risk_profile_id,agent_ids_json,frozen_config_json,split_config_json,walk_forward_config_json,regime_config_json,rolling_window,annualization_factor,validation_engine_version,metric_formula_version,regime_engine_version,status,started_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,'running',CURRENT_TIMESTAMP)", params![id,input.name.trim(),dataset.id,dataset.fingerprint,risk.id,serde_json::to_string(&input.agent_ids).map_err(|error|error.to_string())?,frozen.to_string(),serde_json::to_string(&input.split_config).map_err(|error|error.to_string())?,serde_json::to_string(&input.walk_forward_config).map_err(|error|error.to_string())?,serde_json::to_string(&input.regime_config).map_err(|error|error.to_string())?,input.rolling_window,input.annualization_factor,VALIDATION_ENGINE_VERSION,market_statistics::METRIC_FORMULA_VERSION,market_regimes::REGIME_ENGINE_VERSION]).map_err(|error|error.to_string())?;
 
     let execution = (|| -> Result<bool, String> {
@@ -488,15 +499,17 @@ pub fn run(
         );
         persist_regimes(connection, &id, &candles, &labels)?;
         let mut all_metrics = Vec::new();
+        let mut ai_runtime = market_ai::MarketAiRuntimeMetrics::default();
         for spec in splits.iter().chain(walk_forward.iter()) {
             if market_repository::kill_switch_active() {
                 connection.execute("UPDATE market_validation_runs SET status='aborted',completed_at=CURRENT_TIMESTAMP,error='Kill Switch acionado' WHERE id=?1", [&id]).map_err(|error| error.to_string())?;
                 return Ok(false);
             }
             let window_id = persist_window(connection, &id, spec, &candles)?;
-            let simulations = market_repository::simulate_range(
-                &dataset, &risk, &agents, &candles, spec.start, spec.end, &base,
+            let simulations = market_repository::simulate_range_with_provider(
+                &dataset, &risk, &agents, &candles, spec.start, spec.end, &base, provider, ai_config,
             )?;
+            if let Some(run)=simulations.iter().find(|run|run.id==market_ai::AI_AGENT_ID){ai_runtime.merge(&run.ai_runtime);}
             let buy_hold = benchmark_buy_hold(&candles, spec.start, spec.end);
             for run in &simulations {
                 let mut metric = metric_for_run(
@@ -512,7 +525,7 @@ pub fn run(
                 all_metrics.push(metric);
             }
         }
-        let full_runs = market_repository::simulate_range(
+        let full_runs = market_repository::simulate_range_with_provider(
             &dataset,
             &risk,
             &agents,
@@ -520,7 +533,10 @@ pub fn run(
             0,
             candles.len() - 1,
             &base,
+            provider,
+            ai_config,
         )?;
+        if let Some(run)=full_runs.iter().find(|run|run.id==market_ai::AI_AGENT_ID){ai_runtime.merge(&run.ai_runtime);}
         persist_rolling(
             connection,
             &id,
@@ -531,6 +547,7 @@ pub fn run(
         persist_regime_metrics(connection, &id, &full_runs, &labels, &input.regime_config)?;
         let reports = build_reports(&all_metrics, &agents, &risk);
         persist_reports(connection, &id, &reports)?;
+        if agents.iter().any(|agent|agent.id==market_ai::AI_AGENT_ID){connection.execute("INSERT INTO market_validation_ai_runtime_metrics(validation_run_id,agent_id,call_count,successful_call_count,invalid_response_count,timeout_count,retry_count,fallback_count,average_latency_ms,max_latency_ms,total_latency_ms,input_tokens,output_tokens) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",params![id,market_ai::AI_AGENT_ID,ai_runtime.call_count,ai_runtime.successful_call_count,ai_runtime.invalid_response_count,ai_runtime.timeout_count,ai_runtime.retry_count,ai_runtime.fallback_count,ai_runtime.average_latency_ms,ai_runtime.max_latency_ms,ai_runtime.total_latency_ms,ai_runtime.input_tokens,ai_runtime.output_tokens]).map_err(|error|error.to_string())?;}
         Ok(true)
     })();
 
