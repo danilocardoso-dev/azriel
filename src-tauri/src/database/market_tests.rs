@@ -87,3 +87,78 @@ fn cohorts_support_three_four_and_five_agents_with_equal_starting_capital() {
     }
     let _ = fs::remove_file(path);
 }
+
+#[test]
+fn scientific_validation_is_persistent_frozen_and_reproducible() {
+    let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let path = std::env::temp_dir().join(format!("azriel-market-validation-{suffix}.csv"));
+    fs::write(&path, fixture_csv()).unwrap();
+    let mut connection = database();
+    let dataset = market_repository::import_dataset(&mut connection, &ImportMarketDatasetInput { path: path.to_string_lossy().into_owned(), name: "Validation".into(), asset: "TST".into(), timeframe: "1D".into(), currency: Some("BRL".into()) }).unwrap();
+    let input = MarketValidationInput {
+        name: "VAL-001".into(), dataset_id: dataset.id, risk_profile_id: "balanced-v1".into(),
+        agent_ids: vec!["cash".into(), "buy-hold".into(), "simple-trend".into(), "simple-momentum".into(), "random-controlled".into()],
+        initial_capital: 50.0, random_seed: 42, fee_pct: 0.1, slippage_pct: 0.05,
+        split_config: ValidationSplitConfig { in_sample_pct: 60, validation_pct: 20, out_of_sample_pct: 20 },
+        walk_forward_config: WalkForwardConfig { train_window_size: 12, test_window_size: 6, step_size: 6 },
+        regime_config: MarketRegimeConfig { trend_window: 5, volatility_window: 5, bull_threshold_pct: 2.0, bear_threshold_pct: -2.0, high_volatility_threshold_pct: 1.5, low_volatility_threshold_pct: 0.25, minimum_sample_candles: 3, minimum_sample_trades: 1 },
+        rolling_window: 5, annualization_factor: 252.0,
+    };
+    let first = market_validation::run(&mut connection, &input).unwrap();
+    let second = market_validation::run(&mut connection, &input).unwrap();
+    assert_eq!(first.validation.status, "completed");
+    assert_eq!(first.windows.len(), 6);
+    assert_eq!(first.reports.len(), 5);
+    assert_eq!(first.regime_metrics.len(), 30);
+    assert_eq!(first.metrics.len(), 30);
+    assert_eq!(first.audit.validation_engine_version, "VALIDATION_ENGINE_V1");
+    assert!(first.audit.frozen_config_json.contains("strategyVersion"));
+    assert!(first.regime_metrics.iter().any(|metric| metric.low_sample_size));
+    assert!(first.metrics.iter().flat_map(|metric| [metric.sharpe,metric.sortino,metric.calmar]).flatten().all(|value| value.is_finite()));
+    assert!(first.metrics.iter().filter(|metric| metric.agent_id=="cash").all(|metric| metric.total_return_pct==0.0));
+    assert_eq!(first.reports.iter().map(|report| (report.agent_id.as_str(), report.out_of_sample_return_pct, report.positive_window_ratio_pct, report.robustness_status.as_str())).collect::<Vec<_>>(), second.reports.iter().map(|report| (report.agent_id.as_str(), report.out_of_sample_return_pct, report.positive_window_ratio_pct, report.robustness_status.as_str())).collect::<Vec<_>>());
+    assert_eq!(market_validation::list(&connection).unwrap().len(), 2);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn scientific_validation_persists_failed_status_after_runtime_error() {
+    let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let path = std::env::temp_dir().join(format!("azriel-market-validation-failure-{suffix}.csv"));
+    fs::write(&path, fixture_csv()).unwrap();
+    let mut connection = database();
+    let dataset = market_repository::import_dataset(&mut connection, &ImportMarketDatasetInput { path: path.to_string_lossy().into_owned(), name: "Validation failure".into(), asset: "TST".into(), timeframe: "1D".into(), currency: Some("BRL".into()) }).unwrap();
+    connection.execute_batch("CREATE TRIGGER force_regime_failure BEFORE INSERT ON market_regimes BEGIN SELECT RAISE(ABORT, 'forced regime failure'); END;").unwrap();
+    let input = MarketValidationInput {
+        name: "VAL-FAIL".into(), dataset_id: dataset.id, risk_profile_id: "balanced-v1".into(),
+        agent_ids: vec!["cash".into(), "buy-hold".into(), "simple-trend".into()],
+        initial_capital: 50.0, random_seed: 42, fee_pct: 0.1, slippage_pct: 0.05,
+        split_config: ValidationSplitConfig { in_sample_pct: 60, validation_pct: 20, out_of_sample_pct: 20 },
+        walk_forward_config: WalkForwardConfig { train_window_size: 12, test_window_size: 6, step_size: 6 },
+        regime_config: MarketRegimeConfig { trend_window: 5, volatility_window: 5, bull_threshold_pct: 2.0, bear_threshold_pct: -2.0, high_volatility_threshold_pct: 1.5, low_volatility_threshold_pct: 0.25, minimum_sample_candles: 3, minimum_sample_trades: 1 },
+        rolling_window: 5, annualization_factor: 252.0,
+    };
+
+    let error = market_validation::run(&mut connection, &input).unwrap_err();
+    assert!(error.contains("forced regime failure"));
+    let (status, persisted_error): (String, String) = connection.query_row(
+        "SELECT status,error FROM market_validation_runs WHERE name='VAL-FAIL'",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    ).unwrap();
+    assert_eq!(status, "failed");
+    assert!(persisted_error.contains("forced regime failure"));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn scientific_regime_fixture_imports_all_candles_in_temporal_order() {
+    let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let path = std::env::temp_dir().join(format!("azriel-market-regimes-{suffix}.csv"));
+    fs::write(&path, include_str!("../../../Docs/market-lab/fixtures/deterministic-regimes-160-candles.csv")).unwrap();
+    let mut connection = database();
+    let dataset = market_repository::import_dataset(&mut connection, &ImportMarketDatasetInput { path: path.to_string_lossy().into_owned(), name: "Regimes".into(), asset: "TST-REGIME".into(), timeframe: "1D".into(), currency: Some("BRL".into()) }).unwrap();
+    assert_eq!(dataset.candle_count, 160);
+    assert!(dataset.start_at < dataset.end_at);
+    let _ = fs::remove_file(path);
+}

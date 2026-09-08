@@ -219,3 +219,180 @@ pub struct MarketExperimentResult {
     pub decisions: Vec<MarketDecisionLog>,
     pub observatory: MarketObservatory,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ValidationSplitConfig {
+    pub in_sample_pct: usize,
+    pub validation_pct: usize,
+    pub out_of_sample_pct: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WalkForwardConfig {
+    pub train_window_size: usize,
+    pub test_window_size: usize,
+    pub step_size: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketRegimeConfig {
+    pub trend_window: usize,
+    pub volatility_window: usize,
+    pub bull_threshold_pct: f64,
+    pub bear_threshold_pct: f64,
+    pub high_volatility_threshold_pct: f64,
+    pub low_volatility_threshold_pct: f64,
+    pub minimum_sample_candles: usize,
+    pub minimum_sample_trades: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketValidationInput {
+    pub name: String,
+    pub dataset_id: String,
+    pub risk_profile_id: String,
+    pub agent_ids: Vec<String>,
+    pub initial_capital: f64,
+    pub random_seed: u64,
+    pub fee_pct: f64,
+    pub slippage_pct: f64,
+    pub split_config: ValidationSplitConfig,
+    pub walk_forward_config: WalkForwardConfig,
+    pub regime_config: MarketRegimeConfig,
+    pub rolling_window: usize,
+    pub annualization_factor: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketValidationSummary {
+    pub id: String,
+    pub name: String,
+    pub dataset_id: String,
+    pub dataset_name: String,
+    pub dataset_hash: String,
+    pub risk_profile_id: String,
+    pub agent_ids: Vec<String>,
+    pub status: String,
+    pub error: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketValidationWindow {
+    pub id: i64,
+    pub window_index: usize,
+    pub window_type: String,
+    pub start_index: usize,
+    pub end_index: usize,
+    pub start_at: String,
+    pub end_at: String,
+    pub train_start_index: Option<usize>,
+    pub train_end_index: Option<usize>,
+    pub train_start_at: Option<String>,
+    pub train_end_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketWindowMetric {
+    pub window_id: i64,
+    pub window_index: usize,
+    pub window_type: String,
+    pub agent_id: String,
+    pub agent_name: String,
+    pub total_return_pct: f64,
+    pub max_drawdown_pct: f64,
+    pub sharpe: Option<f64>,
+    pub sortino: Option<f64>,
+    pub calmar: Option<f64>,
+    pub trade_count: usize,
+    pub hold_rate_pct: f64,
+    pub exposure_pct: f64,
+    pub benchmark_cash_excess_pct: f64,
+    pub benchmark_buy_hold_excess_pct: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketRegimeMetric {
+    pub agent_id: String,
+    pub regime_type: String,
+    pub regime: String,
+    pub candle_count: usize,
+    pub total_return_pct: f64,
+    pub max_drawdown_pct: f64,
+    pub trade_count: usize,
+    pub hold_rate_pct: f64,
+    pub exposure_pct: f64,
+    pub profit_factor: Option<f64>,
+    pub win_rate_pct: Option<f64>,
+    pub low_sample_size: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketRollingMetric {
+    pub agent_id: String,
+    pub candle_index: usize,
+    pub timestamp: String,
+    pub rolling_return_pct: Option<f64>,
+    pub rolling_volatility_pct: Option<f64>,
+    pub rolling_sharpe: Option<f64>,
+    pub rolling_drawdown_pct: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketRobustnessReport {
+    pub agent_id: String,
+    pub agent_name: String,
+    pub in_sample_return_pct: f64,
+    pub validation_return_pct: f64,
+    pub out_of_sample_return_pct: f64,
+    pub out_of_sample_drawdown_pct: f64,
+    pub positive_window_ratio_pct: f64,
+    pub average_window_return_pct: f64,
+    pub median_window_return_pct: f64,
+    pub best_window_return_pct: f64,
+    pub worst_window_return_pct: f64,
+    pub return_std_across_windows: f64,
+    pub drawdown_std_across_windows: f64,
+    pub benchmark_excess_pct: f64,
+    pub overfitting_gap_pct: f64,
+    pub possible_overfitting: bool,
+    pub robustness_status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketValidationAudit {
+    pub frozen_config_json: String,
+    pub split_config_json: String,
+    pub walk_forward_config_json: String,
+    pub regime_config_json: String,
+    pub rolling_window: usize,
+    pub annualization_factor: f64,
+    pub validation_engine_version: String,
+    pub metric_formula_version: String,
+    pub regime_engine_version: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketValidationResult {
+    pub validation: MarketValidationSummary,
+    pub windows: Vec<MarketValidationWindow>,
+    pub metrics: Vec<MarketWindowMetric>,
+    pub regime_metrics: Vec<MarketRegimeMetric>,
+    pub rolling_metrics: Vec<MarketRollingMetric>,
+    pub reports: Vec<MarketRobustnessReport>,
+    pub audit: MarketValidationAudit,
+}

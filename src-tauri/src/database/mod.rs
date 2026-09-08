@@ -9,7 +9,10 @@ pub mod engineering_repository;
 pub mod learning_engine;
 pub mod market_models;
 pub mod market_observatory;
+pub mod market_regimes;
 pub mod market_repository;
+pub mod market_statistics;
+pub mod market_validation;
 #[cfg(test)]
 mod market_tests;
 pub mod models;
@@ -108,6 +111,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         15,
         "market_observatory",
         include_str!("../../migrations/0015_market_observatory.sql"),
+    ),
+    (
+        16,
+        "market_validation",
+        include_str!("../../migrations/0016_market_validation.sql"),
     ),
 ];
 
@@ -591,5 +599,19 @@ mod tests {
         assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_datasets WHERE id='keep-dataset'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
         assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_behavior_metrics", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
         assert_eq!(schema_version(&connection).unwrap(), 15);
+    }
+
+    #[test]
+    fn migration_sixteen_preserves_observatory_and_adds_validation() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 15).unwrap();
+        connection.execute("INSERT INTO market_datasets(id,name,asset,timeframe,start_at,end_at,candle_count,fingerprint,source_path) VALUES ('keep-validation','Preservar','TST','1D','2026-01-01','2026-01-02',2,'validation-fingerprint','fixture.csv')", []).unwrap();
+
+        apply_migrations_through(&mut connection, 16).unwrap();
+
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_datasets WHERE id='keep-validation'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_validation_runs", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        assert_eq!(schema_version(&connection).unwrap(), 16);
     }
 }

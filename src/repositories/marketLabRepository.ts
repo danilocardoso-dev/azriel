@@ -1,5 +1,5 @@
 import { invokeDatabase } from "./tauri";
-import type { ImportMarketDatasetInput, MarketAgentDefinition, MarketDataset, MarketExperimentInput, MarketExperimentResult, MarketExperimentSummary, MarketRiskProfile } from "../types";
+import type { ImportMarketDatasetInput, MarketAgentDefinition, MarketDataset, MarketExperimentInput, MarketExperimentResult, MarketExperimentSummary, MarketRiskProfile, MarketValidationInput, MarketValidationResult, MarketValidationSummary } from "../types";
 
 export const marketLabRepository = {
   listDatasets: () => invokeDatabase<MarketDataset[]>("list_market_datasets"),
@@ -11,4 +11,7 @@ export const marketLabRepository = {
   runExperiment: (input: MarketExperimentInput) => invokeDatabase<MarketExperimentResult>("run_market_experiment", { input }),
   rerunExperiment: (id: string) => invokeDatabase<MarketExperimentResult>("rerun_market_experiment", { id }),
   activateKillSwitch: () => invokeDatabase<boolean>("activate_market_kill_switch"),
+  runValidation: (input: MarketValidationInput) => invokeDatabase<MarketValidationResult>("run_market_validation", { input }),
+  listValidations: () => invokeDatabase<MarketValidationSummary[]>("list_market_validations"),
+  getValidation: (id: string) => invokeDatabase<MarketValidationResult>("get_market_validation", { id }),
 };

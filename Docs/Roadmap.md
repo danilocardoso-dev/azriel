@@ -392,3 +392,16 @@ Status: ✅ Concluída e validada em 08/09/2026.
 - correlação de retornos da equity e similaridade de decisões;
 - observatório por agente com performance, comportamento, risco, decisões e posições;
 - nenhuma conexão com corretora, dinheiro real, AI Core ou internet.
+
+## Market Lab v0.3 — Scientific Validation & Market Regimes
+
+Status: ✅ Concluída e validada em 08/09/2026.
+
+- splits temporais explícitos e ordenados em In-Sample, Validation e Out-of-Sample;
+- walk-forward sequencial sem otimização automática ou acesso a dados futuros;
+- Sharpe, Sortino, Calmar e métricas rolling com fator de anualização auditável;
+- regimes determinísticos de direção e volatilidade, com aviso de amostra insuficiente;
+- comparação contra CASH e BUY & HOLD, dispersão entre janelas e alerta de possível overfitting;
+- relatório conservador de robustez, sem promoção automática de estratégias;
+- configurações, versões de fórmulas e identidade do dataset congeladas por Validation Run;
+- nenhuma conexão com corretora, dinheiro real, AI Core ou internet.
