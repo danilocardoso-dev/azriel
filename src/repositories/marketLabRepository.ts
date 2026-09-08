@@ -1,5 +1,5 @@
 import { invokeDatabase } from "./tauri";
-import type { ImportMarketDatasetInput, MarketAgentDefinition, MarketAiDecisionLog, MarketAiRuntimeMetric, MarketAiStatus, MarketDataset, MarketExperimentInput, MarketExperimentResult, MarketExperimentSummary, MarketRiskProfile, MarketValidationInput, MarketValidationResult, MarketValidationSummary, UpdateMarketAiConfigInput } from "../types";
+import type { ImportMarketDatasetInput, MarketAgentDefinition, MarketAiDecisionLog, MarketAiExperimentComparison, MarketAiRuntimeMetric, MarketAiStatus, MarketDataset, MarketExperimentInput, MarketExperimentResult, MarketExperimentSummary, MarketRiskProfile, MarketValidationInput, MarketValidationResult, MarketValidationSummary, UpdateMarketAiConfigInput } from "../types";
 
 export const marketLabRepository = {
   listDatasets: () => invokeDatabase<MarketDataset[]>("list_market_datasets"),
@@ -14,9 +14,10 @@ export const marketLabRepository = {
   runValidation: (input: MarketValidationInput) => invokeDatabase<MarketValidationResult>("run_market_validation", { input }),
   listValidations: () => invokeDatabase<MarketValidationSummary[]>("list_market_validations"),
   getValidation: (id: string) => invokeDatabase<MarketValidationResult>("get_market_validation", { id }),
-  getAiStatus: () => invokeDatabase<MarketAiStatus>("get_market_ai_status"),
+  getAiStatus: (agentId = "ai-technical-v2") => invokeDatabase<MarketAiStatus>("get_market_ai_status", { agentId }),
   updateAiConfig: (input: UpdateMarketAiConfigInput) => invokeDatabase<MarketAiStatus>("update_market_ai_config", { input }),
   listAiRuntime: (experimentId: string) => invokeDatabase<MarketAiRuntimeMetric[]>("list_market_ai_runtime", { experimentId }),
   listValidationAiRuntime: (validationId: string) => invokeDatabase<MarketAiRuntimeMetric[]>("list_market_validation_ai_runtime", { validationId }),
   listAiDecisions: (experimentId: string) => invokeDatabase<MarketAiDecisionLog[]>("list_market_ai_decisions", { experimentId }),
+  listAiExperimentComparisons: () => invokeDatabase<MarketAiExperimentComparison[]>("list_market_ai_experiment_comparisons"),
 };

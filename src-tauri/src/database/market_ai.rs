@@ -3,13 +3,29 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
 pub const AI_AGENT_ID: &str = "ai-technical-v1";
+pub const AI_AGENT_V2_ID: &str = "ai-technical-v2";
 pub const PROMPT_VERSION: &str = "MARKET_AI_AGENT_V1";
+pub const PROMPT_V2_VERSION: &str = "MARKET_AI_AGENT_V2";
 pub const MAX_AI_AGENTS: usize = 1;
 pub const SYSTEM_PROMPT: &str = include_str!("../../prompts/market-lab-agent.txt");
+pub const SYSTEM_PROMPT_V2: &str = include_str!("../../prompts/market-lab-agent-v2.txt");
+
+pub fn is_ai_agent(agent_id: &str) -> bool {
+    matches!(agent_id, AI_AGENT_ID | AI_AGENT_V2_ID)
+}
+
+pub fn prompt_for_version(version: &str) -> Option<&'static str> {
+    match version {
+        PROMPT_VERSION => Some(SYSTEM_PROMPT),
+        PROMPT_V2_VERSION => Some(SYSTEM_PROMPT_V2),
+        _ => None,
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MarketAiConfig {
+    pub agent_id: String,
     pub provider: String,
     pub model: String,
     pub prompt_version: String,
@@ -21,10 +37,21 @@ pub struct MarketAiConfig {
 
 impl MarketAiConfig {
     pub fn validate(&self) -> Result<(), String> {
-        if self.provider != "ollama" || self.model.trim().is_empty() {
+        if !is_ai_agent(&self.agent_id)
+            || self.provider != "ollama"
+            || self.model.trim().is_empty()
+        {
             return Err("configuração do AI Agent possui provider ou modelo inválido".into());
         }
-        if self.prompt_version != PROMPT_VERSION || !(0.0..=0.3).contains(&self.temperature) {
+        let expected_prompt = if self.agent_id == AI_AGENT_V2_ID {
+            PROMPT_V2_VERSION
+        } else {
+            PROMPT_VERSION
+        };
+        if self.prompt_version != expected_prompt
+            || prompt_for_version(&self.prompt_version).is_none()
+            || !(0.0..=0.3).contains(&self.temperature)
+        {
             return Err("prompt version ou temperatura do AI Agent inválido".into());
         }
         if !(1..=100).contains(&self.decision_interval)
@@ -81,6 +108,81 @@ pub struct MarketAiRiskContext {
 pub struct MarketAiMemory {
     pub last_action: Option<String>,
     pub recent_decision_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MarketAiSnapshotV2 {
+    pub market: MarketAiMarket,
+    pub returns: MarketAiReturns,
+    pub trend: MarketAiTrend,
+    pub momentum: MarketAiMomentum,
+    pub volatility: MarketAiVolatility,
+    pub regime: MarketAiRegime,
+    pub portfolio: MarketAiPortfolioV2,
+    pub previous_decision: Option<MarketAiPreviousDecision>,
+    pub risk_context: MarketAiRiskContext,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MarketAiMarket {
+    pub timestamp: String,
+    pub asset: String,
+    pub timeframe: String,
+    pub price: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MarketAiReturns {
+    pub return_1: Option<f64>,
+    pub return_5: Option<f64>,
+    pub return_10: Option<f64>,
+    pub return_20: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MarketAiTrend {
+    pub sma_short: Option<f64>,
+    pub sma_long: Option<f64>,
+    pub price_vs_sma_short_pct: Option<f64>,
+    pub price_vs_sma_long_pct: Option<f64>,
+    pub sma_spread_pct: Option<f64>,
+    pub short_sma_slope: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MarketAiMomentum {
+    pub momentum_5: Option<f64>,
+    pub momentum_10: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MarketAiVolatility {
+    pub rolling_volatility: Option<f64>,
+    pub volatility_regime: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MarketAiRegime {
+    pub trend: String,
+    pub volatility: String,
+    pub engine_version: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MarketAiPortfolioV2 {
+    pub cash: f64,
+    pub equity: f64,
+    pub current_position: bool,
+    pub position_pct: f64,
+    pub entry_price: Option<f64>,
+    pub unrealized_pnl_pct: Option<f64>,
+    pub holding_period: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MarketAiPreviousDecision {
+    pub action: String,
+    pub confidence: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -201,6 +303,18 @@ pub struct MarketAiRuntimeMetrics {
     pub total_latency_ms: u64,
     pub input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
+    pub buy_count: usize,
+    pub sell_count: usize,
+    pub llm_hold_count: usize,
+    pub no_llm_call_count: usize,
+    #[serde(skip)]
+    confidence_values: Vec<f64>,
+    #[serde(skip)]
+    buy_confidences: Vec<f64>,
+    #[serde(skip)]
+    sell_confidences: Vec<f64>,
+    #[serde(skip)]
+    hold_confidences: Vec<f64>,
 }
 
 impl MarketAiRuntimeMetrics {
@@ -215,12 +329,101 @@ impl MarketAiRuntimeMetrics {
         self.max_latency_ms = self.max_latency_ms.max(other.max_latency_ms);
         self.input_tokens = sum_optional(self.input_tokens, other.input_tokens);
         self.output_tokens = sum_optional(self.output_tokens, other.output_tokens);
+        self.buy_count += other.buy_count;
+        self.sell_count += other.sell_count;
+        self.llm_hold_count += other.llm_hold_count;
+        self.no_llm_call_count += other.no_llm_call_count;
+        self.confidence_values
+            .extend(other.confidence_values.iter().copied());
+        self.buy_confidences
+            .extend(other.buy_confidences.iter().copied());
+        self.sell_confidences
+            .extend(other.sell_confidences.iter().copied());
+        self.hold_confidences
+            .extend(other.hold_confidences.iter().copied());
         self.average_latency_ms = if self.call_count == 0 {
             0.0
         } else {
             self.total_latency_ms as f64 / self.call_count as f64
         };
     }
+
+    pub fn register_valid_decision(&mut self, action: &str, confidence: f64) {
+        self.confidence_values.push(confidence);
+        match action {
+            "BUY" => {
+                self.buy_count += 1;
+                self.buy_confidences.push(confidence);
+            }
+            "SELL" => {
+                self.sell_count += 1;
+                self.sell_confidences.push(confidence);
+            }
+            "HOLD" => {
+                self.llm_hold_count += 1;
+                self.hold_confidences.push(confidence);
+            }
+            _ => {}
+        }
+    }
+
+    pub fn average_confidence(&self) -> Option<f64> {
+        average(&self.confidence_values)
+    }
+
+    pub fn average_buy_confidence(&self) -> Option<f64> {
+        average(&self.buy_confidences)
+    }
+
+    pub fn average_sell_confidence(&self) -> Option<f64> {
+        average(&self.sell_confidences)
+    }
+
+    pub fn average_hold_confidence(&self) -> Option<f64> {
+        average(&self.hold_confidences)
+    }
+
+    pub fn min_confidence(&self) -> Option<f64> {
+        self.confidence_values.iter().copied().reduce(f64::min)
+    }
+
+    pub fn max_confidence(&self) -> Option<f64> {
+        self.confidence_values.iter().copied().reduce(f64::max)
+    }
+
+    pub fn median_confidence(&self) -> Option<f64> {
+        let mut values = self.confidence_values.clone();
+        values.sort_by(f64::total_cmp);
+        let middle = values.len() / 2;
+        match values.len() {
+            0 => None,
+            length if length % 2 == 0 => Some((values[middle - 1] + values[middle]) / 2.0),
+            _ => Some(values[middle]),
+        }
+    }
+
+    pub fn confidence_distribution(&self) -> [usize; 5] {
+        let mut bins = [0; 5];
+        for confidence in &self.confidence_values {
+            let index = if *confidence >= 0.8 {
+                4
+            } else if *confidence >= 0.6 {
+                3
+            } else if *confidence >= 0.4 {
+                2
+            } else if *confidence >= 0.2 {
+                1
+            } else {
+                0
+            };
+            bins[index] += 1;
+        }
+        bins
+    }
+}
+
+fn average(values: &[f64]) -> Option<f64> {
+    (!values.is_empty()).then(|| values.iter().sum::<f64>() / values.len() as f64)
 }
 
 fn sum_optional(left: Option<u64>, right: Option<u64>) -> Option<u64> {
@@ -245,6 +448,7 @@ pub struct MarketAiDecision {
     pub latency_ms: u64,
     pub attempts: usize,
     pub fallback_used: bool,
+    pub input_snapshot_json: Option<String>,
     pub runtime: MarketAiRuntimeMetrics,
 }
 
@@ -252,6 +456,8 @@ pub struct MarketAIAgent;
 
 impl MarketAIAgent {
     pub fn no_call(config: &MarketAiConfig) -> MarketAiDecision {
+        let mut runtime = MarketAiRuntimeMetrics::default();
+        runtime.no_llm_call_count = 1;
         MarketAiDecision {
             action: "HOLD",
             desired_position_pct: None,
@@ -264,18 +470,22 @@ impl MarketAIAgent {
             latency_ms: 0,
             attempts: 0,
             fallback_used: false,
-            runtime: MarketAiRuntimeMetrics::default(),
+            input_snapshot_json: None,
+            runtime,
         }
     }
 
-    pub fn decide(
+    pub fn decide<T: Serialize>(
         provider: &dyn MarketAiProvider,
-        snapshot: &MarketAiSnapshot,
+        snapshot: &T,
         config: &MarketAiConfig,
     ) -> MarketAiDecision {
+        let snapshot_json = serde_json::to_string(snapshot).unwrap_or_else(|_| "{}".into());
         let prompt = MarketAiPrompt {
-            system: SYSTEM_PROMPT.into(),
-            snapshot_json: serde_json::to_string(snapshot).unwrap_or_else(|_| "{}".into()),
+            system: prompt_for_version(&config.prompt_version)
+                .unwrap_or(SYSTEM_PROMPT)
+                .into(),
+            snapshot_json: snapshot_json.clone(),
         };
         let mut runtime = MarketAiRuntimeMetrics::default();
         let mut final_status = "INVALID";
@@ -300,6 +510,7 @@ impl MarketAIAgent {
                     match parse_decision(&response.content) {
                         Ok(parsed) => {
                             runtime.successful_call_count += 1;
+                            runtime.register_valid_decision(parsed.0, parsed.2);
                             runtime.average_latency_ms =
                                 runtime.total_latency_ms as f64 / runtime.call_count as f64;
                             return MarketAiDecision {
@@ -314,6 +525,7 @@ impl MarketAIAgent {
                                 latency_ms: runtime.total_latency_ms,
                                 attempts: runtime.call_count,
                                 fallback_used: false,
+                                input_snapshot_json: Some(snapshot_json),
                                 runtime,
                             };
                         }
@@ -350,6 +562,7 @@ impl MarketAIAgent {
             latency_ms: runtime.total_latency_ms,
             attempts: runtime.call_count,
             fallback_used: true,
+            input_snapshot_json: Some(snapshot_json),
             runtime,
         }
     }
@@ -399,6 +612,7 @@ mod tests {
     }
     fn config() -> MarketAiConfig {
         MarketAiConfig {
+            agent_id: AI_AGENT_ID.into(),
             provider: "ollama".into(),
             model: "fake:test".into(),
             prompt_version: PROMPT_VERSION.into(),
@@ -501,5 +715,45 @@ mod tests {
             assert_eq!(result.action, "HOLD");
             assert!(result.fallback_used);
         }
+    }
+
+    #[test]
+    fn v1_and_v2_prompts_remain_distinct_and_available() {
+        assert!(SYSTEM_PROMPT.contains("HOLD is valid"));
+        assert!(SYSTEM_PROMPT_V2.contains("Do not require every indicator to agree"));
+        assert_ne!(SYSTEM_PROMPT, SYSTEM_PROMPT_V2);
+        let mut v2 = config();
+        v2.agent_id = AI_AGENT_V2_ID.into();
+        v2.prompt_version = PROMPT_V2_VERSION.into();
+        assert!(v2.validate().is_ok());
+    }
+
+    #[test]
+    fn decision_distribution_keeps_no_call_separate_from_llm_hold() {
+        let provider = FakeProvider {
+            responses: Mutex::new(vec![ok(
+                r#"{"action":"HOLD","desired_position_pct":0,"confidence":0.6,"reason":"balanced"}"#,
+            )]),
+        };
+        let decision = MarketAIAgent::decide(&provider, &snapshot(), &config());
+        let no_call = MarketAIAgent::no_call(&config());
+        assert_eq!(decision.runtime.llm_hold_count, 1);
+        assert_eq!(decision.runtime.no_llm_call_count, 0);
+        assert_eq!(no_call.runtime.llm_hold_count, 0);
+        assert_eq!(no_call.runtime.no_llm_call_count, 1);
+    }
+
+    #[test]
+    fn confidence_statistics_and_bins_are_mathematically_stable() {
+        let mut metrics = MarketAiRuntimeMetrics::default();
+        metrics.register_valid_decision("BUY", 0.1);
+        metrics.register_valid_decision("SELL", 0.3);
+        metrics.register_valid_decision("HOLD", 0.7);
+        metrics.register_valid_decision("HOLD", 0.9);
+        assert_eq!(metrics.average_confidence(), Some(0.5));
+        assert_eq!(metrics.median_confidence(), Some(0.5));
+        assert_eq!(metrics.min_confidence(), Some(0.1));
+        assert_eq!(metrics.max_confidence(), Some(0.9));
+        assert_eq!(metrics.confidence_distribution(), [1, 1, 0, 1, 1]);
     }
 }

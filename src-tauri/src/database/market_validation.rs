@@ -472,7 +472,7 @@ pub fn run(
 ) -> Result<MarketValidationResult, String> {
     let base = experiment_input(input);
     let (ai_config,endpoint)=market_repository::resolve_ai_config(connection,&base)?;
-    if input.agent_ids.iter().any(|id|id==market_ai::AI_AGENT_ID){let health=tauri::async_runtime::block_on(crate::ollama::status(&endpoint,(ai_config.timeout_ms/1000).clamp(5,8)))?;if health.available&&health.models.iter().any(|model|model==&ai_config.model){let provider=market_ai::OllamaMarketAiProvider::new(endpoint);run_with_provider(connection,input,&provider,&ai_config)}else{run_with_provider(connection,input,&market_ai::UnavailableMarketAiProvider,&ai_config)}}else{run_with_provider(connection,input,&market_ai::UnavailableMarketAiProvider,&ai_config)}
+    if input.agent_ids.iter().any(|id|market_ai::is_ai_agent(id)){let health=tauri::async_runtime::block_on(crate::ollama::status(&endpoint,(ai_config.timeout_ms/1000).clamp(5,8)))?;if health.available&&health.models.iter().any(|model|model==&ai_config.model){let provider=market_ai::OllamaMarketAiProvider::new(endpoint);run_with_provider(connection,input,&provider,&ai_config)}else{run_with_provider(connection,input,&market_ai::UnavailableMarketAiProvider,&ai_config)}}else{run_with_provider(connection,input,&market_ai::UnavailableMarketAiProvider,&ai_config)}
 }
 
 pub(crate) fn run_with_provider(
@@ -509,7 +509,7 @@ pub(crate) fn run_with_provider(
             let simulations = market_repository::simulate_range_with_provider(
                 &dataset, &risk, &agents, &candles, spec.start, spec.end, &base, provider, ai_config,
             )?;
-            if let Some(run)=simulations.iter().find(|run|run.id==market_ai::AI_AGENT_ID){ai_runtime.merge(&run.ai_runtime);}
+            if let Some(run)=simulations.iter().find(|run|market_ai::is_ai_agent(&run.id)){ai_runtime.merge(&run.ai_runtime);}
             let buy_hold = benchmark_buy_hold(&candles, spec.start, spec.end);
             for run in &simulations {
                 let mut metric = metric_for_run(
@@ -536,7 +536,7 @@ pub(crate) fn run_with_provider(
             provider,
             ai_config,
         )?;
-        if let Some(run)=full_runs.iter().find(|run|run.id==market_ai::AI_AGENT_ID){ai_runtime.merge(&run.ai_runtime);}
+        if let Some(run)=full_runs.iter().find(|run|market_ai::is_ai_agent(&run.id)){ai_runtime.merge(&run.ai_runtime);}
         persist_rolling(
             connection,
             &id,
@@ -547,7 +547,7 @@ pub(crate) fn run_with_provider(
         persist_regime_metrics(connection, &id, &full_runs, &labels, &input.regime_config)?;
         let reports = build_reports(&all_metrics, &agents, &risk);
         persist_reports(connection, &id, &reports)?;
-        if agents.iter().any(|agent|agent.id==market_ai::AI_AGENT_ID){connection.execute("INSERT INTO market_validation_ai_runtime_metrics(validation_run_id,agent_id,call_count,successful_call_count,invalid_response_count,timeout_count,retry_count,fallback_count,average_latency_ms,max_latency_ms,total_latency_ms,input_tokens,output_tokens) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",params![id,market_ai::AI_AGENT_ID,ai_runtime.call_count,ai_runtime.successful_call_count,ai_runtime.invalid_response_count,ai_runtime.timeout_count,ai_runtime.retry_count,ai_runtime.fallback_count,ai_runtime.average_latency_ms,ai_runtime.max_latency_ms,ai_runtime.total_latency_ms,ai_runtime.input_tokens,ai_runtime.output_tokens]).map_err(|error|error.to_string())?;}
+        if let Some(agent)=agents.iter().find(|agent|market_ai::is_ai_agent(&agent.id)){let distribution=ai_runtime.confidence_distribution();connection.execute("INSERT INTO market_validation_ai_runtime_metrics(validation_run_id,agent_id,call_count,successful_call_count,invalid_response_count,timeout_count,retry_count,fallback_count,average_latency_ms,max_latency_ms,total_latency_ms,input_tokens,output_tokens,prompt_version,buy_count,sell_count,llm_hold_count,no_llm_call_count,average_confidence,average_buy_confidence,average_sell_confidence,average_hold_confidence,min_confidence,max_confidence,median_confidence,confidence_00_20,confidence_20_40,confidence_40_60,confidence_60_80,confidence_80_100) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30)",params![id,agent.id,ai_runtime.call_count,ai_runtime.successful_call_count,ai_runtime.invalid_response_count,ai_runtime.timeout_count,ai_runtime.retry_count,ai_runtime.fallback_count,ai_runtime.average_latency_ms,ai_runtime.max_latency_ms,ai_runtime.total_latency_ms,ai_runtime.input_tokens,ai_runtime.output_tokens,ai_config.prompt_version,ai_runtime.buy_count,ai_runtime.sell_count,ai_runtime.llm_hold_count,ai_runtime.no_llm_call_count,ai_runtime.average_confidence(),ai_runtime.average_buy_confidence(),ai_runtime.average_sell_confidence(),ai_runtime.average_hold_confidence(),ai_runtime.min_confidence(),ai_runtime.max_confidence(),ai_runtime.median_confidence(),distribution[0],distribution[1],distribution[2],distribution[3],distribution[4]]).map_err(|error|error.to_string())?;}
         Ok(true)
     })();
 

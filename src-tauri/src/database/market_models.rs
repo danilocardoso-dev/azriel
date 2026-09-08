@@ -68,6 +68,7 @@ pub struct MarketExperimentInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MarketAiStatus {
+    pub agent_id: String,
     pub configured: bool,
     pub available: bool,
     pub provider: String,
@@ -82,6 +83,7 @@ pub struct MarketAiStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateMarketAiConfigInput {
+    pub agent_id: String,
     pub decision_interval: usize,
     pub timeout_ms: u64,
     pub max_retries: usize,
@@ -91,6 +93,7 @@ pub struct UpdateMarketAiConfigInput {
 #[serde(rename_all = "camelCase")]
 pub struct MarketAiRuntimeMetric {
     pub agent_id: String,
+    pub prompt_version: String,
     pub call_count: usize,
     pub successful_call_count: usize,
     pub invalid_response_count: usize,
@@ -102,6 +105,18 @@ pub struct MarketAiRuntimeMetric {
     pub total_latency_ms: u64,
     pub input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
+    pub buy_count: usize,
+    pub sell_count: usize,
+    pub llm_hold_count: usize,
+    pub no_llm_call_count: usize,
+    pub average_confidence: Option<f64>,
+    pub average_buy_confidence: Option<f64>,
+    pub average_sell_confidence: Option<f64>,
+    pub average_hold_confidence: Option<f64>,
+    pub min_confidence: Option<f64>,
+    pub max_confidence: Option<f64>,
+    pub median_confidence: Option<f64>,
+    pub confidence_distribution: Vec<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -456,4 +471,39 @@ pub struct MarketAiDecisionLog {
     pub latency_ms: u64,
     pub attempts: usize,
     pub fallback_used: bool,
+    pub input_snapshot: Option<serde_json::Value>,
+    pub forward_return_1: Option<f64>,
+    pub forward_return_5: Option<f64>,
+    pub forward_return_10: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketAiExperimentComparison {
+    pub experiment_id: String,
+    pub experiment_name: String,
+    pub dataset_id: String,
+    pub dataset_name: String,
+    pub risk_profile_id: String,
+    pub initial_capital: f64,
+    pub random_seed: u64,
+    pub fee_pct: f64,
+    pub slippage_pct: f64,
+    pub decision_interval: usize,
+    pub agent_id: String,
+    pub prompt_version: String,
+    pub call_count: usize,
+    pub successful_call_count: usize,
+    pub invalid_response_count: usize,
+    pub timeout_count: usize,
+    pub buy_count: usize,
+    pub sell_count: usize,
+    pub llm_hold_count: usize,
+    pub trade_count: usize,
+    pub hold_rate_pct: f64,
+    pub average_confidence: Option<f64>,
+    pub total_return_pct: f64,
+    pub max_drawdown_pct: f64,
+    pub average_exposure_pct: f64,
+    pub average_latency_ms: f64,
 }

@@ -123,6 +123,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         "market_ai_agent",
         include_str!("../../migrations/0017_market_ai_agent.sql"),
     ),
+    (
+        18,
+        "market_ai_calibration",
+        include_str!("../../migrations/0018_market_ai_calibration.sql"),
+    ),
 ];
 
 pub fn open(path: &Path) -> Result<Connection, String> {
@@ -634,5 +639,21 @@ mod tests {
         assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_agents WHERE strategy_type='llm'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
         assert_eq!(connection.query_row("SELECT prompt_version FROM market_ai_agent_configs WHERE agent_id='ai-technical-v1'", [], |row| row.get::<_, String>(0)).unwrap(), "MARKET_AI_AGENT_V1");
         assert_eq!(schema_version(&connection).unwrap(), 17);
+    }
+
+    #[test]
+    fn migration_eighteen_preserves_v1_and_adds_versioned_ai_diagnostics() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 17).unwrap();
+        connection.execute("INSERT INTO market_datasets(id,name,asset,timeframe,start_at,end_at,candle_count,fingerprint,source_path) VALUES ('keep-ai-v1','Preservar','TST','1D','2026-01-01','2026-01-02',2,'ai-v1-fingerprint','fixture.csv')", []).unwrap();
+
+        apply_migrations_through(&mut connection, 18).unwrap();
+
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_datasets WHERE id='keep-ai-v1'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_agents WHERE strategy_type='llm'", [], |row| row.get::<_, i64>(0)).unwrap(), 2);
+        assert_eq!(connection.query_row("SELECT prompt_version FROM market_ai_agent_configs WHERE agent_id='ai-technical-v1'", [], |row| row.get::<_, String>(0)).unwrap(), "MARKET_AI_AGENT_V1");
+        assert_eq!(connection.query_row("SELECT prompt_version FROM market_ai_agent_configs WHERE agent_id='ai-technical-v2'", [], |row| row.get::<_, String>(0)).unwrap(), "MARKET_AI_AGENT_V2");
+        assert_eq!(schema_version(&connection).unwrap(), 18);
     }
 }

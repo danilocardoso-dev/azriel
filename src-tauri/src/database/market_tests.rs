@@ -7,7 +7,20 @@ impl market_ai::MarketAiProvider for FakeMarketAiProvider {
     fn complete(&self,prompt:market_ai::MarketAiPrompt,_:&market_ai::MarketAiConfig)->Result<market_ai::MarketAiProviderResponse,market_ai::MarketAiProviderError>{self.prompts.lock().unwrap().push(prompt.snapshot_json);Ok(market_ai::MarketAiProviderResponse{content:r#"{"action":"BUY","desired_position_pct":90,"confidence":0.99,"reason":"strong signal"}"#.into(),model:"fake:market".into(),input_tokens:Some(20),output_tokens:Some(10)})}
 }
 
-fn fake_ai_config()->market_ai::MarketAiConfig{market_ai::MarketAiConfig{provider:"ollama".into(),model:"fake:market".into(),prompt_version:market_ai::PROMPT_VERSION.into(),temperature:0.1,decision_interval:5,timeout_ms:5000,max_retries:1}}
+fn fake_ai_config()->market_ai::MarketAiConfig{market_ai::MarketAiConfig{agent_id:market_ai::AI_AGENT_ID.into(),provider:"ollama".into(),model:"fake:market".into(),prompt_version:market_ai::PROMPT_VERSION.into(),temperature:0.1,decision_interval:5,timeout_ms:5000,max_retries:1}}
+
+struct CalibratedFakeProvider { prompts: Mutex<Vec<market_ai::MarketAiPrompt>> }
+impl market_ai::MarketAiProvider for CalibratedFakeProvider {
+    fn complete(&self,prompt:market_ai::MarketAiPrompt,_:&market_ai::MarketAiConfig)->Result<market_ai::MarketAiProviderResponse,market_ai::MarketAiProviderError>{
+        let snapshot:serde_json::Value=serde_json::from_str(&prompt.snapshot_json).unwrap();
+        let positioned=snapshot.pointer("/portfolio/current_position").and_then(|value|value.as_bool()).unwrap_or(false);
+        let content=if positioned{r#"{"action":"SELL","desired_position_pct":0,"confidence":0.72,"reason":"trend evidence deteriorated"}"#}else{r#"{"action":"BUY","desired_position_pct":80,"confidence":0.68,"reason":"trend and momentum evidence converge"}"#};
+        self.prompts.lock().unwrap().push(prompt);
+        Ok(market_ai::MarketAiProviderResponse{content:content.into(),model:"fake:qwen-v2".into(),input_tokens:Some(30),output_tokens:Some(12)})
+    }
+}
+
+fn fake_ai_v2_config()->market_ai::MarketAiConfig{market_ai::MarketAiConfig{agent_id:market_ai::AI_AGENT_V2_ID.into(),provider:"ollama".into(),model:"fake:qwen-v2".into(),prompt_version:market_ai::PROMPT_V2_VERSION.into(),temperature:0.1,decision_interval:5,timeout_ms:5000,max_retries:1}}
 
 fn fixture_csv() -> String {
     let mut output = String::from("timestamp,open,high,low,close,volume\n");
@@ -186,6 +199,9 @@ fn ai_agent_uses_structured_snapshots_risk_and_persistent_runtime() {
     assert_eq!(runtime[0].call_count,6);
     assert_eq!(runtime[0].successful_call_count,6);
     assert_eq!(runtime[0].fallback_count,0);
+    assert_eq!(runtime[0].buy_count,6);
+    assert_eq!(runtime[0].no_llm_call_count,24);
+    assert_eq!(runtime[0].prompt_version,market_ai::PROMPT_VERSION);
     let decisions=market_repository::list_ai_decisions(&connection,&result.experiment.id).unwrap();
     assert_eq!(decisions.len(),30);
     assert_eq!(decisions.iter().filter(|decision|decision.call_status=="NO_LLM_CALL").count(),24);
@@ -196,6 +212,8 @@ fn ai_agent_uses_structured_snapshots_risk_and_persistent_runtime() {
     assert_eq!(first["timestamp"],"2026-01-01T00:00:00Z");
     assert!(first.get("features").is_some());
     assert!(first.get("candles").is_none());
+    assert!(decisions.iter().filter(|decision|decision.call_status=="VALID").all(|decision|decision.input_snapshot.is_some()));
+    assert!(decisions.iter().filter(|decision|decision.call_status=="NO_LLM_CALL").all(|decision|decision.input_snapshot.is_none()));
     drop(prompts);
     let validation_input=MarketValidationInput{name:"AI-VAL-001".into(),dataset_id:dataset.id,risk_profile_id:"balanced-v1".into(),agent_ids:input.agent_ids.clone(),initial_capital:1_000.0,random_seed:42,fee_pct:0.1,slippage_pct:0.05,split_config:ValidationSplitConfig{in_sample_pct:60,validation_pct:20,out_of_sample_pct:20},walk_forward_config:WalkForwardConfig{train_window_size:12,test_window_size:6,step_size:6},regime_config:MarketRegimeConfig{trend_window:5,volatility_window:5,bull_threshold_pct:2.0,bear_threshold_pct:-2.0,high_volatility_threshold_pct:1.5,low_volatility_threshold_pct:0.25,minimum_sample_candles:3,minimum_sample_trades:1},rolling_window:5,annualization_factor:252.0};
     let validation=market_validation::run_with_provider(&mut connection,&validation_input,&provider,&fake_ai_config()).unwrap();
@@ -205,5 +223,54 @@ fn ai_agent_uses_structured_snapshots_risk_and_persistent_runtime() {
     assert_eq!(validation_runtime.len(),1);
     assert!(validation_runtime[0].call_count>0);
     assert!(validation.audit.frozen_config_json.contains(market_ai::PROMPT_VERSION));
+    let _=fs::remove_file(path);
+}
+
+#[test]
+fn ai_v2_persists_rich_context_distribution_forward_returns_and_ab_metadata() {
+    let suffix=SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let path=std::env::temp_dir().join(format!("azriel-market-ai-v2-{suffix}.csv"));
+    fs::write(&path,fixture_csv()).unwrap();
+    let mut connection=database();
+    let dataset=market_repository::import_dataset(&mut connection,&ImportMarketDatasetInput{path:path.to_string_lossy().into_owned(),name:"AI calibration fixture".into(),asset:"AAPL".into(),timeframe:"1D".into(),currency:Some("USD".into())}).unwrap();
+    let base_agents=vec!["cash".into(),"buy-hold".into(),"simple-trend".into()];
+    let provider=CalibratedFakeProvider{prompts:Mutex::new(Vec::new())};
+    let mut v2_agents=base_agents.clone();v2_agents.push(market_ai::AI_AGENT_V2_ID.into());
+    let v2_input=MarketExperimentInput{name:"AI-CALIBRATION-001".into(),dataset_id:dataset.id.clone(),risk_profile_id:"balanced-v1".into(),agent_ids:v2_agents,initial_capital:10_000.0,random_seed:42,fee_pct:0.1,slippage_pct:0.05};
+    let v2=market_repository::run_experiment_with_provider(&mut connection,&v2_input,&provider,&fake_ai_v2_config()).unwrap();
+    let runtime=market_repository::list_ai_runtime(&connection,&v2.experiment.id).unwrap().remove(0);
+    assert_eq!(runtime.call_count,6);
+    assert_eq!(runtime.successful_call_count,6);
+    assert_eq!(runtime.buy_count+runtime.sell_count+runtime.llm_hold_count,6);
+    assert!(runtime.buy_count>0&&runtime.sell_count>0);
+    assert_eq!(runtime.no_llm_call_count,24);
+    assert_eq!(runtime.confidence_distribution.iter().sum::<usize>(),6);
+    assert_eq!(runtime.prompt_version,market_ai::PROMPT_V2_VERSION);
+    let decisions=market_repository::list_ai_decisions(&connection,&v2.experiment.id).unwrap();
+    let called:Vec<_>=decisions.iter().filter(|decision|decision.call_status=="VALID").collect();
+    assert_eq!(called.len(),6);
+    assert!(called.iter().all(|decision|decision.input_snapshot.as_ref().and_then(|snapshot|snapshot.get("market")).is_some()));
+    assert!(called.iter().all(|decision|!decision.input_snapshot.as_ref().unwrap().to_string().contains("forward_return")));
+    assert!(called.iter().any(|decision|decision.forward_return_1.is_some()));
+    assert!(called.iter().any(|decision|decision.forward_return_10.is_none()));
+    assert!(called.iter().filter(|decision|decision.action=="BUY").all(|decision|decision.approved_position_pct.unwrap_or(0.0)<=50.0));
+    let prompts=provider.prompts.lock().unwrap();
+    assert!(prompts.iter().all(|prompt|prompt.system.contains("Do not require every indicator to agree")));
+    assert!(prompts.iter().all(|prompt|!prompt.snapshot_json.contains("forward_return")));
+    drop(prompts);
+
+    let v1_provider=FakeMarketAiProvider{prompts:Mutex::new(Vec::new())};
+    let mut v1_agents=base_agents;v1_agents.push(market_ai::AI_AGENT_ID.into());
+    let v1_input=MarketExperimentInput{name:"AI-CALIBRATION-001 / V1".into(),agent_ids:v1_agents,dataset_id:dataset.id.clone(),..v2_input.clone()};
+    market_repository::run_experiment_with_provider(&mut connection,&v1_input,&v1_provider,&fake_ai_config()).unwrap();
+    let comparisons=market_repository::list_ai_experiment_comparisons(&connection).unwrap();
+    assert_eq!(comparisons.len(),2);
+    assert_eq!(comparisons[0].dataset_id,comparisons[1].dataset_id);
+    assert_eq!(comparisons[0].decision_interval,comparisons[1].decision_interval);
+    assert!(comparisons.iter().any(|entry|entry.prompt_version==market_ai::PROMPT_VERSION));
+    assert!(comparisons.iter().any(|entry|entry.prompt_version==market_ai::PROMPT_V2_VERSION));
+
+    let invalid=MarketExperimentInput{name:"invalid dual AI".into(),agent_ids:vec!["cash".into(),market_ai::AI_AGENT_ID.into(),market_ai::AI_AGENT_V2_ID.into()],dataset_id:dataset.id,risk_profile_id:"balanced-v1".into(),initial_capital:10_000.0,random_seed:42,fee_pct:0.1,slippage_pct:0.05};
+    assert!(market_repository::validate_input(&connection,&invalid).unwrap_err().contains("no máximo um AI Agent"));
     let _=fs::remove_file(path);
 }

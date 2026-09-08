@@ -418,3 +418,15 @@ Status: 🧪 Implementada em 08/09/2026; validação operacional com Ollama pend
 - métricas de chamadas, falhas, fallbacks e latência, com Decision Inspector;
 - participação em Observatory, OOS, walk-forward e análise de regimes;
 - limite de um AI Agent e cinco agentes totais, sem corretora ou dinheiro real.
+
+## Market Lab v0.4.1 — AI Agent Calibration & Decision Diagnostics
+
+Status: 🧪 Implementada em 08/09/2026; validação operacional com Ollama pendente.
+
+- `AI Technical V2` preserva integralmente o agente V1 e recebe contexto técnico mais rico, sem dados futuros;
+- snapshot auditável com retornos passados, tendência, momentum, volatilidade, regime, posição e decisão anterior;
+- BUY, SELL, HOLD retornado pelo LLM e `NO_LLM_CALL` contabilizados separadamente;
+- distribuição e faixas de confiança, inspeção do input exato e análise pós-decisão por horizontes 1, 5 e 10;
+- comparação A/B entre experimentos V1 e V2, com aviso quando as condições congeladas diferirem;
+- mesma proteção de schema, Risk Engine, execução simulada, portfólio, validação científica e auditoria da v0.4;
+- suíte automatizada validada com provider falso; resposta real do modelo local permanece como aceite operacional.
