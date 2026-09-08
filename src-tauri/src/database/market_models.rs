@@ -91,6 +91,7 @@ pub struct MarketEquityPoint {
     pub timestamp: String,
     pub agent_id: String,
     pub equity: f64,
+    pub exposure_pct: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,6 +110,81 @@ pub struct MarketDecisionLog {
     pub execution_price: Option<f64>,
     pub quantity: Option<f64>,
     pub fees: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketBehaviorMetric {
+    pub agent_id: String,
+    pub buy_count: usize,
+    pub sell_count: usize,
+    pub hold_count: usize,
+    pub hold_rate_pct: f64,
+    pub trade_frequency_pct: f64,
+    pub average_exposure_pct: f64,
+    pub max_exposure_pct: f64,
+    pub average_position_size_pct: f64,
+    pub max_position_size_pct: f64,
+    pub average_holding_candles: f64,
+    pub median_holding_candles: f64,
+    pub max_holding_candles: usize,
+    pub turnover_pct: f64,
+    pub time_in_market_pct: f64,
+    pub time_in_cash_pct: f64,
+    pub entry_count: usize,
+    pub exit_count: usize,
+    pub risk_rejection_count: usize,
+    pub risk_modification_count: usize,
+    pub risk_rejection_rate_pct: f64,
+    pub risk_modification_rate_pct: f64,
+    pub drawdown_trigger_count: usize,
+    pub daily_loss_trigger_count: usize,
+    pub formula_version: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketPositionEpisode {
+    pub agent_id: String,
+    pub episode_index: usize,
+    pub opened_candle_index: usize,
+    pub opened_at: String,
+    pub closed_candle_index: Option<usize>,
+    pub closed_at: Option<String>,
+    pub duration_candles: usize,
+    pub max_exposure_pct: f64,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketAgentCorrelation {
+    pub agent_a_id: String,
+    pub agent_b_id: String,
+    pub equity_return_correlation: Option<f64>,
+    pub decision_similarity: f64,
+    pub high_similarity: bool,
+    pub similarity_threshold: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketBenchmarkComparison {
+    pub agent_id: String,
+    pub cash_return_pct: Option<f64>,
+    pub buy_hold_return_pct: Option<f64>,
+    pub excess_vs_cash_pct: f64,
+    pub excess_vs_buy_hold_pct: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketObservatory {
+    pub behavior: Vec<MarketBehaviorMetric>,
+    pub episodes: Vec<MarketPositionEpisode>,
+    pub correlations: Vec<MarketAgentCorrelation>,
+    pub benchmarks: Vec<MarketBenchmarkComparison>,
+    pub similarity_threshold: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,4 +217,5 @@ pub struct MarketExperimentResult {
     pub metrics: Vec<MarketAgentMetric>,
     pub equity: Vec<MarketEquityPoint>,
     pub decisions: Vec<MarketDecisionLog>,
+    pub observatory: MarketObservatory,
 }

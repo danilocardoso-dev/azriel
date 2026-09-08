@@ -373,11 +373,22 @@ O Market Lab evolui fora do núcleo central e não altera a sequência oficial a
 
 ## Market Lab v0.1 — Deterministic Backtest Core
 
-Status: implementação técnica concluída em 06/09/2026; validação operacional pendente.
+Status: ✅ Concluída e validada em 06/09/2026.
 
 - importação e validação de candles históricos em CSV local;
 - replay cronológico sem look-ahead;
 - cinco estratégias determinísticas registradas dinamicamente;
 - Risk Engine único, execução simulada e portfolios isolados;
 - fees, slippage, auditoria, métricas, histórico e reexecução;
+- nenhuma conexão com corretora, dinheiro real, AI Core ou internet.
+
+## Market Lab v0.2 — Multi-Agent Experiment & Behavioral Observatory
+
+Status: ✅ Concluída e validada em 08/09/2026.
+
+- coortes determinísticas com 3 a 5 agentes sob o mesmo snapshot experimental;
+- métricas comportamentais, episódios de posição e fórmulas versionadas;
+- comparação sem pontuação única, com CASH e BUY & HOLD como benchmarks;
+- correlação de retornos da equity e similaridade de decisões;
+- observatório por agente com performance, comportamento, risco, decisões e posições;
 - nenhuma conexão com corretora, dinheiro real, AI Core ou internet.
