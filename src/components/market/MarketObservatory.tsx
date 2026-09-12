@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { MarketAgentMetric, MarketBehaviorMetric, MarketExperimentResult } from "../../types";
+import type { MarketAgentMetric, MarketBehaviorMetric, MarketExperimentResult, MarketPositionEvent, MarketPositionMetric, MarketTradeLifecycle } from "../../types";
 
 const colors = ["#21dff3", "#55f0a7", "#ffbd4a", "#b58cff", "#ff6f91"];
 const number = (value: number, digits = 2) => value.toFixed(digits);
@@ -37,6 +37,30 @@ function ComparisonChart({ result, agents, mode }: { result: MarketExperimentRes
 
 function Formula({ children }: { children: React.ReactNode }) { return <small className="market-formula">{children}</small>; }
 
+function PositionLifecycle({ lifecycles, events, metrics }: { lifecycles: MarketTradeLifecycle[]; events: MarketPositionEvent[]; metrics?: MarketPositionMetric }) {
+  const [selectedId, setSelectedId] = useState(lifecycles.at(-1)?.id ?? "");
+  const selected = lifecycles.find((item) => item.id === selectedId) ?? lifecycles.at(-1);
+  const selectedEvents = selected ? events.filter((item) => item.lifecycleId === selected.id) : [];
+  const latestEvent = selectedEvents.at(-1);
+  if (lifecycles.length === 0) return <div className="market-position-empty"><strong>SEM LIFECYCLE REGISTRADO</strong><span>O agente não abriu posição neste experimento.</span></div>;
+  return <div className="market-position-lifecycle">
+    <div className="market-stat-grid market-position-status">
+      <div><span>POSITION STATUS</span><strong>{selected?.status === "OPEN" ? "LONG" : "FLAT"}</strong><Formula>{latestEvent ? `Exposição ${number(latestEvent.newExposurePct)}%` : "Sem exposição"}</Formula></div>
+      <div><span>CLOSED TRADES / EXECUTIONS</span><strong>{metrics?.closedTrades ?? 0} / {events.filter((item) => item.action !== "HOLD_POSITION").length}</strong><Formula>Ciclos completos são separados das execuções</Formula></div>
+      <div><span>AVG MFE / MAE</span><strong>{number(metrics?.averageMfePct ?? 0)}% / {number(metrics?.averageMaePct ?? 0)}%</strong></div>
+      <div><span>AVG EXIT EFF.</span><strong>{metrics?.averageExitEfficiencyPct == null ? "N/A" : `${number(metrics.averageExitEfficiencyPct)}%`}</strong></div>
+      <div><span>AVG GIVEBACK</span><strong>{number(metrics?.averageProfitGivebackPct ?? 0)}%</strong></div>
+      <div><span>CHURN FLAGS</span><strong>{(metrics?.rapidReentryCount ?? 0) + (metrics?.rapidExitCount ?? 0)}</strong><Formula>Reentrada rápida + saída rápida</Formula></div>
+    </div>
+    <div className="market-position-table"><table><thead><tr><th>TRADE</th><th>ENTRY</th><th>EXIT</th><th>DURATION</th><th>ENTRY EXP.</th><th>MAX EXP.</th><th>PNL</th><th>MFE</th><th>MAE</th><th>EXIT EFF.</th></tr></thead><tbody>{lifecycles.map((item) => <tr key={item.id} className={item.id === selected?.id ? "selected" : ""} onClick={() => setSelectedId(item.id)}><td>#{String(item.lifecycleIndex).padStart(2, "0")}</td><td>{item.openedAt}</td><td>{item.closedAt ?? "OPEN"}</td><td>{item.holdingCandles}</td><td>{number(item.initialExposurePct)}%</td><td>{number(item.maxExposurePct)}%</td><td className={item.realizedPnlPct >= 0 ? "positive" : "negative"}>{number(item.realizedPnlPct)}%</td><td>{number(item.mfePct)}%</td><td>{number(item.maePct)}%</td><td>{item.exitEfficiencyPct == null ? "N/A" : `${number(item.exitEfficiencyPct)}%`}</td></tr>)}</tbody></table></div>
+    {selected && <div className="market-lifecycle-inspector">
+      <header><div><span>LIFECYCLE INSPECTOR</span><strong>TRADE #{String(selected.lifecycleIndex).padStart(2, "0")} · {selected.status}</strong></div><small>{selected.entryReasonCode ?? "NO_ENTRY_REASON"} → {selected.exitReasonCode ?? (selected.status === "OPEN" ? "POSITION_OPEN" : "NO_EXIT_REASON")}</small></header>
+      <div className="market-position-timeline"><span>FLAT</span>{selectedEvents.map((event) => <div key={event.id}><i>↓</i><strong>{event.action.replaceAll("_", " ")}</strong><b>{number(event.newExposurePct)}%</b><small>{event.timestamp} · {event.signalBias ?? "NEUTRAL"} · {event.reasonCode ?? "NO_REASON"} · {event.riskResult}</small></div>)}{selected.status === "CLOSED" && <><i>↓</i><span>FLAT</span></>}</div>
+      <div className="market-stat-grid"><div><span>ENTRY / AVG / EXIT</span><strong>{number(selected.entryPrice)} / {number(selected.averageEntryPrice)} / {selected.exitPrice == null ? "OPEN" : number(selected.exitPrice)}</strong></div><div><span>RESULT</span><strong>{number(selected.realizedPnl)} · {number(selected.realizedPnlPct)}%</strong></div><div><span>MFE / MAE</span><strong>{number(selected.mfePct)}% / {number(selected.maePct)}%</strong></div><div><span>GIVEBACK</span><strong>{number(selected.profitGivebackPct)}%</strong></div></div>
+    </div>}
+  </div>;
+}
+
 export function MarketObservatory({ result }: { result: MarketExperimentResult }) {
   const [sortKey, setSortKey] = useState<SortKey>("totalReturnPct");
   const [selectedAgent, setSelectedAgent] = useState(result.metrics[0]?.agentId ?? "");
@@ -49,6 +73,10 @@ export function MarketObservatory({ result }: { result: MarketExperimentResult }
   const behavior = behaviorMap.get(metric?.agentId ?? "");
   const benchmark = result.observatory.benchmarks.find((item) => item.agentId === metric?.agentId);
   const episodes = result.observatory.episodes.filter((item) => item.agentId === metric?.agentId);
+  const positionLifecycles = result.positionLifecycle.lifecycles.filter((item) => item.agentId === metric?.agentId);
+  const positionLifecycleIds = new Set(positionLifecycles.map((item) => item.id));
+  const positionEvents = result.positionLifecycle.events.filter((item) => positionLifecycleIds.has(item.lifecycleId));
+  const positionMetrics = result.positionLifecycle.metrics.find((item) => item.agentId === metric?.agentId);
   const decisions = result.decisions.filter((item) => item.agentId === metric?.agentId);
   const toggleComparison = (agentId: string) => setComparisonAgents((current) => current.includes(agentId) ? current.length > 2 ? current.filter((id) => id !== agentId) : current : current.length < 5 ? [...current, agentId] : current);
   const correlation = (left: string, right: string) => result.observatory.correlations.find((item) => (item.agentAId === left && item.agentBId === right) || (item.agentAId === right && item.agentBId === left));
@@ -80,7 +108,7 @@ export function MarketObservatory({ result }: { result: MarketExperimentResult }
       {detailTab === "behavior" && behavior && <div className="market-stat-grid"><div><span>BUY / SELL / HOLD</span><strong>{behavior.buyCount} / {behavior.sellCount} / {behavior.holdCount}</strong><Formula>Contagem das decisões por ação</Formula></div><div><span>HOLD RATE</span><strong>{number(behavior.holdRatePct)}%</strong><Formula>HOLD ÷ decisões × 100</Formula></div><div><span>TIME IN MARKET</span><strong>{number(behavior.timeInMarketPct)}%</strong><Formula>Candles expostos ÷ snapshots × 100</Formula></div><div><span>TIME IN CASH</span><strong>{number(behavior.timeInCashPct)}%</strong><Formula>Candles sem posição ÷ snapshots × 100</Formula></div><div><span>TURNOVER</span><strong>{number(behavior.turnoverPct)}%</strong><Formula>Valor bruto negociado ÷ equity média × 100</Formula></div><div><span>HOLDING MÉDIO / MEDIANO / MÁX.</span><strong>{number(behavior.averageHoldingCandles, 1)} / {number(behavior.medianHoldingCandles, 1)} / {behavior.maxHoldingCandles}</strong><Formula>Duração em candles expostos</Formula></div><div><span>POSIÇÃO MÉDIA / MÁX.</span><strong>{number(behavior.averagePositionSizePct)}% / {number(behavior.maxPositionSizePct)}%</strong><Formula>Exposição apenas durante posições abertas</Formula></div><div><span>FREQUÊNCIA</span><strong>{number(behavior.tradeFrequencyPct)}%</strong><Formula>Execuções ÷ candles × 100</Formula></div></div>}
       {detailTab === "risk" && behavior && <div className="market-stat-grid"><div><span>REJEIÇÕES</span><strong>{behavior.riskRejectionCount}</strong><Formula>{number(behavior.riskRejectionRatePct)}% das decisões</Formula></div><div><span>MODIFICAÇÕES</span><strong>{behavior.riskModificationCount}</strong><Formula>{number(behavior.riskModificationRatePct)}% das decisões</Formula></div><div><span>TRIGGERS DRAWDOWN</span><strong>{behavior.drawdownTriggerCount}</strong></div><div><span>TRIGGERS PERDA DIÁRIA</span><strong>{behavior.dailyLossTriggerCount}</strong></div></div>}
       {detailTab === "decisions" && <div className="market-timeline">{decisions.map((decision) => <article key={decision.id}><i className={decision.action.toLowerCase()}>{decision.action}</i><div><strong>{decision.timestamp}</strong><span>{decision.reasoning}</span></div><b>{decision.riskResult}</b></article>)}</div>}
-      {detailTab === "positions" && <div className="market-episodes">{episodes.length === 0 ? <p>Nenhum episódio de posição.</p> : episodes.map((episode) => <article key={episode.episodeIndex}><strong>EPISÓDIO {String(episode.episodeIndex).padStart(2, "0")}</strong><span>{episode.openedAt} → {episode.closedAt ?? "ABERTO"}</span><b>{episode.durationCandles} candles · exposição máx. {number(episode.maxExposurePct)}%</b></article>)}</div>}
+      {detailTab === "positions" && (positionLifecycles.length > 0 ? <PositionLifecycle lifecycles={positionLifecycles} events={positionEvents} metrics={positionMetrics} /> : <div className="market-episodes">{episodes.length === 0 ? <p>Nenhum episódio de posição.</p> : episodes.map((episode) => <article key={episode.episodeIndex}><strong>EPISÓDIO {String(episode.episodeIndex).padStart(2, "0")}</strong><span>{episode.openedAt} → {episode.closedAt ?? "ABERTO"}</span><b>{episode.durationCandles} candles · exposição máx. {number(episode.maxExposurePct)}%</b></article>)}</div>)}
       {detailTab === "benchmarks" && benchmark && <div className="market-stat-grid"><div><span>EXCESSO VS CASH</span><strong>{number(benchmark.excessVsCashPct)}%</strong></div><div><span>EXCESSO VS BUY & HOLD</span><strong>{benchmark.excessVsBuyHoldPct == null ? "N/A" : `${number(benchmark.excessVsBuyHoldPct)}%`}</strong></div><div><span>RETORNO CASH</span><strong>{benchmark.cashReturnPct == null ? "N/A" : `${number(benchmark.cashReturnPct)}%`}</strong></div><div><span>RETORNO BUY & HOLD</span><strong>{benchmark.buyHoldReturnPct == null ? "N/A" : `${number(benchmark.buyHoldReturnPct)}%`}</strong></div></div>}
     </section>}
   </div>;

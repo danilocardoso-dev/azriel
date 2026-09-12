@@ -443,3 +443,15 @@ Status: 🧪 Implementada em 08/09/2026; validação operacional com AAPL 2022/2
 - diagnóstico inclui matrizes sinal × ação e conflito × ação, distribuição de motivos, response rate e alertas de colapso;
 - comparação A/B/C preserva V1 e V2, exige condições experimentais equivalentes e não promove agente automaticamente;
 - Risk Engine, execução simulada, limites de coorte, ausência de corretora e ausência de dinheiro real permanecem inalterados.
+
+## Market Lab v0.4.3 — Position Management & Trade Lifecycle
+
+Status: 🧪 Implementada em 08/09/2026; validação operacional com AAPL 2022/2023 e Ollama pendente.
+
+- `PositionManager` e `PositionDecisionValidator` adicionam semântica explícita para FLAT, LONG_OPEN e LONG_REDUCED;
+- `AI Technical V4` administra exposição total com ENTER, HOLD, INCREASE, REDUCE, EXIT e STAY_FLAT;
+- ações incoerentes são convertidas em fallback seguro antes do Risk Engine, que permanece inalterado;
+- ciclos completos, eventos, motivos, MFE, MAE, giveback, eficiência de saída, reentrada e churn são persistidos;
+- execuções parciais permanecem separadas da contagem de lifecycles completos;
+- o Observatory mostra status, tabela, inspetor e timeline de posição;
+- V1, V2 e V3, Signal Engine V1, executor, portfólio e Scientific Validation permanecem preservados.

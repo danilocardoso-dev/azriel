@@ -243,6 +243,83 @@ pub struct MarketObservatory {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct MarketTradeLifecycle {
+    pub id: String,
+    pub agent_id: String,
+    pub asset: String,
+    pub lifecycle_index: usize,
+    pub opened_at: String,
+    pub closed_at: Option<String>,
+    pub entry_price: f64,
+    pub average_entry_price: f64,
+    pub exit_price: Option<f64>,
+    pub initial_exposure_pct: f64,
+    pub max_exposure_pct: f64,
+    pub holding_candles: usize,
+    pub realized_pnl: f64,
+    pub realized_pnl_pct: f64,
+    pub mfe_pct: f64,
+    pub mae_pct: f64,
+    pub exit_efficiency_pct: Option<f64>,
+    pub profit_giveback_pct: f64,
+    pub entry_reason_code: Option<String>,
+    pub exit_reason_code: Option<String>,
+    pub status: String,
+    pub reentry: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketPositionEvent {
+    pub id: i64,
+    pub lifecycle_id: String,
+    pub decision_id: Option<i64>,
+    pub execution_id: Option<i64>,
+    pub timestamp: String,
+    pub action: String,
+    pub previous_exposure_pct: f64,
+    pub target_exposure_pct: f64,
+    pub new_exposure_pct: f64,
+    pub signal_bias: Option<String>,
+    pub confidence: Option<f64>,
+    pub reason_code: Option<String>,
+    pub risk_result: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketPositionMetric {
+    pub agent_id: String,
+    pub closed_trades: usize,
+    pub winning_trades: usize,
+    pub losing_trades: usize,
+    pub average_holding_candles: f64,
+    pub median_holding_candles: f64,
+    pub average_mfe_pct: f64,
+    pub average_mae_pct: f64,
+    pub average_exit_efficiency_pct: Option<f64>,
+    pub average_profit_giveback_pct: f64,
+    pub rapid_reentry_count: usize,
+    pub rapid_exit_count: usize,
+    pub reentry_count: usize,
+    pub average_entry_exposure_pct: f64,
+    pub average_max_exposure_pct: f64,
+    pub invalid_position_action_count: usize,
+    pub flat_sell_attempt_count: usize,
+    pub redundant_exit_count: usize,
+    pub engine_version: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketPositionLifecycleReport {
+    pub lifecycles: Vec<MarketTradeLifecycle>,
+    pub events: Vec<MarketPositionEvent>,
+    pub metrics: Vec<MarketPositionMetric>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MarketExperimentSummary {
     pub id: String,
     pub name: String,
@@ -272,6 +349,7 @@ pub struct MarketExperimentResult {
     pub equity: Vec<MarketEquityPoint>,
     pub decisions: Vec<MarketDecisionLog>,
     pub observatory: MarketObservatory,
+    pub position_lifecycle: MarketPositionLifecycleReport,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -478,6 +556,7 @@ pub struct MarketAiDecisionLog {
     pub forward_return_5: Option<f64>,
     pub forward_return_10: Option<f64>,
     pub signal_disagreement: bool,
+    pub lifecycle_action: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -523,7 +602,10 @@ pub struct MarketSignalMatrixRow {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MarketReasonCodeCount { pub reason_code: String, pub count: usize }
+pub struct MarketReasonCodeCount {
+    pub reason_code: String,
+    pub count: usize,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

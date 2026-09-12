@@ -7,24 +7,25 @@ pub mod daily_repository;
 pub mod engineering_models;
 pub mod engineering_repository;
 pub mod learning_engine;
-pub mod market_models;
 pub mod market_ai;
+pub mod market_models;
 pub mod market_observatory;
+pub mod market_positions;
 pub mod market_regimes;
 pub mod market_repository;
 pub mod market_signals;
 pub mod market_statistics;
-pub mod market_validation;
 #[cfg(test)]
 mod market_tests;
+pub mod market_validation;
 pub mod models;
 pub mod repository;
 pub mod routine_models;
 pub mod routine_repository;
-pub mod system_models;
-pub mod system_repository;
 pub mod stark_models;
 pub mod stark_repository;
+pub mod system_models;
+pub mod system_repository;
 
 use rusqlite::{params, Connection};
 use std::{
@@ -133,6 +134,16 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         19,
         "market_signal_engine",
         include_str!("../../migrations/0019_market_signal_engine.sql"),
+    ),
+    (
+        20,
+        "market_position_lifecycle",
+        include_str!("../../migrations/0020_market_position_lifecycle.sql"),
+    ),
+    (
+        21,
+        "market_position_execution",
+        include_str!("../../migrations/0021_market_position_execution.sql"),
     ),
 ];
 
@@ -533,20 +544,74 @@ mod tests {
         connection.execute("INSERT INTO notes(id,content,status) VALUES ('keep-note-v82','Preservar nota','active')", []).unwrap();
         connection.execute("INSERT INTO applications(id,name,path,enabled) VALUES ('keep-app-v82','Preservar app','C:\\Azriel.exe',1)", []).unwrap();
         connection.execute("INSERT INTO workspaces(id,name,path,enabled,application_id) VALUES ('keep-workspace-v82','Preservar workspace','C:\\Projetos',1,'keep-app-v82')", []).unwrap();
-        connection.execute("INSERT INTO routines(id,name) VALUES ('keep-routine-v82','Preservar rotina')", []).unwrap();
-        let old_tables = ["projects", "knowledge_areas", "knowledge_history", "education", "tasks", "notes", "workspaces", "applications", "routines", "engineering_calibration"];
-        let before: Vec<i64> = old_tables.iter().map(|table| connection.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0)).unwrap()).collect();
+        connection
+            .execute(
+                "INSERT INTO routines(id,name) VALUES ('keep-routine-v82','Preservar rotina')",
+                [],
+            )
+            .unwrap();
+        let old_tables = [
+            "projects",
+            "knowledge_areas",
+            "knowledge_history",
+            "education",
+            "tasks",
+            "notes",
+            "workspaces",
+            "applications",
+            "routines",
+            "engineering_calibration",
+        ];
+        let before: Vec<i64> = old_tables
+            .iter()
+            .map(|table| {
+                connection
+                    .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                        row.get(0)
+                    })
+                    .unwrap()
+            })
+            .collect();
 
         apply_migrations_through(&mut connection, 11).unwrap();
         stark_repository::ensure_baselines(&connection).unwrap();
         stark_repository::ensure_research_seed(&mut connection).unwrap();
-        let after: Vec<i64> = old_tables.iter().map(|table| connection.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0)).unwrap()).collect();
+        let after: Vec<i64> = old_tables
+            .iter()
+            .map(|table| {
+                connection
+                    .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                        row.get(0)
+                    })
+                    .unwrap()
+            })
+            .collect();
         assert_eq!(before, after);
-        let knowledge_count: i64 = connection.query_row("SELECT COUNT(*) FROM knowledge_areas", [], |row| row.get(0)).unwrap();
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM knowledge_baselines", [], |row| row.get::<_, i64>(0)).unwrap(), knowledge_count);
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM research_items", [], |row| row.get::<_, i64>(0)).unwrap(), 6);
+        let knowledge_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM knowledge_areas", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM knowledge_baselines", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            knowledge_count
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM research_items", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            6
+        );
         stark_repository::ensure_baselines(&connection).unwrap();
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM knowledge_baselines", [], |row| row.get::<_, i64>(0)).unwrap(), knowledge_count);
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM knowledge_baselines", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            knowledge_count
+        );
         assert_eq!(schema_version(&connection).unwrap(), 11);
     }
 
@@ -561,12 +626,38 @@ mod tests {
         connection.execute("INSERT INTO roadmap_stages(id,roadmap_id,name,stage_order) VALUES ('keep-stage-v83','keep-v83','Etapa',1)", []).unwrap();
         connection.execute("INSERT INTO roadmap_topics(id,stage_id,name,knowledge_node_id,topic_order) VALUES ('keep-topic-v83','keep-stage-v83','Tópico','electronics',1)", []).unwrap();
         connection.execute("INSERT INTO roadmap_activities(id,topic_id,title,activity_type,status,activity_order) VALUES ('keep-activity-v83','keep-topic-v83','Atividade legada','READING','completed',1)", []).unwrap();
-        let before: i64 = connection.query_row("SELECT COUNT(*) FROM knowledge_areas", [], |row| row.get(0)).unwrap();
+        let before: i64 = connection
+            .query_row("SELECT COUNT(*) FROM knowledge_areas", [], |row| row.get(0))
+            .unwrap();
         apply_migrations_through(&mut connection, 12).unwrap();
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM knowledge_areas", [], |row| row.get::<_,i64>(0)).unwrap(), before);
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM study_roadmaps WHERE id='keep-v83'", [], |row| row.get::<_,i64>(0)).unwrap(), 1);
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM knowledge_areas", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            before
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM study_roadmaps WHERE id='keep-v83'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
         assert_eq!(connection.query_row("SELECT knowledge_node_id FROM activity_knowledge_nodes WHERE activity_id='keep-activity-v83' AND role='primary'", [], |row| row.get::<_,String>(0)).unwrap(), "electronics");
-        assert_eq!(connection.query_row("SELECT formula_version FROM learning_engine_state WHERE id=1", [], |row| row.get::<_,String>(0)).unwrap(), "LEARNING_ENGINE_V1");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT formula_version FROM learning_engine_state WHERE id=1",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "LEARNING_ENGINE_V1"
+        );
         assert_eq!(schema_version(&connection).unwrap(), 12);
     }
 
@@ -584,7 +675,16 @@ mod tests {
         apply_migrations_through(&mut connection, 13).unwrap();
 
         assert_eq!(connection.query_row("SELECT prerequisite_topic_id FROM roadmap_topic_prerequisites WHERE topic_id='topic-b-v84'", [], |row| row.get::<_,String>(0)).unwrap(), "topic-a-v84");
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM study_roadmaps WHERE id='keep-v84'", [], |row| row.get::<_,i64>(0)).unwrap(), 1);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM study_roadmaps WHERE id='keep-v84'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
         assert_eq!(schema_version(&connection).unwrap(), 13);
     }
 
@@ -598,9 +698,32 @@ mod tests {
 
         apply_migrations_through(&mut connection, 14).unwrap();
 
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM study_roadmaps WHERE id='keep-market'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_agents", [], |row| row.get::<_, i64>(0)).unwrap(), 5);
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_risk_profiles", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM study_roadmaps WHERE id='keep-market'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM market_agents", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            5
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM market_risk_profiles", [], |row| row
+                    .get::<_, i64>(
+                    0
+                ))
+                .unwrap(),
+            1
+        );
         assert_eq!(schema_version(&connection).unwrap(), 14);
     }
 
@@ -613,8 +736,24 @@ mod tests {
 
         apply_migrations_through(&mut connection, 15).unwrap();
 
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_datasets WHERE id='keep-dataset'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_behavior_metrics", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM market_datasets WHERE id='keep-dataset'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM market_behavior_metrics", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            0
+        );
         assert_eq!(schema_version(&connection).unwrap(), 15);
     }
 
@@ -627,8 +766,23 @@ mod tests {
 
         apply_migrations_through(&mut connection, 16).unwrap();
 
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_datasets WHERE id='keep-validation'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_validation_runs", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM market_datasets WHERE id='keep-validation'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM market_validation_runs", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
         assert_eq!(schema_version(&connection).unwrap(), 16);
     }
 
@@ -641,8 +795,26 @@ mod tests {
 
         apply_migrations_through(&mut connection, 17).unwrap();
 
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_datasets WHERE id='keep-ai'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_agents WHERE strategy_type='llm'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM market_datasets WHERE id='keep-ai'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM market_agents WHERE strategy_type='llm'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
         assert_eq!(connection.query_row("SELECT prompt_version FROM market_ai_agent_configs WHERE agent_id='ai-technical-v1'", [], |row| row.get::<_, String>(0)).unwrap(), "MARKET_AI_AGENT_V1");
         assert_eq!(schema_version(&connection).unwrap(), 17);
     }
@@ -656,8 +828,26 @@ mod tests {
 
         apply_migrations_through(&mut connection, 18).unwrap();
 
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_datasets WHERE id='keep-ai-v1'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_agents WHERE strategy_type='llm'", [], |row| row.get::<_, i64>(0)).unwrap(), 2);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM market_datasets WHERE id='keep-ai-v1'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM market_agents WHERE strategy_type='llm'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            2
+        );
         assert_eq!(connection.query_row("SELECT prompt_version FROM market_ai_agent_configs WHERE agent_id='ai-technical-v1'", [], |row| row.get::<_, String>(0)).unwrap(), "MARKET_AI_AGENT_V1");
         assert_eq!(connection.query_row("SELECT prompt_version FROM market_ai_agent_configs WHERE agent_id='ai-technical-v2'", [], |row| row.get::<_, String>(0)).unwrap(), "MARKET_AI_AGENT_V2");
         assert_eq!(schema_version(&connection).unwrap(), 18);
@@ -672,7 +862,89 @@ mod tests {
         apply_migrations_through(&mut connection, 19).unwrap();
         assert_eq!(schema_version(&connection).unwrap(), 19);
         assert_eq!(connection.query_row("SELECT decision_interval FROM market_ai_agent_configs WHERE agent_id='ai-technical-v2'", [], |row| row.get::<_,i64>(0)).unwrap(), 7);
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_agents WHERE id='ai-technical-v3'", [], |row| row.get::<_,i64>(0)).unwrap(), 1);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM market_agents WHERE id='ai-technical-v3'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
         assert_eq!(connection.query_row("SELECT engine_version FROM market_signal_engine_configs WHERE version='SIGNAL_CONFIG_V1'", [], |row| row.get::<_,String>(0)).unwrap(), "SIGNAL_ENGINE_V1");
+    }
+
+    #[test]
+    fn migration_twenty_preserves_v3_and_adds_position_lifecycle_v4() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 19).unwrap();
+        connection.execute("UPDATE market_ai_agent_configs SET decision_interval=7 WHERE agent_id='ai-technical-v3'",[]).unwrap();
+        apply_migrations_through(&mut connection, 20).unwrap();
+        assert_eq!(schema_version(&connection).unwrap(), 20);
+        assert_eq!(connection.query_row("SELECT decision_interval FROM market_ai_agent_configs WHERE agent_id='ai-technical-v3'",[],|row|row.get::<_,usize>(0)).unwrap(),7);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM market_agents WHERE id='ai-technical-v4'",
+                    [],
+                    |row| row.get::<_, usize>(0)
+                )
+                .unwrap(),
+            1
+        );
+        for table in [
+            "market_trade_lifecycles",
+            "market_position_events",
+            "market_position_metrics",
+        ] {
+            assert_eq!(
+                connection
+                    .query_row(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                        [table],
+                        |row| row.get::<_, usize>(0)
+                    )
+                    .unwrap(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn migration_twenty_one_adds_execution_link_without_losing_position_events() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 20).unwrap();
+        let execution_column_before = connection
+            .prepare("PRAGMA table_info(market_position_events)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+            .into_iter()
+            .any(|column| column == "execution_id");
+        assert!(!execution_column_before);
+        connection.execute_batch("PRAGMA foreign_keys=OFF;
+            INSERT INTO market_trade_lifecycles(id,experiment_id,agent_id,asset,lifecycle_index,opened_at,entry_price,average_entry_price,initial_exposure_pct,max_exposure_pct,holding_candles,realized_pnl,realized_pnl_pct,mfe_pct,mae_pct,profit_giveback_pct,status,reentry,engine_version)
+            VALUES('migration-event','legacy-experiment','ai-technical-v4','TST',1,'2026-01-01',100,100,30,30,1,0,0,1,-1,0,'OPEN',0,'POSITION_ENGINE_V1');
+            INSERT INTO market_position_events(lifecycle_id,timestamp,action,previous_exposure_pct,target_exposure_pct,new_exposure_pct,risk_result)
+            VALUES('migration-event','2026-01-01','ENTER_LONG',0,30,30,'APPROVED');
+            PRAGMA foreign_keys=ON;").unwrap();
+
+        apply_migrations_through(&mut connection, 21).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 21);
+        let columns = connection
+            .prepare("PRAGMA table_info(market_position_events)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(columns.iter().any(|column| column == "execution_id"));
+        assert_eq!(connection.query_row("SELECT action FROM market_position_events WHERE lifecycle_id='migration-event'", [], |row| row.get::<_, String>(0)).unwrap(), "ENTER_LONG");
     }
 }

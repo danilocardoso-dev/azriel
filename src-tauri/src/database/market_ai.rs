@@ -5,16 +5,22 @@ use std::time::Instant;
 pub const AI_AGENT_ID: &str = "ai-technical-v1";
 pub const AI_AGENT_V2_ID: &str = "ai-technical-v2";
 pub const AI_AGENT_V3_ID: &str = "ai-technical-v3";
+pub const AI_AGENT_V4_ID: &str = "ai-technical-v4";
 pub const PROMPT_VERSION: &str = "MARKET_AI_AGENT_V1";
 pub const PROMPT_V2_VERSION: &str = "MARKET_AI_AGENT_V2";
 pub const PROMPT_V3_VERSION: &str = "MARKET_AI_AGENT_V3";
+pub const PROMPT_V4_VERSION: &str = "MARKET_AI_AGENT_V4";
 pub const MAX_AI_AGENTS: usize = 1;
 pub const SYSTEM_PROMPT: &str = include_str!("../../prompts/market-lab-agent.txt");
 pub const SYSTEM_PROMPT_V2: &str = include_str!("../../prompts/market-lab-agent-v2.txt");
 pub const SYSTEM_PROMPT_V3: &str = include_str!("../../prompts/market-lab-agent-v3.txt");
+pub const SYSTEM_PROMPT_V4: &str = include_str!("../../prompts/market-lab-agent-v4.txt");
 
 pub fn is_ai_agent(agent_id: &str) -> bool {
-    matches!(agent_id, AI_AGENT_ID | AI_AGENT_V2_ID | AI_AGENT_V3_ID)
+    matches!(
+        agent_id,
+        AI_AGENT_ID | AI_AGENT_V2_ID | AI_AGENT_V3_ID | AI_AGENT_V4_ID
+    )
 }
 
 pub fn prompt_for_version(version: &str) -> Option<&'static str> {
@@ -22,6 +28,7 @@ pub fn prompt_for_version(version: &str) -> Option<&'static str> {
         PROMPT_VERSION => Some(SYSTEM_PROMPT),
         PROMPT_V2_VERSION => Some(SYSTEM_PROMPT_V2),
         PROMPT_V3_VERSION => Some(SYSTEM_PROMPT_V3),
+        PROMPT_V4_VERSION => Some(SYSTEM_PROMPT_V4),
         _ => None,
     }
 }
@@ -41,15 +48,14 @@ pub struct MarketAiConfig {
 
 impl MarketAiConfig {
     pub fn validate(&self) -> Result<(), String> {
-        if !is_ai_agent(&self.agent_id)
-            || self.provider != "ollama"
-            || self.model.trim().is_empty()
+        if !is_ai_agent(&self.agent_id) || self.provider != "ollama" || self.model.trim().is_empty()
         {
             return Err("configuração do AI Agent possui provider ou modelo inválido".into());
         }
         let expected_prompt = match self.agent_id.as_str() {
             AI_AGENT_V2_ID => PROMPT_V2_VERSION,
             AI_AGENT_V3_ID => PROMPT_V3_VERSION,
+            AI_AGENT_V4_ID => PROMPT_V4_VERSION,
             _ => PROMPT_VERSION,
         };
         if self.prompt_version != expected_prompt
@@ -200,6 +206,15 @@ pub struct MarketAiSnapshotV3 {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct MarketAiSnapshotV4 {
+    pub market: MarketAiMarket,
+    pub signals: crate::database::market_signals::MarketSignalSummary,
+    pub regime: MarketAiRegime,
+    pub position: crate::database::market_positions::PositionContext,
+    pub risk_context: MarketAiRiskContext,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct MarketAiKeyFeatures {
     pub return_5: Option<f64>,
     pub return_20: Option<f64>,
@@ -321,7 +336,41 @@ struct StructuredDecisionV3 {
     reason: String,
 }
 
-const REASON_CODES: &[&str] = &["ALIGNED_BULLISH_SIGNAL","ALIGNED_BEARISH_SIGNAL","CONFLICTING_SIGNALS","INSUFFICIENT_SIGNAL","HIGH_VOLATILITY","WAITING_CONFIRMATION","POSITION_ALREADY_OPTIMAL","TREND_DETERIORATION","MOMENTUM_DETERIORATION","EXIT_SIGNAL"];
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StructuredDecisionV4 {
+    action: String,
+    target_exposure_pct: f64,
+    confidence: f64,
+    reason_code: String,
+    reason: String,
+}
+
+const REASON_CODES: &[&str] = &[
+    "ALIGNED_BULLISH_SIGNAL",
+    "ALIGNED_BEARISH_SIGNAL",
+    "CONFLICTING_SIGNALS",
+    "INSUFFICIENT_SIGNAL",
+    "HIGH_VOLATILITY",
+    "WAITING_CONFIRMATION",
+    "POSITION_ALREADY_OPTIMAL",
+    "TREND_DETERIORATION",
+    "MOMENTUM_DETERIORATION",
+    "EXIT_SIGNAL",
+];
+const REASON_CODES_V4: &[&str] = &[
+    "ALIGNED_BULLISH_SIGNAL",
+    "ALIGNED_BEARISH_SIGNAL",
+    "TREND_DETERIORATION",
+    "MOMENTUM_DETERIORATION",
+    "REGIME_REVERSAL",
+    "POSITION_ALREADY_OPTIMAL",
+    "INSUFFICIENT_SIGNAL",
+    "CONFLICTING_SIGNALS",
+    "REDUCE_RISK",
+    "EXIT_SIGNAL",
+    "REENTRY_SIGNAL",
+];
 
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -339,7 +388,9 @@ pub fn detect_degeneration(values: &[(String, f64)]) -> DegenerationDiagnostics 
     let mut confidences: HashMap<i64, usize> = HashMap::new();
     for (action, confidence) in values {
         *actions.entry(action.as_str()).or_default() += 1;
-        *confidences.entry((confidence * 10_000.0).round() as i64).or_default() += 1;
+        *confidences
+            .entry((confidence * 10_000.0).round() as i64)
+            .or_default() += 1;
     }
     let minimum = 20;
     let threshold = (values.len() as f64 * 0.95).ceil() as usize;
@@ -347,10 +398,16 @@ pub fn detect_degeneration(values: &[(String, f64)]) -> DegenerationDiagnostics 
     let confidence = confidences.into_iter().max_by_key(|(_, count)| *count);
     DegenerationDiagnostics {
         sample_size: values.len(),
-        action_collapse: values.len() >= minimum && action.is_some_and(|(_, count)| count >= threshold),
-        collapsed_action: action.filter(|(_,count)| values.len() >= minimum && *count >= threshold).map(|(value,_)|value.into()),
-        confidence_collapse: values.len() >= minimum && confidence.is_some_and(|(_, count)| count >= threshold),
-        collapsed_confidence: confidence.filter(|(_,count)| values.len() >= minimum && *count >= threshold).map(|(value,_)|value as f64/10_000.0),
+        action_collapse: values.len() >= minimum
+            && action.is_some_and(|(_, count)| count >= threshold),
+        collapsed_action: action
+            .filter(|(_, count)| values.len() >= minimum && *count >= threshold)
+            .map(|(value, _)| value.into()),
+        confidence_collapse: values.len() >= minimum
+            && confidence.is_some_and(|(_, count)| count >= threshold),
+        collapsed_confidence: confidence
+            .filter(|(_, count)| values.len() >= minimum && *count >= threshold)
+            .map(|(value, _)| value as f64 / 10_000.0),
     }
 }
 
@@ -507,6 +564,7 @@ pub struct MarketAiDecision {
     pub confidence: Option<f64>,
     pub reason: String,
     pub reason_code: Option<String>,
+    pub lifecycle_action: Option<String>,
     pub call_status: &'static str,
     pub provider: String,
     pub model: String,
@@ -530,6 +588,7 @@ impl MarketAIAgent {
             confidence: None,
             reason: "Cadência do AI Agent: nenhuma chamada ao LLM neste candle".into(),
             reason_code: None,
+            lifecycle_action: None,
             call_status: "NO_LLM_CALL",
             provider: config.provider.clone(),
             model: config.model.clone(),
@@ -586,6 +645,7 @@ impl MarketAIAgent {
                                 confidence: Some(parsed.2),
                                 reason: parsed.3,
                                 reason_code: parsed.4,
+                                lifecycle_action: parsed.5,
                                 call_status: "VALID",
                                 provider: config.provider.clone(),
                                 model: final_model,
@@ -624,6 +684,7 @@ impl MarketAIAgent {
             confidence: None,
             reason: format!("Fallback seguro HOLD: {final_status}"),
             reason_code: None,
+            lifecycle_action: None,
             call_status: final_status,
             provider: config.provider.clone(),
             model: final_model,
@@ -637,32 +698,103 @@ impl MarketAIAgent {
     }
 }
 
-fn validate_fields(action: &str, desired: f64, confidence: f64, reason: &str) -> Result<&'static str, ()> {
+fn validate_fields(
+    action: &str,
+    desired: f64,
+    confidence: f64,
+    reason: &str,
+) -> Result<&'static str, ()> {
     let action = match action {
         "BUY" => "BUY",
         "SELL" => "SELL",
         "HOLD" => "HOLD",
         _ => return Err(()),
     };
-    if !desired.is_finite() || !(0.0..=100.0).contains(&desired)
-        || !confidence.is_finite() || !(0.0..=1.0).contains(&confidence)
-        || reason.trim().is_empty() || reason.chars().count() > 240
+    if !desired.is_finite()
+        || !(0.0..=100.0).contains(&desired)
+        || !confidence.is_finite()
+        || !(0.0..=1.0).contains(&confidence)
+        || reason.trim().is_empty()
+        || reason.chars().count() > 240
     {
         return Err(());
     }
     Ok(action)
 }
 
-fn parse_decision(content: &str, prompt_version: &str) -> Result<(&'static str, f64, f64, String, Option<String>), ()> {
+fn parse_decision(
+    content: &str,
+    prompt_version: &str,
+) -> Result<
+    (
+        &'static str,
+        f64,
+        f64,
+        String,
+        Option<String>,
+        Option<String>,
+    ),
+    (),
+> {
+    if prompt_version == PROMPT_V4_VERSION {
+        use std::str::FromStr;
+        let parsed: StructuredDecisionV4 = serde_json::from_str(content.trim()).map_err(|_| ())?;
+        let lifecycle =
+            crate::database::market_positions::LifecycleAction::from_str(&parsed.action)
+                .map_err(|_| ())?;
+        validate_fields(
+            lifecycle.internal_action(),
+            parsed.target_exposure_pct,
+            parsed.confidence,
+            &parsed.reason,
+        )?;
+        if !REASON_CODES_V4.contains(&parsed.reason_code.as_str()) {
+            return Err(());
+        }
+        return Ok((
+            lifecycle.internal_action(),
+            parsed.target_exposure_pct,
+            parsed.confidence,
+            parsed.reason.trim().into(),
+            Some(parsed.reason_code),
+            Some(lifecycle.as_str().into()),
+        ));
+    }
     if prompt_version == PROMPT_V3_VERSION {
         let parsed: StructuredDecisionV3 = serde_json::from_str(content.trim()).map_err(|_| ())?;
-        let action=validate_fields(&parsed.action,parsed.desired_position_pct,parsed.confidence,&parsed.reason)?;
-        if !REASON_CODES.contains(&parsed.reason_code.as_str()) { return Err(()); }
-        return Ok((action,parsed.desired_position_pct,parsed.confidence,parsed.reason.trim().into(),Some(parsed.reason_code)));
+        let action = validate_fields(
+            &parsed.action,
+            parsed.desired_position_pct,
+            parsed.confidence,
+            &parsed.reason,
+        )?;
+        if !REASON_CODES.contains(&parsed.reason_code.as_str()) {
+            return Err(());
+        }
+        return Ok((
+            action,
+            parsed.desired_position_pct,
+            parsed.confidence,
+            parsed.reason.trim().into(),
+            Some(parsed.reason_code),
+            None,
+        ));
     }
     let parsed: StructuredDecision = serde_json::from_str(content.trim()).map_err(|_| ())?;
-    let action=validate_fields(&parsed.action,parsed.desired_position_pct,parsed.confidence,&parsed.reason)?;
-    Ok((action,parsed.desired_position_pct,parsed.confidence,parsed.reason.trim().into(),None))
+    let action = validate_fields(
+        &parsed.action,
+        parsed.desired_position_pct,
+        parsed.confidence,
+        &parsed.reason,
+    )?;
+    Ok((
+        action,
+        parsed.desired_position_pct,
+        parsed.confidence,
+        parsed.reason.trim().into(),
+        None,
+        None,
+    ))
 }
 
 #[cfg(test)]
@@ -748,16 +880,19 @@ mod tests {
     fn rejects_invalid_schema_values_and_unknown_fields() {
         assert!(parse_decision("BUY EVERYTHING", PROMPT_VERSION).is_err());
         assert!(parse_decision(
-            r#"{"action":"WAIT","desired_position_pct":0,"confidence":1,"reason":"x"}"#
-        , PROMPT_VERSION)
+            r#"{"action":"WAIT","desired_position_pct":0,"confidence":1,"reason":"x"}"#,
+            PROMPT_VERSION
+        )
         .is_err());
         assert!(parse_decision(
-            r#"{"action":"BUY","desired_position_pct":-1,"confidence":2,"reason":"x"}"#
-        , PROMPT_VERSION)
+            r#"{"action":"BUY","desired_position_pct":-1,"confidence":2,"reason":"x"}"#,
+            PROMPT_VERSION
+        )
         .is_err());
         assert!(parse_decision(
-            r#"{"action":"HOLD","desired_position_pct":0,"confidence":1,"reason":"x","extra":1}"#
-        , PROMPT_VERSION)
+            r#"{"action":"HOLD","desired_position_pct":0,"confidence":1,"reason":"x","extra":1}"#,
+            PROMPT_VERSION
+        )
         .is_err());
     }
     #[test]
@@ -831,18 +966,53 @@ mod tests {
 
     #[test]
     fn v3_requires_a_controlled_reason_code() {
-        let valid=r#"{"action":"BUY","desired_position_pct":25,"confidence":0.73,"reason_code":"ALIGNED_BULLISH_SIGNAL","reason":"aligned"}"#;
-        assert_eq!(parse_decision(valid,PROMPT_V3_VERSION).unwrap().4.as_deref(),Some("ALIGNED_BULLISH_SIGNAL"));
-        assert!(parse_decision(&valid.replace("ALIGNED_BULLISH_SIGNAL","INVENTED"),PROMPT_V3_VERSION).is_err());
+        let valid = r#"{"action":"BUY","desired_position_pct":25,"confidence":0.73,"reason_code":"ALIGNED_BULLISH_SIGNAL","reason":"aligned"}"#;
+        assert_eq!(
+            parse_decision(valid, PROMPT_V3_VERSION)
+                .unwrap()
+                .4
+                .as_deref(),
+            Some("ALIGNED_BULLISH_SIGNAL")
+        );
+        assert!(parse_decision(
+            &valid.replace("ALIGNED_BULLISH_SIGNAL", "INVENTED"),
+            PROMPT_V3_VERSION
+        )
+        .is_err());
         assert!(parse_decision(r#"{"action":"BUY","desired_position_pct":101,"confidence":0.7,"reason_code":"ALIGNED_BULLISH_SIGNAL","reason":"x"}"#,PROMPT_V3_VERSION).is_err());
     }
 
     #[test]
+    fn v4_requires_lifecycle_action_and_total_target_exposure() {
+        let valid = r#"{"action":"ENTER_LONG","target_exposure_pct":25,"confidence":0.73,"reason_code":"ALIGNED_BULLISH_SIGNAL","reason":"aligned"}"#;
+        let parsed = parse_decision(valid, PROMPT_V4_VERSION).unwrap();
+        assert_eq!(parsed.0, "BUY");
+        assert_eq!(parsed.1, 25.0);
+        assert_eq!(parsed.5.as_deref(), Some("ENTER_LONG"));
+        assert!(parse_decision(&valid.replace("ENTER_LONG", "BUY"), PROMPT_V4_VERSION).is_err());
+        assert!(parse_decision(
+            r#"{"action":"EXIT_LONG","target_exposure_pct":101,"confidence":0.7,"reason_code":"EXIT_SIGNAL","reason":"x"}"#,
+            PROMPT_V4_VERSION
+        )
+        .is_err());
+    }
+
+    #[test]
     fn collapse_detectors_ignore_small_samples_and_detect_repetition() {
-        assert!(!detect_degeneration(&vec![("HOLD".into(),0.6);19]).action_collapse);
-        let collapsed=detect_degeneration(&vec![("HOLD".into(),0.6);20]);
-        assert!(collapsed.action_collapse);assert!(collapsed.confidence_collapse);
-        let diverse=(0..20).map(|index|(if index%2==0{"BUY"}else{"HOLD"}.into(),index as f64/20.0)).collect::<Vec<_>>();
-        let diagnostics=detect_degeneration(&diverse);assert!(!diagnostics.action_collapse);assert!(!diagnostics.confidence_collapse);
+        assert!(!detect_degeneration(&vec![("HOLD".into(), 0.6); 19]).action_collapse);
+        let collapsed = detect_degeneration(&vec![("HOLD".into(), 0.6); 20]);
+        assert!(collapsed.action_collapse);
+        assert!(collapsed.confidence_collapse);
+        let diverse = (0..20)
+            .map(|index| {
+                (
+                    if index % 2 == 0 { "BUY" } else { "HOLD" }.into(),
+                    index as f64 / 20.0,
+                )
+            })
+            .collect::<Vec<_>>();
+        let diagnostics = detect_degeneration(&diverse);
+        assert!(!diagnostics.action_collapse);
+        assert!(!diagnostics.confidence_collapse);
     }
 }

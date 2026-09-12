@@ -626,12 +626,24 @@ pub fn update_metrics(
     if input.reason.trim().is_empty() {
         return Err("Informe o motivo da atualização".into());
     }
-    let exists=connection.query_row("SELECT EXISTS(SELECT 1 FROM knowledge_areas WHERE id=?1)",[&input.knowledge_id],|row|row.get::<_,bool>(0)).map_err(err)?;
+    let exists = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM knowledge_areas WHERE id=?1)",
+            [&input.knowledge_id],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(err)?;
     if !exists {
         return Err("Área de conhecimento não encontrada".into());
     }
     let transaction = connection.transaction().map_err(err)?;
-    super::learning_engine::manual_adjustment(&transaction,&input.knowledge_id,input.coverage,input.depth,input.reason.trim())?;
+    super::learning_engine::manual_adjustment(
+        &transaction,
+        &input.knowledge_id,
+        input.coverage,
+        input.depth,
+        input.reason.trim(),
+    )?;
     transaction.commit().map_err(err)?;
     list_knowledge(connection)?
         .into_iter()
@@ -854,7 +866,7 @@ mod tests {
     fn seed_is_idempotent() {
         let mut connection = database();
         seed(&mut connection).unwrap();
-        assert_eq!(database::schema_version(&connection).unwrap(), 19);
+        assert_eq!(database::schema_version(&connection).unwrap(), 21);
         assert_eq!(
             connection
                 .query_row("SELECT COUNT(*) FROM projects", [], |row| row
