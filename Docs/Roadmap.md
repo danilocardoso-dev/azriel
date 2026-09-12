@@ -455,3 +455,16 @@ Status: 🧪 Implementada em 08/09/2026; validação operacional com AAPL 2022/2
 - execuções parciais permanecem separadas da contagem de lifecycles completos;
 - o Observatory mostra status, tabela, inspetor e timeline de posição;
 - V1, V2 e V3, Signal Engine V1, executor, portfólio e Scientific Validation permanecem preservados.
+
+## Market Lab v0.4.4 — Structured Output Reliability & Lifecycle Audit
+
+Status: 🧪 Implementada em 12/09/2026; validação operacional com AAPL 2022/2023 e Ollama pendente.
+
+- `AI Technical V4.1` usa contrato JSON estrito e structured output por capability do provider;
+- Normalizer, JSON Parser, Schema Validator, Semantic Validator e Position Validator geram estágios auditáveis;
+- uma tentativa inicial e no máximo um retry corretivo preservam raw output e causa detalhada da falha;
+- fallback é semântico e separado do LLM: STAY_FLAT quando FLAT e HOLD_POSITION na exposição atual quando LONG;
+- métricas distinguem first-pass valid, retry recovered, final valid/invalid, fallback e latências P50/P95;
+- Decision Inspector mostra tentativas e pipeline, sem solicitar ou armazenar chain-of-thought;
+- Lifecycle Audit separa eventos, execuções e ciclos completos, com MFE, MAE, giveback e eficiência de saída;
+- V1–V4, Signal Engine V1, Risk Engine, Portfolio Engine e lógica financeira permanecem preservados.

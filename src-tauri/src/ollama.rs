@@ -84,6 +84,25 @@ pub async fn chat(
     timeout_seconds: u64,
     generation_profile: &str,
 ) -> Result<OllamaChatResult, String> {
+    chat_with_format(
+        endpoint,
+        model,
+        messages,
+        timeout_seconds,
+        generation_profile,
+        None,
+    )
+    .await
+}
+
+pub async fn chat_with_format(
+    endpoint: &str,
+    model: &str,
+    messages: Vec<OllamaMessage>,
+    timeout_seconds: u64,
+    generation_profile: &str,
+    structured_output_schema: Option<serde_json::Value>,
+) -> Result<OllamaChatResult, String> {
     let endpoint = normalize_endpoint(endpoint)?;
     validate_model(model)?;
     if messages.is_empty() || messages.len() > 30 {
@@ -124,12 +143,16 @@ pub async fn chat(
         }),
         _ => return Err("Perfil de geração inválido para o AI Core".into()),
     };
+    let mut request_body = serde_json::json!({
+        "model": model.trim(), "messages": messages, "stream": false,
+        "options": options
+    });
+    if let Some(schema) = structured_output_schema {
+        request_body["format"] = schema;
+    }
     let response = client(timeout_seconds)?
         .post(format!("{endpoint}/api/chat"))
-        .json(&serde_json::json!({
-            "model": model.trim(), "messages": messages, "stream": false,
-            "options": options
-        }))
+        .json(&request_body)
         .send()
         .await
         .map_err(|error| {

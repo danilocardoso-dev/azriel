@@ -117,6 +117,44 @@ pub struct MarketAiRuntimeMetric {
     pub max_confidence: Option<f64>,
     pub median_confidence: Option<f64>,
     pub confidence_distribution: Vec<usize>,
+    pub first_pass_valid_count: usize,
+    pub retry_recovered_count: usize,
+    pub final_valid_count: usize,
+    pub final_invalid_count: usize,
+    pub system_fallback_count: usize,
+    pub first_attempt_average_latency_ms: f64,
+    pub retry_average_latency_ms: f64,
+    pub p50_latency_ms: u64,
+    pub p95_latency_ms: u64,
+    pub slow_call_count: usize,
+    pub first_pass_valid_rate_pct: f64,
+    pub retry_recovery_rate_pct: f64,
+    pub final_valid_rate_pct: f64,
+    pub fallback_rate_pct: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketAiValidationStageLog {
+    pub stage: String,
+    pub success: bool,
+    pub error_code: Option<String>,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketAiAttemptLog {
+    pub attempt_number: usize,
+    pub raw_response: Option<String>,
+    pub status: String,
+    pub error_type: Option<String>,
+    pub error_field: Option<String>,
+    pub error_value: Option<String>,
+    pub error_message: Option<String>,
+    pub normalized_from_wrapped_json: bool,
+    pub latency_ms: u64,
+    pub stages: Vec<MarketAiValidationStageLog>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -557,6 +595,9 @@ pub struct MarketAiDecisionLog {
     pub forward_return_10: Option<f64>,
     pub signal_disagreement: bool,
     pub lifecycle_action: Option<String>,
+    pub first_failure_type: Option<String>,
+    pub fallback_reason: Option<String>,
+    pub output_attempts: Vec<MarketAiAttemptLog>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -6,20 +6,23 @@ pub const AI_AGENT_ID: &str = "ai-technical-v1";
 pub const AI_AGENT_V2_ID: &str = "ai-technical-v2";
 pub const AI_AGENT_V3_ID: &str = "ai-technical-v3";
 pub const AI_AGENT_V4_ID: &str = "ai-technical-v4";
+pub const AI_AGENT_V4_1_ID: &str = "ai-technical-v4-1";
 pub const PROMPT_VERSION: &str = "MARKET_AI_AGENT_V1";
 pub const PROMPT_V2_VERSION: &str = "MARKET_AI_AGENT_V2";
 pub const PROMPT_V3_VERSION: &str = "MARKET_AI_AGENT_V3";
 pub const PROMPT_V4_VERSION: &str = "MARKET_AI_AGENT_V4";
+pub const PROMPT_V4_1_VERSION: &str = "MARKET_AI_AGENT_V4_1";
 pub const MAX_AI_AGENTS: usize = 1;
 pub const SYSTEM_PROMPT: &str = include_str!("../../prompts/market-lab-agent.txt");
 pub const SYSTEM_PROMPT_V2: &str = include_str!("../../prompts/market-lab-agent-v2.txt");
 pub const SYSTEM_PROMPT_V3: &str = include_str!("../../prompts/market-lab-agent-v3.txt");
 pub const SYSTEM_PROMPT_V4: &str = include_str!("../../prompts/market-lab-agent-v4.txt");
+pub const SYSTEM_PROMPT_V4_1: &str = include_str!("../../prompts/market-lab-agent-v4-1.txt");
 
 pub fn is_ai_agent(agent_id: &str) -> bool {
     matches!(
         agent_id,
-        AI_AGENT_ID | AI_AGENT_V2_ID | AI_AGENT_V3_ID | AI_AGENT_V4_ID
+        AI_AGENT_ID | AI_AGENT_V2_ID | AI_AGENT_V3_ID | AI_AGENT_V4_ID | AI_AGENT_V4_1_ID
     )
 }
 
@@ -29,6 +32,7 @@ pub fn prompt_for_version(version: &str) -> Option<&'static str> {
         PROMPT_V2_VERSION => Some(SYSTEM_PROMPT_V2),
         PROMPT_V3_VERSION => Some(SYSTEM_PROMPT_V3),
         PROMPT_V4_VERSION => Some(SYSTEM_PROMPT_V4),
+        PROMPT_V4_1_VERSION => Some(SYSTEM_PROMPT_V4_1),
         _ => None,
     }
 }
@@ -56,6 +60,7 @@ impl MarketAiConfig {
             AI_AGENT_V2_ID => PROMPT_V2_VERSION,
             AI_AGENT_V3_ID => PROMPT_V3_VERSION,
             AI_AGENT_V4_ID => PROMPT_V4_VERSION,
+            AI_AGENT_V4_1_ID => PROMPT_V4_1_VERSION,
             _ => PROMPT_VERSION,
         };
         if self.prompt_version != expected_prompt
@@ -226,6 +231,8 @@ pub struct MarketAiKeyFeatures {
 pub struct MarketAiPrompt {
     pub system: String,
     pub snapshot_json: String,
+    pub structured_output_schema: Option<serde_json::Value>,
+    pub retry_instruction: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -248,6 +255,10 @@ pub struct MarketAiProviderError {
 }
 
 pub trait MarketAiProvider: Send + Sync {
+    fn supports_structured_output(&self) -> bool {
+        false
+    }
+
     fn complete(
         &self,
         prompt: MarketAiPrompt,
@@ -280,26 +291,38 @@ impl OllamaMarketAiProvider {
 }
 
 impl MarketAiProvider for OllamaMarketAiProvider {
+    fn supports_structured_output(&self) -> bool {
+        true
+    }
+
     fn complete(
         &self,
         prompt: MarketAiPrompt,
         config: &MarketAiConfig,
     ) -> Result<MarketAiProviderResponse, MarketAiProviderError> {
-        let result = tauri::async_runtime::block_on(ollama::chat(
+        let mut messages = vec![
+            OllamaMessage {
+                role: "system".into(),
+                content: prompt.system,
+            },
+            OllamaMessage {
+                role: "user".into(),
+                content: prompt.snapshot_json,
+            },
+        ];
+        if let Some(instruction) = prompt.retry_instruction {
+            messages.push(OllamaMessage {
+                role: "user".into(),
+                content: instruction,
+            });
+        }
+        let result = tauri::async_runtime::block_on(ollama::chat_with_format(
             &self.endpoint,
             &config.model,
-            vec![
-                OllamaMessage {
-                    role: "system".into(),
-                    content: prompt.system,
-                },
-                OllamaMessage {
-                    role: "user".into(),
-                    content: prompt.snapshot_json,
-                },
-            ],
+            messages,
             config.timeout_ms.div_ceil(1000),
             "market-agent",
+            prompt.structured_output_schema,
         ))
         .map_err(|error| MarketAiProviderError {
             kind: if error.to_ascii_lowercase().contains("tempo limite") {
@@ -429,6 +452,16 @@ pub struct MarketAiRuntimeMetrics {
     pub sell_count: usize,
     pub llm_hold_count: usize,
     pub no_llm_call_count: usize,
+    pub first_pass_valid_count: usize,
+    pub retry_recovered_count: usize,
+    pub final_valid_count: usize,
+    pub final_invalid_count: usize,
+    pub system_fallback_count: usize,
+    pub first_attempt_total_latency_ms: u64,
+    pub retry_total_latency_ms: u64,
+    pub slow_call_count: usize,
+    #[serde(skip)]
+    decision_latency_values: Vec<u64>,
     #[serde(skip)]
     confidence_values: Vec<f64>,
     #[serde(skip)]
@@ -455,6 +488,16 @@ impl MarketAiRuntimeMetrics {
         self.sell_count += other.sell_count;
         self.llm_hold_count += other.llm_hold_count;
         self.no_llm_call_count += other.no_llm_call_count;
+        self.first_pass_valid_count += other.first_pass_valid_count;
+        self.retry_recovered_count += other.retry_recovered_count;
+        self.final_valid_count += other.final_valid_count;
+        self.final_invalid_count += other.final_invalid_count;
+        self.system_fallback_count += other.system_fallback_count;
+        self.first_attempt_total_latency_ms += other.first_attempt_total_latency_ms;
+        self.retry_total_latency_ms += other.retry_total_latency_ms;
+        self.slow_call_count += other.slow_call_count;
+        self.decision_latency_values
+            .extend(other.decision_latency_values.iter().copied());
         self.confidence_values
             .extend(other.confidence_values.iter().copied());
         self.buy_confidences
@@ -542,6 +585,28 @@ impl MarketAiRuntimeMetrics {
         }
         bins
     }
+
+    pub fn register_decision_latency(&mut self, latency_ms: u64) {
+        self.decision_latency_values.push(latency_ms);
+    }
+
+    pub fn p50_latency_ms(&self) -> u64 {
+        percentile(&self.decision_latency_values, 0.50)
+    }
+
+    pub fn p95_latency_ms(&self) -> u64 {
+        percentile(&self.decision_latency_values, 0.95)
+    }
+}
+
+fn percentile(values: &[u64], ratio: f64) -> u64 {
+    if values.is_empty() {
+        return 0;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_unstable();
+    let rank = ((sorted.len() as f64 * ratio).ceil() as usize).saturating_sub(1);
+    sorted[rank.min(sorted.len() - 1)]
 }
 
 fn average(values: &[f64]) -> Option<f64> {
@@ -573,6 +638,9 @@ pub struct MarketAiDecision {
     pub attempts: usize,
     pub fallback_used: bool,
     pub input_snapshot_json: Option<String>,
+    pub first_failure_type: Option<String>,
+    pub fallback_reason: Option<String>,
+    pub attempt_audits: Vec<crate::database::market_ai_reliability::DecisionAttemptAudit>,
     pub runtime: MarketAiRuntimeMetrics,
 }
 
@@ -597,6 +665,9 @@ impl MarketAIAgent {
             attempts: 0,
             fallback_used: false,
             input_snapshot_json: None,
+            first_failure_type: None,
+            fallback_reason: None,
+            attempt_audits: Vec::new(),
             runtime,
         }
     }
@@ -612,6 +683,8 @@ impl MarketAIAgent {
                 .unwrap_or(SYSTEM_PROMPT)
                 .into(),
             snapshot_json: snapshot_json.clone(),
+            structured_output_schema: None,
+            retry_instruction: None,
         };
         let mut runtime = MarketAiRuntimeMetrics::default();
         let mut final_status = "INVALID";
@@ -654,6 +727,9 @@ impl MarketAIAgent {
                                 attempts: runtime.call_count,
                                 fallback_used: false,
                                 input_snapshot_json: Some(snapshot_json),
+                                first_failure_type: None,
+                                fallback_reason: None,
+                                attempt_audits: Vec::new(),
                                 runtime,
                             };
                         }
@@ -693,6 +769,213 @@ impl MarketAIAgent {
             attempts: runtime.call_count,
             fallback_used: true,
             input_snapshot_json: Some(snapshot_json),
+            first_failure_type: None,
+            fallback_reason: Some("AI_OUTPUT_FALLBACK".into()),
+            attempt_audits: Vec::new(),
+            runtime,
+        }
+    }
+
+    pub fn decide_v4_1(
+        provider: &dyn MarketAiProvider,
+        snapshot: &MarketAiSnapshotV4,
+        config: &MarketAiConfig,
+    ) -> MarketAiDecision {
+        use crate::database::market_ai_reliability::{
+            self, DecisionAttemptAudit, DecisionValidationStage, InvalidOutputType,
+            SLOW_CALL_THRESHOLD_MS,
+        };
+
+        let snapshot_json = serde_json::to_string(snapshot).unwrap_or_else(|_| "{}".into());
+        let mut runtime = MarketAiRuntimeMetrics::default();
+        let mut audits = Vec::new();
+        let mut first_failure = None::<InvalidOutputType>;
+        let mut final_status = "INVALID";
+        let mut final_model = config.model.clone();
+
+        for attempt in 0..=config.max_retries {
+            if attempt > 0 {
+                runtime.retry_count += 1;
+            }
+            runtime.call_count += 1;
+            let prompt = MarketAiPrompt {
+                system: SYSTEM_PROMPT_V4_1.into(),
+                snapshot_json: snapshot_json.clone(),
+                structured_output_schema: provider
+                    .supports_structured_output()
+                    .then(market_ai_reliability::output_schema),
+                retry_instruction: (attempt > 0).then(|| {
+                    market_ai_reliability::retry_instruction(
+                        first_failure.unwrap_or(InvalidOutputType::UnknownInvalid),
+                    )
+                }),
+            };
+            let started = Instant::now();
+            let response = provider.complete(prompt, config);
+            let latency = started.elapsed().as_millis().min(u64::MAX as u128) as u64;
+            runtime.total_latency_ms += latency;
+            runtime.max_latency_ms = runtime.max_latency_ms.max(latency);
+            if attempt == 0 {
+                runtime.first_attempt_total_latency_ms += latency;
+            } else {
+                runtime.retry_total_latency_ms += latency;
+            }
+            if latency > SLOW_CALL_THRESHOLD_MS {
+                runtime.slow_call_count += 1;
+            }
+
+            match response {
+                Ok(response) => {
+                    final_model = response.model.clone();
+                    runtime.input_tokens = sum_optional(runtime.input_tokens, response.input_tokens);
+                    runtime.output_tokens = sum_optional(runtime.output_tokens, response.output_tokens);
+                    match market_ai_reliability::validate(
+                        &response.content,
+                        snapshot.position.state,
+                        snapshot.position.exposure_pct,
+                    ) {
+                        Ok(parsed) => {
+                            audits.push(DecisionAttemptAudit {
+                                attempt_number: attempt + 1,
+                                raw_response: Some(response.content),
+                                status: "VALID".into(),
+                                error_type: None,
+                                error_field: None,
+                                error_value: None,
+                                error_message: None,
+                                normalized_from_wrapped_json: parsed.normalized_from_wrapped_json,
+                                latency_ms: latency,
+                                stages: parsed.stages,
+                            });
+                            runtime.successful_call_count += 1;
+                            runtime.final_valid_count = 1;
+                            if attempt == 0 {
+                                runtime.first_pass_valid_count = 1;
+                            } else {
+                                runtime.retry_recovered_count = 1;
+                            }
+                            runtime.register_valid_decision(
+                                parsed.action.internal_action(),
+                                parsed.confidence,
+                            );
+                            runtime.register_decision_latency(runtime.total_latency_ms);
+                            runtime.average_latency_ms =
+                                runtime.total_latency_ms as f64 / runtime.call_count as f64;
+                            return MarketAiDecision {
+                                action: parsed.action.internal_action(),
+                                desired_position_pct: Some(parsed.target_exposure_pct),
+                                confidence: Some(parsed.confidence),
+                                reason: parsed.reason,
+                                reason_code: Some(parsed.reason_code),
+                                lifecycle_action: Some(parsed.action.as_str().into()),
+                                call_status: "VALID",
+                                provider: config.provider.clone(),
+                                model: final_model,
+                                prompt_version: config.prompt_version.clone(),
+                                latency_ms: runtime.total_latency_ms,
+                                attempts: runtime.call_count,
+                                fallback_used: false,
+                                input_snapshot_json: Some(snapshot_json),
+                                first_failure_type: first_failure.map(|value| value.as_str().into()),
+                                fallback_reason: None,
+                                attempt_audits: audits,
+                                runtime,
+                            };
+                        }
+                        Err(error) => {
+                            runtime.invalid_response_count += 1;
+                            first_failure.get_or_insert(error.error_type);
+                            final_status = "INVALID";
+                            let error_value = market_ai_reliability::audit_error_value(
+                                &response.content,
+                                error.error_field.as_deref(),
+                            );
+                            audits.push(DecisionAttemptAudit {
+                                attempt_number: attempt + 1,
+                                raw_response: Some(response.content),
+                                status: "INVALID".into(),
+                                error_type: Some(error.error_type.as_str().into()),
+                                error_field: error.error_field,
+                                error_value,
+                                error_message: Some(error.message),
+                                normalized_from_wrapped_json: error.normalized_from_wrapped_json,
+                                latency_ms: latency,
+                                stages: error.stages,
+                            });
+                        }
+                    }
+                }
+                Err(error) => {
+                    let message = if error.kind == MarketAiProviderErrorKind::Timeout {
+                        runtime.timeout_count += 1;
+                        final_status = "TIMEOUT";
+                        "O provider excedeu o tempo limite"
+                    } else {
+                        final_status = "OFFLINE";
+                        "O provider local está indisponível"
+                    };
+                    first_failure.get_or_insert(InvalidOutputType::ProviderError);
+                    audits.push(DecisionAttemptAudit {
+                        attempt_number: attempt + 1,
+                        raw_response: None,
+                        status: "PROVIDER_ERROR".into(),
+                        error_type: Some(InvalidOutputType::ProviderError.as_str().into()),
+                        error_field: None,
+                        error_value: None,
+                        error_message: Some(message.into()),
+                        normalized_from_wrapped_json: false,
+                        latency_ms: latency,
+                        stages: vec![DecisionValidationStage {
+                            stage: "PROVIDER".into(),
+                            success: false,
+                            error_code: Some(InvalidOutputType::ProviderError.as_str().into()),
+                            message: Some(message.into()),
+                        }],
+                    });
+                }
+            }
+        }
+
+        let fallback = if snapshot.position.state == crate::database::market_positions::PositionState::Flat {
+            crate::database::market_positions::LifecycleAction::StayFlat
+        } else {
+            crate::database::market_positions::LifecycleAction::HoldPosition
+        };
+        let fallback_target = if fallback == crate::database::market_positions::LifecycleAction::StayFlat {
+            0.0
+        } else {
+            snapshot.position.exposure_pct
+        };
+        runtime.fallback_count = 1;
+        runtime.system_fallback_count = 1;
+        runtime.final_invalid_count = 1;
+        runtime.register_decision_latency(runtime.total_latency_ms);
+        runtime.average_latency_ms = if runtime.call_count == 0 {
+            0.0
+        } else {
+            runtime.total_latency_ms as f64 / runtime.call_count as f64
+        };
+        let failure_name = first_failure
+            .map(InvalidOutputType::as_str)
+            .unwrap_or("UNKNOWN_INVALID");
+        MarketAiDecision {
+            action: fallback.internal_action(),
+            desired_position_pct: Some(fallback_target),
+            confidence: None,
+            reason: format!("Fallback semântico do sistema após {failure_name}"),
+            reason_code: None,
+            lifecycle_action: Some(fallback.as_str().into()),
+            call_status: final_status,
+            provider: config.provider.clone(),
+            model: final_model,
+            prompt_version: config.prompt_version.clone(),
+            latency_ms: runtime.total_latency_ms,
+            attempts: runtime.call_count,
+            fallback_used: true,
+            input_snapshot_json: Some(snapshot_json),
+            first_failure_type: Some(failure_name.into()),
+            fallback_reason: Some("AI_OUTPUT_FALLBACK".into()),
+            attempt_audits: audits,
             runtime,
         }
     }
@@ -995,6 +1278,127 @@ mod tests {
             PROMPT_V4_VERSION
         )
         .is_err());
+    }
+
+    fn config_v4_1() -> MarketAiConfig {
+        MarketAiConfig {
+            agent_id: AI_AGENT_V4_1_ID.into(),
+            provider: "ollama".into(),
+            model: "fake:test".into(),
+            prompt_version: PROMPT_V4_1_VERSION.into(),
+            temperature: 0.1,
+            decision_interval: 5,
+            timeout_ms: 5_000,
+            max_retries: 1,
+        }
+    }
+
+    fn snapshot_v4(
+        state: crate::database::market_positions::PositionState,
+        exposure_pct: f64,
+    ) -> MarketAiSnapshotV4 {
+        let signals = crate::database::market_signals::evaluate(
+            &crate::database::market_signals::MarketSignalInput::default(),
+            &crate::database::market_signals::SignalEngineConfig::default(),
+        )
+        .unwrap();
+        MarketAiSnapshotV4 {
+            market: MarketAiMarket {
+                timestamp: "T".into(),
+                asset: "TST".into(),
+                timeframe: "1D".into(),
+                price: 100.0,
+            },
+            signals,
+            regime: MarketAiRegime {
+                trend: "SIDEWAYS".into(),
+                volatility: "NORMAL".into(),
+                engine_version: "REGIME_ENGINE_V1".into(),
+            },
+            position: crate::database::market_positions::PositionContext {
+                state,
+                quantity: if exposure_pct > 0.0 { 1.0 } else { 0.0 },
+                exposure_pct,
+                entry_price: (exposure_pct > 0.0).then_some(95.0),
+                average_entry_price: (exposure_pct > 0.0).then_some(95.0),
+                current_price: 100.0,
+                unrealized_pnl_pct: (exposure_pct > 0.0).then_some(5.0),
+                holding_candles: if exposure_pct > 0.0 { 10 } else { 0 },
+                max_favorable_excursion_pct: None,
+                max_adverse_excursion_pct: None,
+                last_entry_timestamp: None,
+                last_exit_timestamp: None,
+                time_since_last_exit: None,
+                reentry_count: 0,
+            },
+            risk_context: MarketAiRiskContext {
+                max_position_pct: 50.0,
+                max_total_exposure_pct: 50.0,
+                allow_short: false,
+                allow_leverage: false,
+            },
+        }
+    }
+
+    #[test]
+    fn v4_1_structured_retry_recovers_and_separates_validity_metrics() {
+        let provider = FakeProvider {
+            responses: Mutex::new(vec![
+                ok("{ action: ENTER_LONG }"),
+                ok(r#"{"action":"ENTER_LONG","target_exposure_pct":25,"confidence":0.7,"reason_code":"ALIGNED_BULLISH_SIGNAL","reason":"aligned"}"#),
+            ]),
+        };
+        let result = MarketAIAgent::decide_v4_1(
+            &provider,
+            &snapshot_v4(crate::database::market_positions::PositionState::Flat, 0.0),
+            &config_v4_1(),
+        );
+        assert_eq!(result.lifecycle_action.as_deref(), Some("ENTER_LONG"));
+        assert!(!result.fallback_used);
+        assert_eq!(result.runtime.first_pass_valid_count, 0);
+        assert_eq!(result.runtime.retry_recovered_count, 1);
+        assert_eq!(result.runtime.final_valid_count, 1);
+        assert_eq!(result.runtime.final_invalid_count, 0);
+        assert_eq!(result.attempt_audits.len(), 2);
+        assert_eq!(result.first_failure_type.as_deref(), Some("INVALID_JSON"));
+    }
+
+    #[test]
+    fn v4_1_first_pass_valid_is_not_counted_as_retry_or_fallback() {
+        let provider = FakeProvider { responses: Mutex::new(vec![ok(r#"{"action":"STAY_FLAT","target_exposure_pct":0,"confidence":0.55,"reason_code":"INSUFFICIENT_SIGNAL","reason":"stay flat"}"#)]) };
+        let result = MarketAIAgent::decide_v4_1(&provider, &snapshot_v4(crate::database::market_positions::PositionState::Flat, 0.0), &config_v4_1());
+        assert_eq!(result.runtime.call_count, 1);
+        assert_eq!(result.runtime.first_pass_valid_count, 1);
+        assert_eq!(result.runtime.retry_recovered_count, 0);
+        assert_eq!(result.runtime.final_valid_count, 1);
+        assert_eq!(result.runtime.system_fallback_count, 0);
+    }
+
+    #[test]
+    fn v4_1_retry_failure_uses_flat_and_long_stateful_fallbacks() {
+        for (state, exposure, expected_action, expected_target) in [
+            (crate::database::market_positions::PositionState::Flat, 0.0, "STAY_FLAT", 0.0),
+            (crate::database::market_positions::PositionState::LongOpen, 37.0, "HOLD_POSITION", 37.0),
+        ] {
+            let provider = FakeProvider { responses: Mutex::new(vec![ok("invalid"), ok("invalid")]) };
+            let result = MarketAIAgent::decide_v4_1(&provider, &snapshot_v4(state, exposure), &config_v4_1());
+            assert_eq!(result.lifecycle_action.as_deref(), Some(expected_action));
+            assert_eq!(result.desired_position_pct, Some(expected_target));
+            assert_eq!(result.fallback_reason.as_deref(), Some("AI_OUTPUT_FALLBACK"));
+            assert_eq!(result.runtime.final_invalid_count, 1);
+            assert_eq!(result.runtime.system_fallback_count, 1);
+            assert_eq!(result.runtime.retry_count, 1);
+        }
+    }
+
+    #[test]
+    fn v4_1_latency_percentiles_are_deterministic() {
+        let mut metrics = MarketAiRuntimeMetrics::default();
+        for latency in [100, 200, 300, 400, 5_001] {
+            metrics.register_decision_latency(latency);
+        }
+        assert_eq!(metrics.p50_latency_ms(), 300);
+        assert_eq!(metrics.p95_latency_ms(), 5_001);
     }
 
     #[test]

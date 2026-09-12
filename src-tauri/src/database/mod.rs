@@ -8,6 +8,7 @@ pub mod engineering_models;
 pub mod engineering_repository;
 pub mod learning_engine;
 pub mod market_ai;
+pub mod market_ai_reliability;
 pub mod market_models;
 pub mod market_observatory;
 pub mod market_positions;
@@ -144,6 +145,16 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         21,
         "market_position_execution",
         include_str!("../../migrations/0021_market_position_execution.sql"),
+    ),
+    (
+        22,
+        "market_ai_reliability",
+        include_str!("../../migrations/0022_market_ai_reliability.sql"),
+    ),
+    (
+        23,
+        "market_ai_attempt_error_value",
+        include_str!("../../migrations/0023_market_ai_attempt_error_value.sql"),
     ),
 ];
 
@@ -946,5 +957,90 @@ mod tests {
             .unwrap();
         assert!(columns.iter().any(|column| column == "execution_id"));
         assert_eq!(connection.query_row("SELECT action FROM market_position_events WHERE lifecycle_id='migration-event'", [], |row| row.get::<_, String>(0)).unwrap(), "ENTER_LONG");
+    }
+
+    #[test]
+    fn migration_twenty_two_preserves_v4_and_adds_v4_1_reliability_audit() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 21).unwrap();
+        connection.execute(
+            "UPDATE market_ai_agent_configs SET decision_interval=7 WHERE agent_id='ai-technical-v4'",
+            [],
+        ).unwrap();
+
+        apply_migrations_through(&mut connection, 22).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 22);
+        assert_eq!(connection.query_row("SELECT decision_interval FROM market_ai_agent_configs WHERE agent_id='ai-technical-v4'", [], |row| row.get::<_, usize>(0)).unwrap(), 7);
+        assert_eq!(connection.query_row("SELECT prompt_version FROM market_ai_agent_configs WHERE agent_id='ai-technical-v4-1'", [], |row| row.get::<_, String>(0)).unwrap(), "MARKET_AI_AGENT_V4_1");
+        for table in ["market_ai_output_attempts", "market_ai_validation_stages"] {
+            assert_eq!(connection.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1", [table], |row| row.get::<_, usize>(0)).unwrap(), 1);
+        }
+        let decision_columns = connection.prepare("PRAGMA table_info(market_ai_decisions)").unwrap().query_map([], |row| row.get::<_, String>(1)).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+        assert!(decision_columns.iter().any(|column| column == "first_failure_type"));
+        assert!(decision_columns.iter().any(|column| column == "fallback_reason"));
+        let runtime_columns = connection.prepare("PRAGMA table_info(market_ai_runtime_metrics)").unwrap().query_map([], |row| row.get::<_, String>(1)).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+        assert!(runtime_columns.iter().any(|column| column == "first_pass_valid_count"));
+        assert!(runtime_columns.iter().any(|column| column == "p95_latency_ms"));
+    }
+
+    #[test]
+    fn migration_twenty_three_adds_error_value_without_losing_attempts() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 22).unwrap();
+        connection
+            .execute_batch(
+                "PRAGMA foreign_keys=OFF;
+                 INSERT INTO market_ai_output_attempts(
+                   decision_id, attempt_number, raw_response, status, error_type,
+                   error_field, error_message, normalized_from_wrapped_json, latency_ms
+                 ) VALUES(999, 1, '{\"action\":\"INVALID\"}', 'INVALID',
+                   'INVALID_ENUM', 'action', 'valor inválido', 0, 12);
+                 PRAGMA foreign_keys=ON;",
+            )
+            .unwrap();
+
+        let columns_before = connection
+            .prepare("PRAGMA table_info(market_ai_output_attempts)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(!columns_before.iter().any(|column| column == "error_value"));
+
+        apply_migrations_through(&mut connection, 23).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 23);
+        let columns_after = connection
+            .prepare("PRAGMA table_info(market_ai_output_attempts)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(columns_after.iter().any(|column| column == "error_value"));
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT status FROM market_ai_output_attempts WHERE decision_id=999",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+            "INVALID"
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT error_value FROM market_ai_output_attempts WHERE decision_id=999",
+                    [],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .unwrap(),
+            None
+        );
     }
 }

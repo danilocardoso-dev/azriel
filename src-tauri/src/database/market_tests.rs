@@ -171,6 +171,46 @@ fn fake_ai_v4_config() -> market_ai::MarketAiConfig {
     }
 }
 
+struct ReliabilityFakeProvider {
+    prompts: Mutex<Vec<market_ai::MarketAiPrompt>>,
+}
+impl market_ai::MarketAiProvider for ReliabilityFakeProvider {
+    fn supports_structured_output(&self) -> bool { true }
+
+    fn complete(
+        &self,
+        prompt: market_ai::MarketAiPrompt,
+        _: &market_ai::MarketAiConfig,
+    ) -> Result<market_ai::MarketAiProviderResponse, market_ai::MarketAiProviderError> {
+        let is_retry = prompt.retry_instruction.is_some();
+        let snapshot: serde_json::Value = serde_json::from_str(&prompt.snapshot_json).unwrap();
+        let state = snapshot.pointer("/position/state").and_then(|value| value.as_str()).unwrap_or("FLAT");
+        let exposure = snapshot.pointer("/position/exposurePct").and_then(|value| value.as_f64()).unwrap_or(0.0);
+        let content = if !is_retry {
+            "{ action: INVALID }".into()
+        } else if state == "FLAT" {
+            r#"{"action":"ENTER_LONG","target_exposure_pct":30,"confidence":0.7,"reason_code":"ALIGNED_BULLISH_SIGNAL","reason":"retry recovered"}"#.into()
+        } else {
+            format!(r#"{{"action":"HOLD_POSITION","target_exposure_pct":{exposure},"confidence":0.6,"reason_code":"POSITION_ALREADY_OPTIMAL","reason":"retry recovered"}}"#)
+        };
+        self.prompts.lock().unwrap().push(prompt);
+        Ok(market_ai::MarketAiProviderResponse { content, model: "fake:qwen-v4-1".into(), input_tokens: Some(40), output_tokens: Some(15) })
+    }
+}
+
+fn fake_ai_v4_1_config() -> market_ai::MarketAiConfig {
+    market_ai::MarketAiConfig {
+        agent_id: market_ai::AI_AGENT_V4_1_ID.into(),
+        provider: "ollama".into(),
+        model: "fake:qwen-v4-1".into(),
+        prompt_version: market_ai::PROMPT_V4_1_VERSION.into(),
+        temperature: 0.1,
+        decision_interval: 5,
+        timeout_ms: 5000,
+        max_retries: 1,
+    }
+}
+
 fn fixture_csv() -> String {
     let mut output = String::from("timestamp,open,high,low,close,volume\n");
     for day in 1..=30 {
@@ -1115,5 +1155,38 @@ fn ai_v4_manages_and_persists_a_complete_position_lifecycle() {
         .unwrap()
         .iter()
         .all(|prompt| prompt.system.contains("MARKET_AI_AGENT_V4")));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn ai_v4_1_persists_retry_stages_raw_output_and_reliability_metrics() {
+    let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let path = std::env::temp_dir().join(format!("azriel-market-ai-v4-1-{suffix}.csv"));
+    fs::write(&path, fixture_csv()).unwrap();
+    let mut connection = database();
+    let dataset = market_repository::import_dataset(&mut connection, &ImportMarketDatasetInput {
+        path: path.to_string_lossy().into_owned(), name: "Reliability fixture".into(), asset: "AAPL".into(), timeframe: "1D".into(), currency: Some("USD".into()),
+    }).unwrap();
+    let input = MarketExperimentInput {
+        name: "AI-RELIABILITY-PERSISTENCE".into(), dataset_id: dataset.id, risk_profile_id: "balanced-v1".into(),
+        agent_ids: vec!["cash".into(), "buy-hold".into(), "simple-trend".into(), market_ai::AI_AGENT_V4_1_ID.into()],
+        initial_capital: 10_000.0, random_seed: 42, fee_pct: 0.1, slippage_pct: 0.05,
+    };
+    let provider = ReliabilityFakeProvider { prompts: Mutex::new(Vec::new()) };
+    let result = market_repository::run_experiment_with_provider(&mut connection, &input, &provider, &fake_ai_v4_1_config()).unwrap();
+    let runtime = market_repository::list_ai_runtime(&connection, &result.experiment.id).unwrap().remove(0);
+    assert!(runtime.retry_recovered_count > 0);
+    assert_eq!(runtime.final_invalid_count, 0);
+    assert_eq!(runtime.final_valid_count, runtime.retry_recovered_count);
+    assert_eq!(runtime.system_fallback_count, 0);
+    let decisions = market_repository::list_ai_decisions(&connection, &result.experiment.id).unwrap();
+    let called = decisions.iter().filter(|item| item.call_status == "VALID").collect::<Vec<_>>();
+    assert!(!called.is_empty());
+    assert!(called.iter().all(|item| item.output_attempts.len() == 2));
+    assert!(called.iter().all(|item| item.output_attempts[0].raw_response.as_deref() == Some("{ action: INVALID }")));
+    assert!(called.iter().all(|item| item.output_attempts[0].error_type.as_deref() == Some("INVALID_JSON")));
+    let prompts = provider.prompts.lock().unwrap();
+    assert!(prompts.iter().all(|prompt| prompt.structured_output_schema.is_some()));
+    assert!(prompts.iter().any(|prompt| prompt.retry_instruction.is_some()));
     let _ = fs::remove_file(path);
 }
