@@ -468,3 +468,14 @@ Status: 🧪 Implementada em 12/09/2026; validação operacional com AAPL 2022/2
 - Decision Inspector mostra tentativas e pipeline, sem solicitar ou armazenar chain-of-thought;
 - Lifecycle Audit separa eventos, execuções e ciclos completos, com MFE, MAE, giveback e eficiência de saída;
 - V1–V4, Signal Engine V1, Risk Engine, Portfolio Engine e lógica financeira permanecem preservados.
+
+## Market Lab v0.4.4.1 — Contract Simplification & Position Context Fix
+
+Status: 🧪 Implementada em 12/09/2026; aceite operacional com AAPL 2022/2023 e Ollama pendente.
+
+- `AI Technical V4.2` recebe posição explícita e decide apenas `ENTER`, `HOLD`, `REDUCE` ou `EXIT`;
+- `confidence_pct` usa a faixa 0–100 e é normalizada internamente, eliminando a ambiguidade observada na V4.1;
+- `POSITION_SIZING_V1` converte intent em target determinístico antes do Risk Engine;
+- estado de posição inconsistente gera `POSITION_CONTEXT_ERROR` e não chama o LLM;
+- Inspector e comparação A/B mostram contexto, intent, target gerado, confiabilidade, fallback e latência;
+- V1–V4.1, Signal Engine V1, Risk Engine, execução, portfólio e validação científica permanecem preservados.

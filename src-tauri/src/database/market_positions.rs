@@ -5,8 +5,156 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 pub const POSITION_ENGINE_VERSION: &str = "POSITION_ENGINE_V1";
+pub const POSITION_SIZING_VERSION: &str = "POSITION_SIZING_V1";
 pub const RAPID_WINDOW_CANDLES: usize = 5;
 const EPSILON: f64 = 0.01;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum PositionIntent {
+    Enter,
+    Hold,
+    Reduce,
+    Exit,
+}
+
+impl PositionIntent {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Enter => "ENTER",
+            Self::Hold => "HOLD",
+            Self::Reduce => "REDUCE",
+            Self::Exit => "EXIT",
+        }
+    }
+}
+
+impl std::str::FromStr for PositionIntent {
+    type Err = ();
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "ENTER" => Ok(Self::Enter),
+            "HOLD" => Ok(Self::Hold),
+            "REDUCE" => Ok(Self::Reduce),
+            "EXIT" => Ok(Self::Exit),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PositionSizingConfig {
+    pub version: String,
+    pub default_entry_exposure_pct: f64,
+    pub default_increase_step_pct: f64,
+    pub default_reduce_step_pct: f64,
+}
+
+impl Default for PositionSizingConfig {
+    fn default() -> Self {
+        Self {
+            version: POSITION_SIZING_VERSION.into(),
+            default_entry_exposure_pct: 25.0,
+            default_increase_step_pct: 10.0,
+            default_reduce_step_pct: 15.0,
+        }
+    }
+}
+
+impl PositionSizingConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        let values = [
+            self.default_entry_exposure_pct,
+            self.default_increase_step_pct,
+            self.default_reduce_step_pct,
+        ];
+        if self.version != POSITION_SIZING_VERSION
+            || values
+                .iter()
+                .any(|value| !value.is_finite() || *value <= 0.0 || *value > 100.0)
+        {
+            return Err("configuração de sizing de posição inválida".into());
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GeneratedPositionDecision {
+    pub intent: PositionIntent,
+    pub lifecycle_action: LifecycleAction,
+    pub previous_exposure_pct: f64,
+    pub generated_target_exposure_pct: f64,
+    pub sizing_config_version: String,
+}
+
+pub fn intent_allowed(state: PositionState, intent: PositionIntent) -> bool {
+    match state {
+        PositionState::Flat => matches!(intent, PositionIntent::Enter | PositionIntent::Hold),
+        PositionState::LongOpen | PositionState::LongReduced => true,
+        PositionState::ExitPending => matches!(intent, PositionIntent::Hold),
+    }
+}
+
+pub fn generate_from_intent(
+    state: PositionState,
+    current_exposure_pct: f64,
+    intent: PositionIntent,
+    config: &PositionSizingConfig,
+) -> Result<GeneratedPositionDecision, String> {
+    config.validate()?;
+    if !current_exposure_pct.is_finite() || !(0.0..=100.0).contains(&current_exposure_pct) {
+        return Err("POSITION_CONTEXT_ERROR: exposição atual inválida".into());
+    }
+    if !intent_allowed(state, intent) {
+        return Err("INVALID_POSITION_INTENT".into());
+    }
+    let (lifecycle_action, target) = match (state, intent) {
+        (PositionState::Flat, PositionIntent::Enter) => {
+            (LifecycleAction::EnterLong, config.default_entry_exposure_pct)
+        }
+        (PositionState::Flat, PositionIntent::Hold) => (LifecycleAction::StayFlat, 0.0),
+        (PositionState::LongOpen | PositionState::LongReduced, PositionIntent::Enter)
+            if current_exposure_pct >= 100.0 - EPSILON =>
+        {
+            (LifecycleAction::HoldPosition, current_exposure_pct)
+        }
+        (PositionState::LongOpen | PositionState::LongReduced, PositionIntent::Enter) => (
+            LifecycleAction::IncreaseLong,
+            (current_exposure_pct + config.default_increase_step_pct).min(100.0),
+        ),
+        (PositionState::LongOpen | PositionState::LongReduced, PositionIntent::Hold) => {
+            (LifecycleAction::HoldPosition, current_exposure_pct)
+        }
+        (PositionState::LongOpen | PositionState::LongReduced, PositionIntent::Reduce)
+            if current_exposure_pct <= EPSILON * 2.0 =>
+        {
+            (LifecycleAction::HoldPosition, current_exposure_pct)
+        }
+        (PositionState::LongOpen | PositionState::LongReduced, PositionIntent::Reduce) => {
+            let reduction = config
+                .default_reduce_step_pct
+                .min(current_exposure_pct / 2.0);
+            (LifecycleAction::ReduceLong, current_exposure_pct - reduction)
+        }
+        (PositionState::LongOpen | PositionState::LongReduced, PositionIntent::Exit) => {
+            (LifecycleAction::ExitLong, 0.0)
+        }
+        (PositionState::ExitPending, PositionIntent::Hold) => {
+            (LifecycleAction::HoldPosition, current_exposure_pct)
+        }
+        _ => return Err("INVALID_POSITION_INTENT".into()),
+    };
+    Ok(GeneratedPositionDecision {
+        intent,
+        lifecycle_action,
+        previous_exposure_pct: current_exposure_pct,
+        generated_target_exposure_pct: target,
+        sizing_config_version: config.version.clone(),
+    })
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -543,6 +691,42 @@ pub fn load_report(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn v42_position_sizing_maps_intents_deterministically() {
+        let config = PositionSizingConfig::default();
+        let enter_flat = generate_from_intent(PositionState::Flat, 0.0, PositionIntent::Enter, &config).unwrap();
+        assert_eq!(enter_flat.lifecycle_action, LifecycleAction::EnterLong);
+        assert_eq!(enter_flat.generated_target_exposure_pct, 25.0);
+        let enter_long = generate_from_intent(PositionState::LongOpen, 25.0, PositionIntent::Enter, &config).unwrap();
+        assert_eq!(enter_long.lifecycle_action, LifecycleAction::IncreaseLong);
+        assert_eq!(enter_long.generated_target_exposure_pct, 35.0);
+        let hold = generate_from_intent(PositionState::LongOpen, 40.0, PositionIntent::Hold, &config).unwrap();
+        assert_eq!(hold.generated_target_exposure_pct, 40.0);
+        let reduce = generate_from_intent(PositionState::LongOpen, 40.0, PositionIntent::Reduce, &config).unwrap();
+        assert_eq!(reduce.lifecycle_action, LifecycleAction::ReduceLong);
+        assert_eq!(reduce.generated_target_exposure_pct, 25.0);
+        let exit = generate_from_intent(PositionState::LongOpen, 40.0, PositionIntent::Exit, &config).unwrap();
+        assert_eq!(exit.lifecycle_action, LifecycleAction::ExitLong);
+        assert_eq!(exit.generated_target_exposure_pct, 0.0);
+    }
+
+    #[test]
+    fn v42_flat_rejects_reduce_and_exit_and_reduce_never_becomes_exit() {
+        let config = PositionSizingConfig::default();
+        for intent in [PositionIntent::Reduce, PositionIntent::Exit] {
+            assert_eq!(
+                generate_from_intent(PositionState::Flat, 0.0, intent, &config).unwrap_err(),
+                "INVALID_POSITION_INTENT"
+            );
+        }
+        let reduced = generate_from_intent(PositionState::LongReduced, 10.0, PositionIntent::Reduce, &config).unwrap();
+        assert_eq!(reduced.generated_target_exposure_pct, 5.0);
+        let saturated = generate_from_intent(PositionState::LongOpen, 100.0, PositionIntent::Enter, &config).unwrap();
+        assert_eq!(saturated.lifecycle_action, LifecycleAction::HoldPosition);
+        let tiny = generate_from_intent(PositionState::LongReduced, 0.02, PositionIntent::Reduce, &config).unwrap();
+        assert_eq!(tiny.lifecycle_action, LifecycleAction::HoldPosition);
+    }
     #[test]
     fn validates_state_and_target_semantics() {
         assert!(

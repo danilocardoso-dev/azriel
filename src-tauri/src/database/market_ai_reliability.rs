@@ -28,6 +28,10 @@ pub enum InvalidOutputType {
     InvalidConfidence,
     InvalidTargetExposure,
     InvalidPositionAction,
+    InvalidIntent,
+    InvalidConfidencePct,
+    InvalidPositionIntent,
+    PositionContextError,
     SchemaTypeError,
     ExtraText,
     EmptyResponse,
@@ -45,6 +49,10 @@ impl InvalidOutputType {
             Self::InvalidConfidence => "INVALID_CONFIDENCE",
             Self::InvalidTargetExposure => "INVALID_TARGET_EXPOSURE",
             Self::InvalidPositionAction => "INVALID_POSITION_ACTION",
+            Self::InvalidIntent => "INVALID_INTENT",
+            Self::InvalidConfidencePct => "INVALID_CONFIDENCE_PCT",
+            Self::InvalidPositionIntent => "INVALID_POSITION_INTENT",
+            Self::PositionContextError => "POSITION_CONTEXT_ERROR",
             Self::SchemaTypeError => "SCHEMA_TYPE_ERROR",
             Self::ExtraText => "EXTRA_TEXT",
             Self::EmptyResponse => "EMPTY_RESPONSE",
@@ -89,6 +97,16 @@ pub fn audit_error_value(input: &str, field: Option<&str>) -> Option<String> {
 pub struct StructuredDecisionV41 {
     pub action: LifecycleAction,
     pub target_exposure_pct: f64,
+    pub confidence: f64,
+    pub reason_code: String,
+    pub reason: String,
+    pub normalized_from_wrapped_json: bool,
+    pub stages: Vec<DecisionValidationStage>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructuredDecisionV42 {
+    pub intent: market_positions::PositionIntent,
     pub confidence: f64,
     pub reason_code: String,
     pub reason: String,
@@ -150,6 +168,20 @@ pub fn output_schema() -> Value {
             "reason": { "type": "string", "minLength": 1, "maxLength": 240 }
         },
         "required": ["action", "target_exposure_pct", "confidence", "reason_code", "reason"]
+    })
+}
+
+pub fn output_schema_v4_2() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "intent": { "type": "string", "enum": ["ENTER", "HOLD", "REDUCE", "EXIT"] },
+            "confidence_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+            "reason_code": { "type": "string", "enum": REASON_CODES },
+            "reason": { "type": "string", "minLength": 1, "maxLength": 240 }
+        },
+        "required": ["intent", "confidence_pct", "reason_code", "reason"]
     })
 }
 
@@ -309,6 +341,76 @@ pub fn validate(
     })
 }
 
+pub fn validate_v4_2(
+    input: &str,
+    position_state: PositionState,
+) -> Result<StructuredDecisionV42, ValidationFailure> {
+    let (normalized_json, normalized) = extract_single_object(input)?;
+    let mut stages = vec![pass("NORMALIZER")];
+    let value: Value = serde_json::from_str(&normalized_json).map_err(|_| {
+        failure(
+            stages.clone(),
+            "JSON_PARSER",
+            InvalidOutputType::InvalidJson,
+            None,
+            "Falha ao interpretar JSON",
+            normalized,
+        )
+    })?;
+    let Some(object) = value.as_object() else {
+        return Err(failure(stages, "JSON_PARSER", InvalidOutputType::SchemaTypeError, None, "A raiz da resposta deve ser um objeto JSON", normalized));
+    };
+    stages.push(pass("JSON_PARSER"));
+
+    let allowed = ["intent", "confidence_pct", "reason_code", "reason"];
+    if let Some(extra) = object.keys().find(|key| !allowed.contains(&key.as_str())) {
+        return Err(failure(stages, "SCHEMA_VALIDATOR", InvalidOutputType::SchemaTypeError, Some(extra), format!("Campo não permitido: {extra}"), normalized));
+    }
+    let intent_value = required(object, "intent", &stages, normalized)?;
+    let confidence_value = required(object, "confidence_pct", &stages, normalized)?;
+    let reason_code_value = required(object, "reason_code", &stages, normalized)?;
+    let reason_value = required(object, "reason", &stages, normalized)?;
+    let Some(intent_name) = intent_value.as_str() else {
+        return Err(failure(stages, "SCHEMA_VALIDATOR", InvalidOutputType::SchemaTypeError, Some("intent"), "intent deve ser string", normalized));
+    };
+    let Some(confidence_pct) = confidence_value.as_f64() else {
+        return Err(failure(stages, "SCHEMA_VALIDATOR", InvalidOutputType::SchemaTypeError, Some("confidence_pct"), "confidence_pct deve ser number", normalized));
+    };
+    let Some(reason_code) = reason_code_value.as_str() else {
+        return Err(failure(stages, "SCHEMA_VALIDATOR", InvalidOutputType::SchemaTypeError, Some("reason_code"), "reason_code deve ser string", normalized));
+    };
+    let Some(reason) = reason_value.as_str() else {
+        return Err(failure(stages, "SCHEMA_VALIDATOR", InvalidOutputType::SchemaTypeError, Some("reason"), "reason deve ser string", normalized));
+    };
+    if reason.trim().is_empty() || reason.chars().count() > 240 {
+        return Err(failure(stages, "SCHEMA_VALIDATOR", InvalidOutputType::SchemaTypeError, Some("reason"), "reason deve conter entre 1 e 240 caracteres", normalized));
+    }
+    stages.push(pass("SCHEMA_VALIDATOR"));
+
+    let intent = market_positions::PositionIntent::from_str(intent_name).map_err(|_| {
+        failure(stages.clone(), "SEMANTIC_VALIDATOR", InvalidOutputType::InvalidIntent, Some("intent"), format!("Intent não permitido: {intent_name}"), normalized)
+    })?;
+    if !confidence_pct.is_finite() || !(0.0..=100.0).contains(&confidence_pct) {
+        return Err(failure(stages, "SEMANTIC_VALIDATOR", InvalidOutputType::InvalidConfidencePct, Some("confidence_pct"), "confidence_pct deve estar entre 0 e 100", normalized));
+    }
+    if !REASON_CODES.contains(&reason_code) {
+        return Err(failure(stages, "SEMANTIC_VALIDATOR", InvalidOutputType::InvalidReasonCode, Some("reason_code"), format!("reason_code não permitido: {reason_code}"), normalized));
+    }
+    stages.push(pass("SEMANTIC_VALIDATOR"));
+    if !market_positions::intent_allowed(position_state, intent) {
+        return Err(failure(stages, "POSITION_INTENT_VALIDATOR", InvalidOutputType::InvalidPositionIntent, Some("intent"), format!("{} não é permitido para o estado atual", intent.as_str()), normalized));
+    }
+    stages.push(pass("POSITION_INTENT_VALIDATOR"));
+    Ok(StructuredDecisionV42 {
+        intent,
+        confidence: confidence_pct / 100.0,
+        reason_code: reason_code.into(),
+        reason: reason.trim().into(),
+        normalized_from_wrapped_json: normalized,
+        stages,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -370,5 +472,46 @@ mod tests {
     fn schema_uses_the_canonical_reason_code_registry() {
         assert_eq!(output_schema()["properties"]["reason_code"]["enum"].as_array().unwrap().len(), REASON_CODES.len());
         assert_eq!(audit_error_value(r#"{"target_exposure_pct":"fifty"}"#, Some("target_exposure_pct")).as_deref(), Some("\"fifty\""));
+    }
+
+    fn valid_v42(intent: &str, confidence: &str) -> String {
+        format!(r#"{{"intent":"{intent}","confidence_pct":{confidence},"reason_code":"INSUFFICIENT_SIGNAL","reason":"controlled"}}"#)
+    }
+
+    #[test]
+    fn v42_accepts_percentage_confidence_and_normalizes_it() {
+        for confidence in ["0", "83", "100"] {
+            let parsed = validate_v4_2(&valid_v42("ENTER", confidence), PositionState::Flat).unwrap();
+            assert_eq!(parsed.confidence, confidence.parse::<f64>().unwrap() / 100.0);
+        }
+        for confidence in ["-1", "101"] {
+            assert_eq!(
+                validate_v4_2(&valid_v42("ENTER", confidence), PositionState::Flat).unwrap_err().error_type,
+                InvalidOutputType::InvalidConfidencePct
+            );
+        }
+    }
+
+    #[test]
+    fn v42_validates_intent_against_position_without_accepting_targets() {
+        assert!(validate_v4_2(&valid_v42("ENTER", "80"), PositionState::Flat).is_ok());
+        assert!(validate_v4_2(&valid_v42("HOLD", "80"), PositionState::Flat).is_ok());
+        for intent in ["REDUCE", "EXIT"] {
+            assert_eq!(
+                validate_v4_2(&valid_v42(intent, "80"), PositionState::Flat).unwrap_err().error_type,
+                InvalidOutputType::InvalidPositionIntent
+            );
+        }
+        for intent in ["ENTER", "HOLD", "REDUCE", "EXIT"] {
+            assert!(validate_v4_2(&valid_v42(intent, "80"), PositionState::LongOpen).is_ok());
+        }
+        assert_eq!(
+            validate_v4_2(&valid_v42("BUY", "80"), PositionState::Flat).unwrap_err().error_type,
+            InvalidOutputType::InvalidIntent
+        );
+        assert_eq!(
+            validate_v4_2(r#"{"intent":"ENTER","confidence_pct":80,"target_exposure_pct":25,"reason_code":"INSUFFICIENT_SIGNAL","reason":"x"}"#, PositionState::Flat).unwrap_err().error_type,
+            InvalidOutputType::SchemaTypeError
+        );
     }
 }

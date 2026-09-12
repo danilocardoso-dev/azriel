@@ -30,6 +30,7 @@ fn fake_ai_config() -> market_ai::MarketAiConfig {
         decision_interval: 5,
         timeout_ms: 5000,
         max_retries: 1,
+        position_sizing: Default::default(),
     }
 }
 
@@ -72,6 +73,7 @@ fn fake_ai_v2_config() -> market_ai::MarketAiConfig {
         decision_interval: 5,
         timeout_ms: 5000,
         max_retries: 1,
+        position_sizing: Default::default(),
     }
 }
 
@@ -123,6 +125,7 @@ fn fake_ai_v3_config() -> market_ai::MarketAiConfig {
         decision_interval: 5,
         timeout_ms: 5000,
         max_retries: 1,
+        position_sizing: Default::default(),
     }
 }
 
@@ -168,6 +171,7 @@ fn fake_ai_v4_config() -> market_ai::MarketAiConfig {
         decision_interval: 5,
         timeout_ms: 5000,
         max_retries: 1,
+        position_sizing: Default::default(),
     }
 }
 
@@ -208,6 +212,50 @@ fn fake_ai_v4_1_config() -> market_ai::MarketAiConfig {
         decision_interval: 5,
         timeout_ms: 5000,
         max_retries: 1,
+        position_sizing: Default::default(),
+    }
+}
+
+struct IntentContractFakeProvider {
+    prompts: Mutex<Vec<market_ai::MarketAiPrompt>>,
+}
+
+impl market_ai::MarketAiProvider for IntentContractFakeProvider {
+    fn supports_structured_output(&self) -> bool { true }
+
+    fn complete(
+        &self,
+        prompt: market_ai::MarketAiPrompt,
+        _: &market_ai::MarketAiConfig,
+    ) -> Result<market_ai::MarketAiProviderResponse, market_ai::MarketAiProviderError> {
+        let snapshot: serde_json::Value = serde_json::from_str(&prompt.snapshot_json).unwrap();
+        let state = snapshot.pointer("/position/state").and_then(|value| value.as_str()).unwrap();
+        let (intent, reason_code) = if state == "FLAT" {
+            ("ENTER", "ALIGNED_BULLISH_SIGNAL")
+        } else {
+            ("HOLD", "POSITION_ALREADY_OPTIMAL")
+        };
+        self.prompts.lock().unwrap().push(prompt);
+        Ok(market_ai::MarketAiProviderResponse {
+            content: format!(r#"{{"intent":"{intent}","confidence_pct":83,"reason_code":"{reason_code}","reason":"controlled intent"}}"#),
+            model: "fake:qwen-v4-2".into(),
+            input_tokens: Some(30),
+            output_tokens: Some(10),
+        })
+    }
+}
+
+fn fake_ai_v4_2_config() -> market_ai::MarketAiConfig {
+    market_ai::MarketAiConfig {
+        agent_id: market_ai::AI_AGENT_V4_2_ID.into(),
+        provider: "ollama".into(),
+        model: "fake:qwen-v4-2".into(),
+        prompt_version: market_ai::PROMPT_V4_2_VERSION.into(),
+        temperature: 0.1,
+        decision_interval: 5,
+        timeout_ms: 5000,
+        max_retries: 1,
+        position_sizing: Default::default(),
     }
 }
 
@@ -1188,5 +1236,44 @@ fn ai_v4_1_persists_retry_stages_raw_output_and_reliability_metrics() {
     let prompts = provider.prompts.lock().unwrap();
     assert!(prompts.iter().all(|prompt| prompt.structured_output_schema.is_some()));
     assert!(prompts.iter().any(|prompt| prompt.retry_instruction.is_some()));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn ai_v4_2_persists_explicit_position_intent_and_generated_target() {
+    let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let path = std::env::temp_dir().join(format!("azriel-market-ai-v4-2-{suffix}.csv"));
+    fs::write(&path, fixture_csv()).unwrap();
+    let mut connection = database();
+    let dataset = market_repository::import_dataset(&mut connection, &ImportMarketDatasetInput {
+        path: path.to_string_lossy().into_owned(), name: "Intent fixture".into(), asset: "AAPL".into(), timeframe: "1D".into(), currency: Some("USD".into()),
+    }).unwrap();
+    let input = MarketExperimentInput {
+        name: "AI-CONTRACT-FIX-PERSISTENCE".into(), dataset_id: dataset.id, risk_profile_id: "balanced-v1".into(),
+        agent_ids: vec!["cash".into(), "buy-hold".into(), "simple-trend".into(), market_ai::AI_AGENT_V4_2_ID.into()],
+        initial_capital: 10_000.0, random_seed: 42, fee_pct: 0.1, slippage_pct: 0.05,
+    };
+    let provider = IntentContractFakeProvider { prompts: Mutex::new(Vec::new()) };
+    let result = market_repository::run_experiment_with_provider(&mut connection, &input, &provider, &fake_ai_v4_2_config()).unwrap();
+    let decisions = market_repository::list_ai_decisions(&connection, &result.experiment.id).unwrap();
+    let called = decisions.iter().filter(|item| item.call_status == "VALID").collect::<Vec<_>>();
+    assert!(!called.is_empty());
+    assert!(called.iter().all(|item| matches!(item.intent.as_deref(), Some("ENTER" | "HOLD"))));
+    assert!(called.iter().all(|item| item.generated_target_exposure_pct.is_some()));
+    assert!(called.iter().all(|item| item.position_sizing_version.as_deref() == Some("POSITION_SIZING_V1")));
+    assert!(called.iter().all(|item| item.confidence == Some(0.83)));
+    assert!(called.iter().all(|item| item.input_snapshot.as_ref().and_then(|snapshot| snapshot.pointer("/position/state")).and_then(|value| value.as_str()).is_some_and(|state| state == "FLAT" || state == "LONG")));
+    let comparison = market_repository::list_ai_experiment_comparisons(&connection)
+        .unwrap()
+        .into_iter()
+        .find(|item| item.experiment_id == result.experiment.id)
+        .unwrap();
+    assert_eq!(comparison.final_invalid_count, 0);
+    assert!(comparison.final_valid_count > 0);
+    assert_eq!(comparison.system_fallback_count, 0);
+    assert_eq!(comparison.enter_count + comparison.intent_hold_count, comparison.final_valid_count);
+    assert!(comparison.average_generated_target_exposure_pct.is_some());
+    let prompts = provider.prompts.lock().unwrap();
+    assert!(prompts.iter().all(|prompt| prompt.structured_output_schema.as_ref().is_some_and(|schema| schema.pointer("/properties/target_exposure_pct").is_none())));
     let _ = fs::remove_file(path);
 }

@@ -597,6 +597,9 @@ pub struct MarketAiDecisionLog {
     pub lifecycle_action: Option<String>,
     pub first_failure_type: Option<String>,
     pub fallback_reason: Option<String>,
+    pub intent: Option<String>,
+    pub generated_target_exposure_pct: Option<f64>,
+    pub position_sizing_version: Option<String>,
     pub output_attempts: Vec<MarketAiAttemptLog>,
 }
 
@@ -629,6 +632,18 @@ pub struct MarketAiExperimentComparison {
     pub max_drawdown_pct: f64,
     pub average_exposure_pct: f64,
     pub average_latency_ms: f64,
+    pub max_latency_ms: u64,
+    pub p95_latency_ms: f64,
+    pub first_pass_valid_count: usize,
+    pub retry_recovered_count: usize,
+    pub final_valid_count: usize,
+    pub final_invalid_count: usize,
+    pub system_fallback_count: usize,
+    pub enter_count: usize,
+    pub intent_hold_count: usize,
+    pub reduce_count: usize,
+    pub exit_count: usize,
+    pub average_generated_target_exposure_pct: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -989,6 +989,33 @@ fn build_v4_snapshot(
     })
 }
 
+fn build_v4_2_snapshot(
+    dataset: &MarketDataset,
+    profile: &MarketRiskProfile,
+    candles: &[Candle],
+    index: usize,
+    run: &AgentRun,
+    equity_now: f64,
+    exposure_now: f64,
+) -> Result<market_ai::MarketAiSnapshotV42, String> {
+    let v4 = build_v4_snapshot(
+        dataset,
+        profile,
+        candles,
+        index,
+        run,
+        equity_now,
+        exposure_now,
+    )?;
+    Ok(market_ai::MarketAiSnapshotV42 {
+        market: v4.market,
+        signals: v4.signals,
+        regime: v4.regime,
+        position: market_ai::MarketAiPositionContextV42::from_position(&v4.position)?,
+        risk_context: v4.risk_context,
+    })
+}
+
 pub(crate) fn validate_input(
     connection: &Connection,
     input: &MarketExperimentInput,
@@ -1070,6 +1097,20 @@ pub(crate) fn resolve_ai_config(
         .cloned()
         .unwrap_or_else(|| market_ai::AI_AGENT_V2_ID.into());
     let(provider,default_model,prompt_version,temperature,decision_interval,default_timeout,max_retries):(String,String,String,f64,usize,u64,usize)=connection.query_row("SELECT provider,model,prompt_version,temperature,decision_interval,timeout_ms,max_retries FROM market_ai_agent_configs WHERE agent_id=?1",[&agent_id],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?))).map_err(|error|error.to_string())?;
+    let position_sizing = if prompt_version == market_ai::PROMPT_V4_2_VERSION {
+        connection.query_row(
+            "SELECT version,default_entry_exposure_pct,default_increase_step_pct,default_reduce_step_pct FROM market_position_sizing_configs WHERE version=?1",
+            [market_positions::POSITION_SIZING_VERSION],
+            |row| Ok(market_positions::PositionSizingConfig {
+                version: row.get(0)?,
+                default_entry_exposure_pct: row.get(1)?,
+                default_increase_step_pct: row.get(2)?,
+                default_reduce_step_pct: row.get(3)?,
+            }),
+        ).map_err(|error| error.to_string())?
+    } else {
+        market_positions::PositionSizingConfig::default()
+    };
     let config = market_ai::MarketAiConfig {
         agent_id,
         provider,
@@ -1083,6 +1124,7 @@ pub(crate) fn resolve_ai_config(
         decision_interval,
         timeout_ms: default_timeout.min((settings.timeout_seconds as u64) * 1000),
         max_retries,
+        position_sizing,
     };
     config.validate()?;
     Ok((config, settings.endpoint))
@@ -1231,7 +1273,23 @@ pub(crate) fn simulate_range_with_provider(
             let exp = exposure(&run.portfolio, candle.close);
             let ai = if market_ai::is_ai_agent(&run.id) {
                 let outcome = if (index - start) % ai_config.decision_interval == 0 {
-                    if ai_config.prompt_version == market_ai::PROMPT_V4_1_VERSION {
+                    if ai_config.prompt_version == market_ai::PROMPT_V4_2_VERSION {
+                        match build_v4_2_snapshot(
+                            dataset, profile, candles, index, run, before, exp,
+                        ) {
+                            Ok(snapshot) => market_ai::MarketAIAgent::decide_v4_2(
+                                provider,
+                                &snapshot,
+                                run.position_manager.state(),
+                                ai_config,
+                            ),
+                            Err(_) => market_ai::MarketAIAgent::position_context_error(
+                                ai_config,
+                                exp,
+                                run.position_manager.state() == market_positions::PositionState::Flat,
+                            ),
+                        }
+                    } else if ai_config.prompt_version == market_ai::PROMPT_V4_1_VERSION {
                         let snapshot =
                             build_v4_snapshot(dataset, profile, candles, index, run, before, exp)?;
                         market_ai::MarketAIAgent::decide_v4_1(provider, &snapshot, ai_config)
@@ -1312,7 +1370,9 @@ pub(crate) fn simulate_range_with_provider(
             let mut effective_lifecycle_action = None;
             if matches!(
                 ai_config.prompt_version.as_str(),
-                market_ai::PROMPT_V4_VERSION | market_ai::PROMPT_V4_1_VERSION
+                market_ai::PROMPT_V4_VERSION
+                    | market_ai::PROMPT_V4_1_VERSION
+                    | market_ai::PROMPT_V4_2_VERSION
             )
                 && run.id == ai_config.agent_id
             {
@@ -1547,7 +1607,7 @@ fn persist_run(
             tx.execute("INSERT INTO market_decisions(experiment_id,agent_id,candle_index,timestamp,observed_price,action,desired_position_pct,confidence,reasoning,cash_before,equity_before,exposure_before) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",params![experiment_id,run.id,d.candle_index,d.timestamp,d.observed_price,d.decision.action,d.decision.desired_pct,d.decision.confidence,d.decision.reasoning,d.cash_before,d.equity_before,d.exposure_before]).map_err(|e|e.to_string())?;
             let decision_id = tx.last_insert_rowid();
             if let Some(ai) = &d.ai {
-                tx.execute("INSERT INTO market_ai_decisions(decision_id,call_status,provider,model,prompt_version,latency_ms,attempts,fallback_used,reason_code,validation_code,first_failure_type,fallback_reason) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",params![decision_id,ai.call_status,ai.provider,ai.model,ai.prompt_version,ai.latency_ms,ai.attempts,ai.fallback_used,ai.reason_code,d.validation_code,ai.first_failure_type,ai.fallback_reason]).map_err(|e|e.to_string())?;
+                tx.execute("INSERT INTO market_ai_decisions(decision_id,call_status,provider,model,prompt_version,latency_ms,attempts,fallback_used,reason_code,validation_code,first_failure_type,fallback_reason,intent,generated_target_exposure_pct,position_sizing_version) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",params![decision_id,ai.call_status,ai.provider,ai.model,ai.prompt_version,ai.latency_ms,ai.attempts,ai.fallback_used,ai.reason_code,d.validation_code,ai.first_failure_type,ai.fallback_reason,ai.intent,ai.generated_target_exposure_pct,ai.position_sizing_version]).map_err(|e|e.to_string())?;
                 for attempt in &ai.attempt_audits {
                     tx.execute("INSERT INTO market_ai_output_attempts(decision_id,attempt_number,raw_response,status,error_type,error_field,error_value,error_message,normalized_from_wrapped_json,latency_ms) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",params![decision_id,attempt.attempt_number,attempt.raw_response,attempt.status,attempt.error_type,attempt.error_field,attempt.error_value,attempt.error_message,attempt.normalized_from_wrapped_json,attempt.latency_ms]).map_err(|e|e.to_string())?;
                     let attempt_id = tx.last_insert_rowid();
@@ -2016,7 +2076,7 @@ pub fn list_ai_decisions(
     connection: &Connection,
     experiment_id: &str,
 ) -> Result<Vec<MarketAiDecisionLog>, String> {
-    let mut statement=connection.prepare("SELECT d.id,d.timestamp,d.action,d.desired_position_pct,d.confidence,d.reasoning,r.result,r.reason,r.approved_position_pct,x.execution_price,a.call_status,a.provider,a.model,a.prompt_version,a.latency_ms,a.attempts,a.fallback_used,c.input_snapshot_json,v.forward_return_1,v.forward_return_5,v.forward_return_10,a.reason_code,a.validation_code,COALESCE(s.disagreement,0),a.lifecycle_action,a.first_failure_type,a.fallback_reason FROM market_decisions d JOIN market_risk_evaluations r ON r.decision_id=d.id JOIN market_ai_decisions a ON a.decision_id=d.id LEFT JOIN market_orders o ON o.decision_id=d.id LEFT JOIN market_executions x ON x.order_id=o.id LEFT JOIN market_ai_decision_context c ON c.decision_id=d.id LEFT JOIN market_ai_decision_evaluations v ON v.decision_id=d.id LEFT JOIN market_ai_signal_traces s ON s.decision_id=d.id WHERE d.experiment_id=?1 ORDER BY d.candle_index DESC LIMIT 1000").map_err(|error|error.to_string())?;
+    let mut statement=connection.prepare("SELECT d.id,d.timestamp,d.action,d.desired_position_pct,d.confidence,d.reasoning,r.result,r.reason,r.approved_position_pct,x.execution_price,a.call_status,a.provider,a.model,a.prompt_version,a.latency_ms,a.attempts,a.fallback_used,c.input_snapshot_json,v.forward_return_1,v.forward_return_5,v.forward_return_10,a.reason_code,a.validation_code,COALESCE(s.disagreement,0),a.lifecycle_action,a.first_failure_type,a.fallback_reason,a.intent,a.generated_target_exposure_pct,a.position_sizing_version FROM market_decisions d JOIN market_risk_evaluations r ON r.decision_id=d.id JOIN market_ai_decisions a ON a.decision_id=d.id LEFT JOIN market_orders o ON o.decision_id=d.id LEFT JOIN market_executions x ON x.order_id=o.id LEFT JOIN market_ai_decision_context c ON c.decision_id=d.id LEFT JOIN market_ai_decision_evaluations v ON v.decision_id=d.id LEFT JOIN market_ai_signal_traces s ON s.decision_id=d.id WHERE d.experiment_id=?1 ORDER BY d.candle_index DESC LIMIT 1000").map_err(|error|error.to_string())?;
     let rows = statement
         .query_map([experiment_id], |row| {
             let raw: Option<String> = row.get(17)?;
@@ -2048,6 +2108,9 @@ pub fn list_ai_decisions(
                 lifecycle_action: row.get(24)?,
                 first_failure_type: row.get(25)?,
                 fallback_reason: row.get(26)?,
+                intent: row.get(27)?,
+                generated_target_exposure_pct: row.get(28)?,
+                position_sizing_version: row.get(29)?,
                 output_attempts: load_ai_output_attempts(connection, row.get(0)?)?,
             })
         })
@@ -2059,7 +2122,38 @@ pub fn list_ai_decisions(
 pub fn list_ai_experiment_comparisons(
     connection: &Connection,
 ) -> Result<Vec<MarketAiExperimentComparison>, String> {
-    let mut statement=connection.prepare("SELECT e.id,e.name,e.dataset_id,d.name,e.risk_profile_id,e.initial_capital,e.random_seed,e.fee_pct,e.slippage_pct,e.config_json,r.agent_id,r.prompt_version,r.call_count,r.successful_call_count,r.invalid_response_count,r.timeout_count,r.buy_count,r.sell_count,r.llm_hold_count,m.trade_count,m.total_return_pct,m.max_drawdown_pct,m.average_exposure_pct,r.average_confidence,r.average_latency_ms FROM market_experiments e JOIN market_datasets d ON d.id=e.dataset_id JOIN market_ai_runtime_metrics r ON r.experiment_id=e.id JOIN market_agent_metrics m ON m.experiment_id=e.id AND m.agent_id=r.agent_id WHERE e.status='completed' ORDER BY e.created_at DESC").map_err(|error|error.to_string())?;
+    let mut statement = connection
+        .prepare(
+            "SELECT e.id,e.name,e.dataset_id,d.name,e.risk_profile_id,e.initial_capital,
+                    e.random_seed,e.fee_pct,e.slippage_pct,e.config_json,r.agent_id,
+                    r.prompt_version,r.call_count,r.successful_call_count,
+                    r.invalid_response_count,r.timeout_count,r.buy_count,r.sell_count,
+                    r.llm_hold_count,m.trade_count,m.total_return_pct,m.max_drawdown_pct,
+                    m.average_exposure_pct,r.average_confidence,r.average_latency_ms,
+                    r.first_pass_valid_count,r.retry_recovered_count,r.final_valid_count,
+                    r.final_invalid_count,r.system_fallback_count,r.p95_latency_ms,
+                    r.max_latency_ms,COALESCE(i.enter_count,0),COALESCE(i.hold_count,0),
+                    COALESCE(i.reduce_count,0),COALESCE(i.exit_count,0),
+                    i.average_generated_target_exposure_pct
+             FROM market_experiments e
+             JOIN market_datasets d ON d.id=e.dataset_id
+             JOIN market_ai_runtime_metrics r ON r.experiment_id=e.id
+             JOIN market_agent_metrics m ON m.experiment_id=e.id AND m.agent_id=r.agent_id
+             LEFT JOIN (
+                SELECT md.experiment_id,md.agent_id,
+                       SUM(CASE WHEN ad.intent='ENTER' THEN 1 ELSE 0 END) AS enter_count,
+                       SUM(CASE WHEN ad.intent='HOLD' THEN 1 ELSE 0 END) AS hold_count,
+                       SUM(CASE WHEN ad.intent='REDUCE' THEN 1 ELSE 0 END) AS reduce_count,
+                       SUM(CASE WHEN ad.intent='EXIT' THEN 1 ELSE 0 END) AS exit_count,
+                       AVG(ad.generated_target_exposure_pct) AS average_generated_target_exposure_pct
+                FROM market_decisions md
+                JOIN market_ai_decisions ad ON ad.decision_id=md.id
+                GROUP BY md.experiment_id,md.agent_id
+             ) i ON i.experiment_id=e.id AND i.agent_id=r.agent_id
+             WHERE e.status='completed'
+             ORDER BY e.created_at DESC",
+        )
+        .map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([], |row| {
             let config: String = row.get(9)?;
@@ -2100,6 +2194,18 @@ pub fn list_ai_experiment_comparisons(
                 average_exposure_pct: row.get(22)?,
                 average_confidence: row.get(23)?,
                 average_latency_ms: row.get(24)?,
+                first_pass_valid_count: row.get(25)?,
+                retry_recovered_count: row.get(26)?,
+                final_valid_count: row.get(27)?,
+                final_invalid_count: row.get(28)?,
+                system_fallback_count: row.get(29)?,
+                p95_latency_ms: row.get(30)?,
+                max_latency_ms: row.get(31)?,
+                enter_count: row.get(32)?,
+                intent_hold_count: row.get(33)?,
+                reduce_count: row.get(34)?,
+                exit_count: row.get(35)?,
+                average_generated_target_exposure_pct: row.get(36)?,
             })
         })
         .map_err(|error| error.to_string())?;

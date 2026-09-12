@@ -156,6 +156,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         "market_ai_attempt_error_value",
         include_str!("../../migrations/0023_market_ai_attempt_error_value.sql"),
     ),
+    (
+        24,
+        "market_ai_contract_v42",
+        include_str!("../../migrations/0024_market_ai_contract_v42.sql"),
+    ),
 ];
 
 pub fn open(path: &Path) -> Result<Connection, String> {
@@ -1042,5 +1047,32 @@ mod tests {
                 .unwrap(),
             None
         );
+    }
+
+    #[test]
+    fn migration_twenty_four_preserves_v4_1_and_adds_v4_2_contract() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 23).unwrap();
+        connection.execute(
+            "UPDATE market_ai_agent_configs SET decision_interval=7 WHERE agent_id='ai-technical-v4-1'",
+            [],
+        ).unwrap();
+
+        apply_migrations_through(&mut connection, 24).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 24);
+        assert_eq!(connection.query_row("SELECT decision_interval FROM market_ai_agent_configs WHERE agent_id='ai-technical-v4-1'", [], |row| row.get::<_, usize>(0)).unwrap(), 7);
+        assert_eq!(connection.query_row("SELECT prompt_version FROM market_ai_agent_configs WHERE agent_id='ai-technical-v4-2'", [], |row| row.get::<_, String>(0)).unwrap(), "MARKET_AI_AGENT_V4_2");
+        let sizing: (f64, f64, f64) = connection.query_row(
+            "SELECT default_entry_exposure_pct,default_increase_step_pct,default_reduce_step_pct FROM market_position_sizing_configs WHERE version='POSITION_SIZING_V1'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).unwrap();
+        assert_eq!(sizing, (25.0, 10.0, 15.0));
+        let columns = connection.prepare("PRAGMA table_info(market_ai_decisions)").unwrap().query_map([], |row| row.get::<_, String>(1)).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+        for expected in ["intent", "generated_target_exposure_pct", "position_sizing_version"] {
+            assert!(columns.iter().any(|column| column == expected));
+        }
     }
 }
