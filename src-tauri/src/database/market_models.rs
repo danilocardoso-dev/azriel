@@ -374,6 +374,95 @@ pub struct MarketPositionLifecycleReport {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct MarketIntradayFeatureTrace {
+    pub candle_index: usize,
+    pub timestamp_utc: String,
+    pub session_id: String,
+    pub session_phase: String,
+    pub session_progress: f64,
+    pub ready: bool,
+    pub features: serde_json::Value,
+    pub engine_version: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketIntradayStrategyDecision {
+    pub decision_id: i64,
+    pub candle_index: usize,
+    pub timestamp: String,
+    pub agent_id: String,
+    pub style: String,
+    pub intent: String,
+    pub reason_code: String,
+    pub reason: String,
+    pub indicators: serde_json::Value,
+    pub thresholds: serde_json::Value,
+    pub position_before: String,
+    pub generated_target_exposure_pct: f64,
+    pub risk_result: String,
+    pub execution_price: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketIntradayStrategyMetric {
+    pub agent_id: String,
+    pub style: String,
+    pub trend_entries: usize,
+    pub ema_cross_entries: usize,
+    pub average_trend_duration_minutes: f64,
+    pub breakout_attempts: usize,
+    pub breakout_entries: usize,
+    pub failed_breakouts: usize,
+    pub vwap_deviation_events: usize,
+    pub mean_reversion_entries: usize,
+    pub successful_reversions: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketSessionPhasePerformance {
+    pub agent_id: String,
+    pub session_phase: String,
+    pub trades: usize,
+    pub return_pct: f64,
+    pub win_rate_pct: f64,
+    pub average_pnl: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketHoldingTimeBucket {
+    pub agent_id: String,
+    pub bucket: String,
+    pub trade_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketIntradayAgentOverlap {
+    pub agent_a_id: String,
+    pub agent_b_id: String,
+    pub same_direction_decision_rate: f64,
+    pub same_entry_window_count: usize,
+    pub same_exit_window_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketIntradayStrategyReport {
+    pub feature_engine_version: String,
+    pub feature_traces: Vec<MarketIntradayFeatureTrace>,
+    pub decisions: Vec<MarketIntradayStrategyDecision>,
+    pub metrics: Vec<MarketIntradayStrategyMetric>,
+    pub phase_performance: Vec<MarketSessionPhasePerformance>,
+    pub holding_distribution: Vec<MarketHoldingTimeBucket>,
+    pub overlaps: Vec<MarketIntradayAgentOverlap>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MarketExperimentSummary {
     pub id: String,
     pub name: String,
@@ -412,6 +501,7 @@ pub struct MarketExperimentResult {
     pub position_lifecycle: MarketPositionLifecycleReport,
     pub trigger_audits: Vec<MarketDecisionTriggerAudit>,
     pub session_metrics: Vec<MarketSessionMetric>,
+    pub intraday_strategy: MarketIntradayStrategyReport,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

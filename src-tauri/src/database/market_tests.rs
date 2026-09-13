@@ -502,6 +502,72 @@ fn intraday_15m_import_replay_and_session_metrics_are_deterministic() {
 }
 
 #[test]
+fn intraday_strategy_lab_runs_520_candles_and_persists_auditable_distinct_styles() {
+    let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let path = std::env::temp_dir().join(format!("azriel-market-v051-{suffix}.csv"));
+    let mut csv = String::from("timestamp,open,high,low,close,volume\n");
+    let mut base = 100.0;
+    for day in 1..=28 {
+        if matches!(day, 3 | 4 | 10 | 11 | 17 | 18 | 24 | 25) { continue; }
+        for candle in 0..26 {
+            let minutes = 570 + candle * 15;
+            let wave = ((candle as f64 / 3.0).sin() * 0.7) + if day % 3 == 0 { -0.3 } else { 0.25 };
+            let close = base + wave;
+            let volume = 900.0 + candle as f64 * 25.0 + if candle % 8 == 0 { 900.0 } else { 0.0 };
+            csv.push_str(&format!("2026-01-{day:02} {:02}:{:02},{base},{},{},{close},{volume}\n",minutes/60,minutes%60,close.max(base)+0.45,close.min(base)-0.45));
+            base = close;
+        }
+    }
+    fs::write(&path, csv).unwrap();
+    let mut connection = database();
+    let dataset = market_repository::import_dataset(&mut connection, &ImportMarketDatasetInput { path:path.to_string_lossy().into_owned(),name:"AAPL 20 sessions".into(),asset:"AAPL".into(),timeframe:"15M".into(),currency:Some("USD".into()),market:Some("US_EQUITIES".into()),timezone:Some("America/New_York".into()),session_type:Some("REGULAR".into()) }).unwrap();
+    assert_eq!(dataset.candle_count, 520);
+    assert_eq!(dataset.session_count, 20);
+    let input=MarketExperimentInput{name:"INTRADAY STRATEGY LAB".into(),dataset_id:dataset.id.clone(),risk_profile_id:"balanced-v1".into(),agent_ids:vec!["intraday-trend-v1".into(),"intraday-momentum-v1".into(),"intraday-mean-reversion-v1".into()],initial_capital:10_000.0,random_seed:42,fee_pct:0.1,slippage_pct:0.05};
+    let result=market_repository::run_experiment_with_provider(&mut connection,&input,&market_ai::UnavailableMarketAiProvider,&fake_ai_v4_2_config()).unwrap();
+    assert_eq!(result.intraday_strategy.feature_traces.len(), 520);
+    assert_eq!(result.intraday_strategy.decisions.len(), 1_560);
+    assert_eq!(result.intraday_strategy.metrics.len(), 3);
+    assert_eq!(result.intraday_strategy.overlaps.len(), 3);
+    assert!(!result.intraday_strategy.holding_distribution.is_empty());
+    assert!(!result.intraday_strategy.phase_performance.is_empty());
+    assert!(result.intraday_strategy.decisions.iter().all(|item| !item.reason_code.is_empty() && item.thresholds.is_object() && item.indicators.is_object()));
+    let distributions=result.metrics.iter().map(|metric|(metric.agent_id.clone(),metric.trade_count,metric.hold_count)).collect::<Vec<_>>();
+    assert_eq!(distributions.len(),3);
+    assert!(distributions.windows(2).any(|pair| pair[0].1 != pair[1].1 || pair[0].2 != pair[1].2));
+    let frozen:String=connection.query_row("SELECT config_json FROM market_experiments WHERE id=?1",[&result.experiment.id],|row|row.get(0)).unwrap();
+    assert!(frozen.contains("INTRADAY_FEATURE_ENGINE_V1"));
+    assert!(result.intraday_strategy.decisions.iter().all(|item|matches!(item.risk_result.as_str(),"APPROVED"|"MODIFIED"|"REJECTED")));
+    let _=fs::remove_file(path);
+}
+
+#[test]
+fn intraday_agents_are_rejected_for_daily_datasets() {
+    let suffix=SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let path=std::env::temp_dir().join(format!("azriel-market-v051-daily-{suffix}.csv"));
+    fs::write(&path,fixture_csv()).unwrap();
+    let mut connection=database();
+    let dataset=market_repository::import_dataset(&mut connection,&ImportMarketDatasetInput{path:path.to_string_lossy().into_owned(),name:"Daily".into(),asset:"AAPL".into(),timeframe:"1D".into(),currency:Some("USD".into()),market:None,timezone:None,session_type:None}).unwrap();
+    let input=MarketExperimentInput{name:"INVALID INTRADAY".into(),dataset_id:dataset.id,risk_profile_id:"balanced-v1".into(),agent_ids:vec!["intraday-trend-v1".into(),"intraday-momentum-v1".into(),"intraday-mean-reversion-v1".into()],initial_capital:10_000.0,random_seed:42,fee_pct:0.1,slippage_pct:0.05};
+    let error=market_repository::validate_input(&connection,&input).unwrap_err();
+    assert!(error.contains("somente datasets 15M"));
+    let _=fs::remove_file(path);
+}
+
+#[test]
+fn volume_dependent_intraday_agents_reject_incomplete_ohlcv() {
+    let suffix=SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let path=std::env::temp_dir().join(format!("azriel-market-v051-no-volume-{suffix}.csv"));
+    fs::write(&path,"timestamp,open,high,low,close\n2026-01-05 09:30,100,101,99,100.5\n2026-01-05 09:45,100.5,102,100,101.5\n").unwrap();
+    let mut connection=database();
+    let dataset=market_repository::import_dataset(&mut connection,&ImportMarketDatasetInput{path:path.to_string_lossy().into_owned(),name:"No volume".into(),asset:"AAPL".into(),timeframe:"15M".into(),currency:Some("USD".into()),market:Some("US_EQUITIES".into()),timezone:Some("America/New_York".into()),session_type:Some("REGULAR".into())}).unwrap();
+    let input=MarketExperimentInput{name:"INVALID VOLUME".into(),dataset_id:dataset.id,risk_profile_id:"balanced-v1".into(),agent_ids:vec!["cash".into(),"intraday-trend-v1".into(),"intraday-momentum-v1".into()],initial_capital:10_000.0,random_seed:42,fee_pct:0.1,slippage_pct:0.05};
+    let error=market_repository::validate_input(&connection,&input).unwrap_err();
+    assert!(error.contains("exigem volume completo"));
+    let _=fs::remove_file(path);
+}
+
+#[test]
 fn six_agents_are_rejected_before_an_experiment_is_created() {
     let mut connection = database();
     let input = MarketExperimentInput {

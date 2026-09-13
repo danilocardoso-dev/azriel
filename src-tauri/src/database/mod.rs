@@ -9,6 +9,8 @@ pub mod engineering_repository;
 pub mod learning_engine;
 pub mod market_ai;
 pub mod market_ai_reliability;
+pub mod market_intraday;
+pub mod market_intraday_observatory;
 pub mod market_models;
 pub mod market_observatory;
 pub mod market_positions;
@@ -173,6 +175,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         26,
         "market_intraday_foundation",
         include_str!("../../migrations/0026_market_intraday_foundation.sql"),
+    ),
+    (
+        27,
+        "market_intraday_strategy_lab",
+        include_str!("../../migrations/0027_market_intraday_strategy_lab.sql"),
     ),
 ];
 
@@ -1220,6 +1227,30 @@ mod tests {
                     .unwrap(),
                 1
             );
+        }
+    }
+
+    #[test]
+    fn migration_twenty_seven_adds_versioned_intraday_strategies_without_data_loss() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 26).unwrap();
+        connection.execute("INSERT INTO market_datasets(id,name,asset,timeframe,start_at,end_at,candle_count,fingerprint,source_path) VALUES('keep-v051','Preservar v0.5','AAPL','15M','2026-01-01','2026-01-02',2,'keep-v051-fingerprint','fixture.csv')", []).unwrap();
+
+        apply_migrations_through(&mut connection, 27).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 27);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_datasets WHERE id='keep-v051'",[],|row|row.get::<_,usize>(0)).unwrap(),1);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_agents WHERE id LIKE 'intraday-%-v1'",[],|row|row.get::<_,usize>(0)).unwrap(),3);
+        for table in [
+            "market_intraday_feature_traces",
+            "market_intraday_strategy_decisions",
+            "market_intraday_strategy_metrics",
+            "market_session_phase_performance",
+            "market_holding_time_distribution",
+            "market_intraday_agent_overlap",
+        ] {
+            assert_eq!(connection.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",[table],|row|row.get::<_,usize>(0)).unwrap(),1);
         }
     }
 }

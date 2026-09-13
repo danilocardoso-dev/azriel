@@ -508,3 +508,16 @@ Status: 🧪 Implementada em 12/09/2026; validação operacional AAPL 15M/Ollama
 - lifecycles registram sessões, minutos de mercado e overnight;
 - Overview exibe métricas por sessão e Trigger Inspector paginado;
 - V1–V4.2, Signal Engine V1, Position Sizing V1, Risk Policy V2 e Scientific Validation permanecem preservados.
+
+## Market Lab v0.5.1 — Intraday Strategy Lab
+
+Status: 🧪 Implementada em 12/09/2026; validação operacional AAPL 15M e comparação com AI Technical V4.2 pendentes.
+
+- `INTRADAY_FEATURE_ENGINE_V1` calcula EMA 9/21 e inclinações, VWAP por sessão, RSI 14, ATR 14, volume relativo, máximas/mínimas anteriores e features normalizadas sem look-ahead;
+- `Intraday Trend`, `Intraday Momentum` e `Intraday Mean Reversion` usam contratos e configurações determinísticas versionadas;
+- cada estratégia retorna somente `ENTER`, `HOLD`, `REDUCE` ou `EXIT`, convertidos pelo mesmo Position Sizing V1;
+- seleção de agentes intraday é restrita a datasets `15M`; Momentum e Mean Reversion exigem OHLCV completo;
+- decisões persistem indicadores observados, thresholds congelados, posição anterior, motivo, target gerado, resultado do risco e execução;
+- Strategy Observatory compara estilo, fase da sessão, duração, overlap de direção/entrada/saída e mantém Feature/Strategy Inspectors paginados;
+- Risk Policy V2, Execution Model V1, Portfolio, Position Manager, Scientific Validation e AI Technical V4.2 permanecem separados e preservados;
+- testes automatizados usam provider falso e fixture sintética de 520 candles/20 sessões; não representam o aceite real AAPL/Ollama.
