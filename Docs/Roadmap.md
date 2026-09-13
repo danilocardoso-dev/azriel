@@ -493,3 +493,18 @@ Status: 🧪 Implementada em 12/09/2026; aceite operacional AAPL 2022/2023 pende
 - Decision Inspector mostra classificação, exposições, delta, matriz aplicada, resultado final e motivo exato;
 - comparação A/B inclui classes de risco, rejeições por operações, regras não aplicáveis, reduções e saídas executadas;
 - V4.2, Position Sizing V1, Signal Engine V1, Execution Simulator, Portfolio Engine e Scientific Validation permanecem preservados.
+
+## Market Lab v0.5 — Intraday Trading Foundation
+
+Status: 🧪 Implementada em 12/09/2026; validação operacional AAPL 15M/Ollama pendente.
+
+- o mesmo Market Lab aceita datasets `1D` e `15M` com metadados explícitos de mercado, timezone e sessão;
+- timestamps intraday são normalizados para UTC e associados a sessões configuradas;
+- gaps entre sessões são distinguidos de gaps intraday inesperados;
+- annualization é derivada do timeframe: 252 em `1D` e 6552 em `15M`;
+- `EXECUTION_MODEL_V1` preserva decisão no fechamento T e execução na abertura T+1;
+- `MARKET_DECISION_TRIGGER_V1` adiciona gatilhos, cooldown, compute budget e auditoria por candle;
+- perda diária usa sessão de mercado, mantendo as regras de `RISK_POLICY_V2`;
+- lifecycles registram sessões, minutos de mercado e overnight;
+- Overview exibe métricas por sessão e Trigger Inspector paginado;
+- V1–V4.2, Signal Engine V1, Position Sizing V1, Risk Policy V2 e Scientific Validation permanecem preservados.

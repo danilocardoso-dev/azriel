@@ -1,11 +1,11 @@
 use super::{
     ai_repository, market_ai, market_models::*, market_observatory, market_positions,
-    market_regimes, market_risk, market_signals,
+    market_regimes, market_risk, market_signals, market_time, market_triggers,
 };
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde_json::json;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fs,
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
@@ -26,6 +26,10 @@ pub fn kill_switch_active() -> bool {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Candle {
     pub(crate) timestamp: String,
+    pub(crate) timestamp_utc: String,
+    pub(crate) epoch_seconds: i64,
+    pub(crate) session_id: String,
+    pub(crate) session_state: String,
     pub(crate) open: f64,
     pub(crate) high: f64,
     pub(crate) low: f64,
@@ -90,6 +94,20 @@ pub(crate) struct AgentRun {
     position_manager: market_positions::PositionManager,
     risk_day: Option<String>,
     risk_day_start_equity: f64,
+    trigger_engine: market_triggers::MarketDecisionTriggerEngine,
+    trigger_audits: Vec<TriggerAuditRow>,
+}
+
+#[derive(Debug, Clone)]
+struct TriggerAuditRow {
+    candle_index: usize,
+    timestamp_utc: String,
+    session_id: String,
+    should_evaluate: bool,
+    trigger_reason: Option<String>,
+    skip_reason: Option<String>,
+    cooldown_remaining: usize,
+    call_index: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -175,6 +193,7 @@ fn split_csv(line: &str, delimiter: char) -> Result<Vec<String>, String> {
     Ok(result)
 }
 
+#[allow(dead_code)]
 fn timestamp_key(value: &str) -> Result<String, String> {
     let value = value.trim();
     if !value.is_empty() && value.chars().all(|c| c.is_ascii_digit()) {
@@ -223,7 +242,12 @@ fn timestamp_key(value: &str) -> Result<String, String> {
     ))
 }
 
-fn parse_csv(content: &str) -> Result<Vec<Candle>, String> {
+fn parse_csv_with_context(
+    content: &str,
+    timeframe: market_time::MarketTimeframe,
+    timezone: &str,
+    session_type: &str,
+) -> Result<(Vec<Candle>, market_time::DatasetContinuity), String> {
     let mut lines = content.lines().filter(|line| !line.trim().is_empty());
     let header_line = lines.next().ok_or("CSV vazio")?;
     let delimiter = if header_line.matches(';').count() > header_line.matches(',').count() {
@@ -253,8 +277,7 @@ fn parse_csv(content: &str) -> Result<Vec<Candle>, String> {
     let ci = index("close")?;
     let vi = normalized.iter().position(|h| h == "volume");
     let mut candles = Vec::new();
-    let mut previous = None;
-    let mut seen = HashSet::new();
+    let mut normalized_times = Vec::new();
     for (offset, line) in lines.enumerate() {
         let row = split_csv(line, delimiter)?;
         let row_number = offset + 2;
@@ -264,14 +287,8 @@ fn parse_csv(content: &str) -> Result<Vec<Candle>, String> {
                 .ok_or_else(|| format!("linha {row_number}: coluna ausente"))
         };
         let timestamp = get(ti)?.trim().to_string();
-        let key = timestamp_key(&timestamp).map_err(|e| format!("linha {row_number}: {e}"))?;
-        if !seen.insert(key.clone()) {
-            return Err(format!("linha {row_number}: timestamp duplicado"));
-        }
-        if previous.as_ref().is_some_and(|p: &String| key <= *p) {
-            return Err(format!("linha {row_number}: timestamps fora de ordem"));
-        }
-        previous = Some(key);
+        let normalized = market_time::normalize_timestamp(&timestamp, timeframe, timezone)
+            .map_err(|error| format!("linha {row_number}: {error}"))?;
         let number = |i| -> Result<f64, String> {
             get(i)?
                 .replace(',', ".")
@@ -299,17 +316,29 @@ fn parse_csv(content: &str) -> Result<Vec<Candle>, String> {
         }
         candles.push(Candle {
             timestamp,
+            timestamp_utc: normalized.utc.clone(),
+            epoch_seconds: normalized.epoch_seconds,
+            session_id: normalized.session_id.clone(),
+            session_state: normalized.session_state.clone(),
             open,
             high,
             low,
             close,
             volume,
         });
+        normalized_times.push(normalized);
     }
     if candles.is_empty() {
         return Err("dataset sem candles".into());
     }
-    Ok(candles)
+    let continuity = market_time::validate_continuity(&normalized_times, timeframe, session_type)?;
+    Ok((candles, continuity))
+}
+
+#[cfg(test)]
+fn parse_csv(content: &str) -> Result<Vec<Candle>, String> {
+    parse_csv_with_context(content, market_time::MarketTimeframe::Daily, "UTC", "DAILY")
+        .map(|value| value.0)
 }
 
 fn fingerprint(content: &str, asset: &str, timeframe: &str) -> String {
@@ -346,8 +375,57 @@ pub fn import_dataset(
     }
     let content =
         fs::read_to_string(path).map_err(|e| format!("não foi possível ler o CSV: {e}"))?;
-    let candles = parse_csv(&content)?;
-    let fp = fingerprint(&content, input.asset.trim(), input.timeframe.trim());
+    let timeframe = market_time::MarketTimeframe::parse_supported(&input.timeframe)?;
+    let market = input
+        .market
+        .as_deref()
+        .unwrap_or(
+            if timeframe == market_time::MarketTimeframe::FifteenMinutes {
+                market_time::DEFAULT_MARKET
+            } else {
+                "UNSPECIFIED"
+            },
+        )
+        .trim()
+        .to_ascii_uppercase();
+    let timezone = input
+        .timezone
+        .as_deref()
+        .unwrap_or(
+            if timeframe == market_time::MarketTimeframe::FifteenMinutes {
+                market_time::DEFAULT_TIMEZONE
+            } else {
+                "UTC"
+            },
+        )
+        .trim()
+        .to_string();
+    let session_type = input
+        .session_type
+        .as_deref()
+        .unwrap_or(
+            if timeframe == market_time::MarketTimeframe::FifteenMinutes {
+                market_time::DEFAULT_SESSION_TYPE
+            } else {
+                "DAILY"
+            },
+        )
+        .trim()
+        .to_ascii_uppercase();
+    let session_config = market_time::MarketSessionConfig::new(&market, &timezone, &session_type)?;
+    let market = session_config.market;
+    let timezone = session_config.timezone;
+    let session_type = session_config.session_type;
+    if timeframe == market_time::MarketTimeframe::FifteenMinutes && session_type != "REGULAR" {
+        return Err("a v0.5 aceita 15M somente na sessão REGULAR".into());
+    }
+    let (candles, continuity) =
+        parse_csv_with_context(&content, timeframe, &timezone, &session_type)?;
+    let fp = fingerprint(
+        &content,
+        input.asset.trim(),
+        &format!("{}|{market}|{timezone}|{session_type}", timeframe.as_str()),
+    );
     if let Some(existing) = connection
         .query_row(
             "SELECT id FROM market_datasets WHERE fingerprint=?1",
@@ -369,9 +447,9 @@ pub fn import_dataset(
     let start = candles[0].timestamp.clone();
     let end = candles.last().unwrap().timestamp.clone();
     let tx = connection.transaction().map_err(|e| e.to_string())?;
-    tx.execute("INSERT INTO market_datasets(id,name,asset,timeframe,currency,start_at,end_at,candle_count,fingerprint,source_path) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",params![id,input.name.trim(),input.asset.trim().to_ascii_uppercase(),input.timeframe.trim(),currency,start,end,candles.len(),fp,input.path]).map_err(|e|e.to_string())?;
+    tx.execute("INSERT INTO market_datasets(id,name,asset,timeframe,currency,start_at,end_at,candle_count,fingerprint,source_path,market,timezone,session_type,session_count,expected_gap_count,unexpected_gap_count) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",params![id,input.name.trim(),input.asset.trim().to_ascii_uppercase(),timeframe.as_str(),currency,start,end,candles.len(),fp,input.path,market,timezone,session_type,continuity.session_count,continuity.expected_gap_count,continuity.unexpected_gap_count]).map_err(|e|e.to_string())?;
     {
-        let mut statement=tx.prepare("INSERT INTO market_candles(dataset_id,candle_index,timestamp,open,high,low,close,volume) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)").map_err(|e|e.to_string())?;
+        let mut statement=tx.prepare("INSERT INTO market_candles(dataset_id,candle_index,timestamp,open,high,low,close,volume,timestamp_utc,session_id,session_state) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)").map_err(|e|e.to_string())?;
         for (index, c) in candles.iter().enumerate() {
             statement
                 .execute(params![
@@ -382,7 +460,10 @@ pub fn import_dataset(
                     c.high,
                     c.low,
                     c.close,
-                    c.volume
+                    c.volume,
+                    c.timestamp_utc,
+                    c.session_id,
+                    c.session_state
                 ])
                 .map_err(|e| e.to_string())?;
         }
@@ -404,10 +485,16 @@ fn map_dataset(row: &rusqlite::Row<'_>) -> rusqlite::Result<MarketDataset> {
         fingerprint: row.get(8)?,
         source_path: row.get(9)?,
         imported_at: row.get(10)?,
+        market: row.get(11)?,
+        timezone: row.get(12)?,
+        session_type: row.get(13)?,
+        session_count: row.get(14)?,
+        expected_gap_count: row.get(15)?,
+        unexpected_gap_count: row.get(16)?,
     })
 }
 pub fn list_datasets(connection: &Connection) -> Result<Vec<MarketDataset>, String> {
-    let mut s=connection.prepare("SELECT id,name,asset,timeframe,currency,start_at,end_at,candle_count,fingerprint,source_path,imported_at FROM market_datasets ORDER BY imported_at DESC").map_err(|e|e.to_string())?;
+    let mut s=connection.prepare("SELECT id,name,asset,timeframe,currency,start_at,end_at,candle_count,fingerprint,source_path,imported_at,market,timezone,session_type,session_count,expected_gap_count,unexpected_gap_count FROM market_datasets ORDER BY imported_at DESC").map_err(|e|e.to_string())?;
     let result = s
         .query_map([], map_dataset)
         .map_err(|e| e.to_string())?
@@ -416,7 +503,7 @@ pub fn list_datasets(connection: &Connection) -> Result<Vec<MarketDataset>, Stri
     result
 }
 fn get_dataset(connection: &Connection, id: &str) -> Result<MarketDataset, String> {
-    connection.query_row("SELECT id,name,asset,timeframe,currency,start_at,end_at,candle_count,fingerprint,source_path,imported_at FROM market_datasets WHERE id=?1",[id],map_dataset).optional().map_err(|e|e.to_string())?.ok_or("dataset não encontrado".into())
+    connection.query_row("SELECT id,name,asset,timeframe,currency,start_at,end_at,candle_count,fingerprint,source_path,imported_at,market,timezone,session_type,session_count,expected_gap_count,unexpected_gap_count FROM market_datasets WHERE id=?1",[id],map_dataset).optional().map_err(|e|e.to_string())?.ok_or("dataset não encontrado".into())
 }
 
 pub fn list_agents(connection: &Connection) -> Result<Vec<MarketAgentDefinition>, String> {
@@ -462,11 +549,31 @@ pub fn list_risk_profiles(connection: &Connection) -> Result<Vec<MarketRiskProfi
 }
 
 fn load_candles(connection: &Connection, dataset_id: &str) -> Result<Vec<Candle>, String> {
-    let mut s=connection.prepare("SELECT timestamp,open,high,low,close,volume FROM market_candles WHERE dataset_id=?1 ORDER BY candle_index").map_err(|e|e.to_string())?;
+    let dataset = get_dataset(connection, dataset_id)?;
+    let timeframe = market_time::MarketTimeframe::parse_supported(&dataset.timeframe)?;
+    let mut s=connection.prepare("SELECT timestamp,open,high,low,close,volume,timestamp_utc,session_id,session_state FROM market_candles WHERE dataset_id=?1 ORDER BY candle_index").map_err(|e|e.to_string())?;
     let result = s
         .query_map([dataset_id], |r| {
+            let timestamp: String = r.get(0)?;
+            let normalized =
+                market_time::normalize_timestamp(&timestamp, timeframe, &dataset.timezone)
+                    .map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            0,
+                            rusqlite::types::Type::Text,
+                            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, error)),
+                        )
+                    })?;
             Ok(Candle {
-                timestamp: r.get(0)?,
+                timestamp,
+                timestamp_utc: r.get::<_, Option<String>>(6)?.unwrap_or(normalized.utc),
+                epoch_seconds: normalized.epoch_seconds,
+                session_id: r
+                    .get::<_, Option<String>>(7)?
+                    .unwrap_or(normalized.session_id),
+                session_state: r
+                    .get::<_, Option<String>>(8)?
+                    .unwrap_or(normalized.session_state),
                 open: r.get(1)?,
                 high: r.get(2)?,
                 low: r.get(3)?,
@@ -778,7 +885,11 @@ fn evaluate_risk(
     let current = exposure(p, price);
     let target = decision
         .desired_pct
-        .unwrap_or(if decision.action == "SELL" { 0.0 } else { current })
+        .unwrap_or(if decision.action == "SELL" {
+            0.0
+        } else {
+            current
+        })
         .clamp(0.0, 100.0);
     let current_equity = equity(p, price);
     let drawdown_pct = if p.peak_equity > 0.0 {
@@ -1165,6 +1276,8 @@ pub(crate) fn simulate_range_with_provider(
             position_manager: Default::default(),
             risk_day: None,
             risk_day_start_equity: round(input.initial_capital),
+            trigger_engine: Default::default(),
+            trigger_audits: Vec::new(),
         })
         .collect();
     for index in start..=end {
@@ -1174,12 +1287,7 @@ pub(crate) fn simulate_range_with_provider(
             if run.status != "completed" {
                 continue;
             }
-            let risk_day = candle
-                .timestamp
-                .split(['T', ' '])
-                .next()
-                .unwrap_or(&candle.timestamp)
-                .to_string();
+            let risk_day = candle.session_id.clone();
             if run.risk_day.as_deref() != Some(risk_day.as_str()) {
                 run.risk_day = Some(risk_day);
                 run.risk_day_start_equity = run
@@ -1280,7 +1388,68 @@ pub(crate) fn simulate_range_with_provider(
             run.portfolio.peak_equity = run.portfolio.peak_equity.max(before);
             let exp = exposure(&run.portfolio, candle.close);
             let ai = if market_ai::is_ai_agent(&run.id) {
-                let outcome = if (index - start) % ai_config.decision_interval == 0 {
+                let event_driven = dataset.timeframe == "15M"
+                    && ai_config.prompt_version == market_ai::PROMPT_V4_2_VERSION;
+                let trigger = if event_driven {
+                    let bias = match (features.sma_short, features.sma_long) {
+                        (Some(short), Some(long)) if short > long => "BULLISH",
+                        (Some(short), Some(long)) if short < long => "BEARISH",
+                        _ => "NEUTRAL",
+                    };
+                    let strength = match features.momentum.map(f64::abs) {
+                        Some(value) if value >= 0.03 => "HIGH",
+                        Some(value) if value >= 0.01 => "MEDIUM",
+                        _ => "LOW",
+                    };
+                    let regime = match features.volatility {
+                        Some(value) if value >= 0.025 => "HIGH_VOLATILITY",
+                        Some(value) if value <= 0.005 => "LOW_VOLATILITY",
+                        _ => "NORMAL",
+                    };
+                    let conflict = matches!((bias, features.returns), ("BULLISH", Some(value)) if value < 0.0)
+                        || matches!((bias, features.returns), ("BEARISH", Some(value)) if value > 0.0);
+                    let risk_state = if before
+                        <= run.risk_day_start_equity * (1.0 - profile.max_daily_loss_pct / 100.0)
+                    {
+                        "DAILY_LOSS"
+                    } else if run.max_drawdown >= profile.max_drawdown_pct {
+                        "DRAWDOWN"
+                    } else {
+                        "NORMAL"
+                    };
+                    run.trigger_engine.should_evaluate(
+                        &market_triggers::TriggerSnapshot {
+                            candle_index: index - start,
+                            session_id: &candle.session_id,
+                            bias,
+                            strength_bucket: strength,
+                            regime,
+                            conflict,
+                            position_risk_state: risk_state,
+                        },
+                        &market_triggers::DecisionTriggerConfig::default(),
+                    )
+                } else {
+                    let should_evaluate = (index - start) % ai_config.decision_interval == 0;
+                    market_triggers::TriggerDecision {
+                        should_evaluate,
+                        trigger_reason: should_evaluate.then_some("LEGACY_CADENCE"),
+                        skip_reason: (!should_evaluate).then_some("CADENCE"),
+                        cooldown_remaining: 0,
+                        call_index: should_evaluate.then_some(run.ai_runtime.call_count + 1),
+                    }
+                };
+                run.trigger_audits.push(TriggerAuditRow {
+                    candle_index: index,
+                    timestamp_utc: candle.timestamp_utc.clone(),
+                    session_id: candle.session_id.clone(),
+                    should_evaluate: trigger.should_evaluate,
+                    trigger_reason: trigger.trigger_reason.map(str::to_string),
+                    skip_reason: trigger.skip_reason.map(str::to_string),
+                    cooldown_remaining: trigger.cooldown_remaining,
+                    call_index: trigger.call_index,
+                });
+                let outcome = if trigger.should_evaluate {
                     if ai_config.prompt_version == market_ai::PROMPT_V4_2_VERSION {
                         match build_v4_2_snapshot(
                             dataset, profile, candles, index, run, before, exp,
@@ -1294,7 +1463,8 @@ pub(crate) fn simulate_range_with_provider(
                             Err(_) => market_ai::MarketAIAgent::position_context_error(
                                 ai_config,
                                 exp,
-                                run.position_manager.state() == market_positions::PositionState::Flat,
+                                run.position_manager.state()
+                                    == market_positions::PositionState::Flat,
                             ),
                         }
                     } else if ai_config.prompt_version == market_ai::PROMPT_V4_1_VERSION {
@@ -1381,8 +1551,7 @@ pub(crate) fn simulate_range_with_provider(
                 market_ai::PROMPT_V4_VERSION
                     | market_ai::PROMPT_V4_1_VERSION
                     | market_ai::PROMPT_V4_2_VERSION
-            )
-                && run.id == ai_config.agent_id
+            ) && run.id == ai_config.agent_id
             {
                 let requested = ai
                     .as_ref()
@@ -1427,8 +1596,7 @@ pub(crate) fn simulate_range_with_provider(
                 && run.portfolio.quantity <= 0.0
                 && !profile.allow_short;
             let daily_loss_pct = if run.risk_day_start_equity > 0.0 {
-                ((run.risk_day_start_equity - before) / run.risk_day_start_equity * 100.0)
-                    .max(0.0)
+                ((run.risk_day_start_equity - before) / run.risk_day_start_equity * 100.0).max(0.0)
             } else {
                 0.0
             };
@@ -1571,13 +1739,22 @@ pub(crate) fn run_experiment_with_provider(
 ) -> Result<MarketExperimentResult, String> {
     let (dataset, profile, agents, candles) = validate_input(connection, input)?;
     let id = new_id("experiment");
+    let timeframe = market_time::MarketTimeframe::parse_supported(&dataset.timeframe)?;
+    let annualization_factor = timeframe.annualization_factor();
+    let trigger_config = market_triggers::DecisionTriggerConfig::default();
+    trigger_config.validate()?;
+    let event_driven =
+        dataset.timeframe == "15M" && ai_config.prompt_version == market_ai::PROMPT_V4_2_VERSION;
     let signal_config = market_signals::SignalEngineConfig::default();
     let signal_aware = matches!(
         ai_config.prompt_version.as_str(),
-        market_ai::PROMPT_V3_VERSION | market_ai::PROMPT_V4_VERSION
+        market_ai::PROMPT_V3_VERSION
+            | market_ai::PROMPT_V4_VERSION
+            | market_ai::PROMPT_V4_1_VERSION
+            | market_ai::PROMPT_V4_2_VERSION
     );
-    let config = json!({"datasetFingerprint":dataset.fingerprint,"agentIds":input.agent_ids,"riskProfile":profile,"initialCapital":round(input.initial_capital),"randomSeed":input.random_seed,"feePct":input.fee_pct,"slippagePct":input.slippage_pct,"executionTiming":"decision-close-T/execution-open-T+1","precisionScale":6,"maxConcurrentAgents":MAX_CONCURRENT_AGENTS,"aiConfig":ai_config,"signalEngineVersion":signal_aware.then_some(market_signals::SIGNAL_ENGINE_VERSION),"signalConfig":signal_aware.then_some(signal_config),"positionEngineVersion":(ai_config.prompt_version==market_ai::PROMPT_V4_VERSION).then_some(market_positions::POSITION_ENGINE_VERSION)});
-    connection.execute("INSERT INTO market_experiments(id,name,dataset_id,asset,timeframe,currency,initial_capital,risk_profile_id,random_seed,fee_pct,slippage_pct,config_json,status,started_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'running',CURRENT_TIMESTAMP)",params![id,input.name.trim(),dataset.id,dataset.asset,dataset.timeframe,dataset.currency,round(input.initial_capital),profile.id,input.random_seed as i64,input.fee_pct,input.slippage_pct,config.to_string()]).map_err(|e|e.to_string())?;
+    let config = json!({"datasetFingerprint":dataset.fingerprint,"agentIds":input.agent_ids,"riskProfile":profile,"initialCapital":round(input.initial_capital),"randomSeed":input.random_seed,"feePct":input.fee_pct,"slippagePct":input.slippage_pct,"executionTiming":"decision-close-T/execution-open-T+1","executionModelVersion":market_time::EXECUTION_MODEL_VERSION,"annualizationFactor":annualization_factor,"market":dataset.market,"timezone":dataset.timezone,"sessionType":dataset.session_type,"precisionScale":6,"maxConcurrentAgents":MAX_CONCURRENT_AGENTS,"aiConfig":ai_config,"signalEngineVersion":signal_aware.then_some(market_signals::SIGNAL_ENGINE_VERSION),"signalConfig":signal_aware.then_some(signal_config),"positionEngineVersion":matches!(ai_config.prompt_version.as_str(),market_ai::PROMPT_V4_VERSION|market_ai::PROMPT_V4_1_VERSION|market_ai::PROMPT_V4_2_VERSION).then_some(market_positions::POSITION_ENGINE_VERSION),"triggerEngineVersion":event_driven.then_some(market_triggers::TRIGGER_ENGINE_VERSION),"triggerConfig":event_driven.then_some(&trigger_config)});
+    connection.execute("INSERT INTO market_experiments(id,name,dataset_id,asset,timeframe,currency,initial_capital,risk_profile_id,random_seed,fee_pct,slippage_pct,config_json,status,started_at,market,timezone,session_type,annualization_factor,execution_model_version,trigger_engine_version,trigger_config_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'running',CURRENT_TIMESTAMP,?13,?14,?15,?16,?17,?18,?19)",params![id,input.name.trim(),dataset.id,dataset.asset,dataset.timeframe,dataset.currency,round(input.initial_capital),profile.id,input.random_seed as i64,input.fee_pct,input.slippage_pct,config.to_string(),dataset.market,dataset.timezone,dataset.session_type,annualization_factor,market_time::EXECUTION_MODEL_VERSION,event_driven.then_some(market_triggers::TRIGGER_ENGINE_VERSION),event_driven.then(||serde_json::to_string(&trigger_config).unwrap_or_default())]).map_err(|e|e.to_string())?;
     let runs = simulate_range_with_provider(
         &dataset,
         &profile,
@@ -1600,6 +1777,7 @@ pub(crate) fn run_experiment_with_provider(
         ai_config,
         &dataset.asset,
     )?;
+    persist_intraday_audit(&tx, &id, &runs, &candles)?;
     market_observatory::persist(&tx, &id)?;
     tx.execute("UPDATE market_experiments SET status='completed',completed_at=CURRENT_TIMESTAMP WHERE id=?1",[&id]).map_err(|e|e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
@@ -1628,8 +1806,8 @@ fn persist_run(
                     }
                 }
             }
-            let risk_state_json = serde_json::to_string(&d.risk_evaluation)
-                .map_err(|error| error.to_string())?;
+            let risk_state_json =
+                serde_json::to_string(&d.risk_evaluation).map_err(|error| error.to_string())?;
             tx.execute("INSERT INTO market_risk_evaluations(decision_id,result,reason,requested_position_pct,approved_position_pct,risk_state_json,exposure_change_class,current_exposure_pct,target_exposure_pct,exposure_delta_pct,policy_version) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",params![decision_id,d.risk_result,d.risk_reason,d.decision.desired_pct,d.approved_pct,risk_state_json,d.risk_evaluation.classification.as_str(),d.risk_evaluation.current_exposure_pct,d.risk_evaluation.target_exposure_pct,d.risk_evaluation.exposure_delta_pct,d.risk_evaluation.policy_version]).map_err(|e|e.to_string())?;
             for (rule_order, evaluation) in d.risk_evaluation.rules.iter().enumerate() {
                 tx.execute(
@@ -1685,11 +1863,31 @@ fn persist_position_lifecycles(
     experiment_id: &str,
     asset: &str,
     runs: &[AgentRun],
+    candles: &[Candle],
 ) -> Result<(), String> {
+    let session_by_timestamp: HashMap<&str, &str> = candles
+        .iter()
+        .map(|candle| (candle.timestamp.as_str(), candle.session_id.as_str()))
+        .collect();
+    let market_minutes_per_candle = candles
+        .windows(2)
+        .find_map(|pair| {
+            (pair[0].session_id == pair[1].session_id)
+                .then_some(((pair[1].epoch_seconds - pair[0].epoch_seconds) / 60).max(1) as usize)
+        })
+        .unwrap_or(390);
     for run in runs {
         for lifecycle in &run.position_manager.lifecycles {
             let lifecycle_id = format!("{experiment_id}:{}:{}", run.id, lifecycle.lifecycle_index);
-            tx.execute("INSERT INTO market_trade_lifecycles(id,experiment_id,agent_id,asset,lifecycle_index,opened_at,closed_at,entry_price,average_entry_price,exit_price,initial_exposure_pct,max_exposure_pct,holding_candles,realized_pnl,realized_pnl_pct,mfe_pct,mae_pct,exit_efficiency_pct,profit_giveback_pct,entry_reason_code,exit_reason_code,status,reentry,engine_version) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24)",params![lifecycle_id,experiment_id,run.id,asset,lifecycle.lifecycle_index,lifecycle.opened_at,lifecycle.closed_at,lifecycle.entry_price,lifecycle.average_entry_price,lifecycle.exit_price,lifecycle.initial_exposure_pct,lifecycle.max_exposure_pct,lifecycle.holding_candles,lifecycle.realized_pnl,lifecycle.realized_pnl_pct,lifecycle.mfe_pct,lifecycle.mae_pct,lifecycle.exit_efficiency_pct,lifecycle.profit_giveback_pct,lifecycle.entry_reason_code,lifecycle.exit_reason_code,lifecycle.status,lifecycle.reentry,market_positions::POSITION_ENGINE_VERSION]).map_err(|error|error.to_string())?;
+            let entry_session = session_by_timestamp
+                .get(lifecycle.opened_at.as_str())
+                .copied();
+            let exit_session = lifecycle
+                .closed_at
+                .as_deref()
+                .and_then(|value| session_by_timestamp.get(value).copied());
+            let overnight = exit_session.is_some_and(|value| Some(value) != entry_session);
+            tx.execute("INSERT INTO market_trade_lifecycles(id,experiment_id,agent_id,asset,lifecycle_index,opened_at,closed_at,entry_price,average_entry_price,exit_price,initial_exposure_pct,max_exposure_pct,holding_candles,realized_pnl,realized_pnl_pct,mfe_pct,mae_pct,exit_efficiency_pct,profit_giveback_pct,entry_reason_code,exit_reason_code,status,reentry,engine_version,entry_session_id,exit_session_id,holding_market_minutes,overnight) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28)",params![lifecycle_id,experiment_id,run.id,asset,lifecycle.lifecycle_index,lifecycle.opened_at,lifecycle.closed_at,lifecycle.entry_price,lifecycle.average_entry_price,lifecycle.exit_price,lifecycle.initial_exposure_pct,lifecycle.max_exposure_pct,lifecycle.holding_candles,lifecycle.realized_pnl,lifecycle.realized_pnl_pct,lifecycle.mfe_pct,lifecycle.mae_pct,lifecycle.exit_efficiency_pct,lifecycle.profit_giveback_pct,lifecycle.entry_reason_code,lifecycle.exit_reason_code,lifecycle.status,lifecycle.reentry,market_positions::POSITION_ENGINE_VERSION,entry_session,exit_session,lifecycle.holding_candles*market_minutes_per_candle,overnight]).map_err(|error|error.to_string())?;
         }
         for event in &run.position_manager.events {
             let lifecycle_id = format!("{experiment_id}:{}:{}", run.id, event.lifecycle_index);
@@ -1738,7 +1936,7 @@ fn persist_run_with_ai_diagnostics(
     asset: &str,
 ) -> Result<(), String> {
     persist_run(tx, experiment_id, agents, runs, initial)?;
-    persist_position_lifecycles(tx, experiment_id, asset, runs)?;
+    persist_position_lifecycles(tx, experiment_id, asset, runs, candles)?;
     for run in runs.iter().filter(|run| market_ai::is_ai_agent(&run.id)) {
         let metrics = &run.ai_runtime;
         let distribution = metrics.confidence_distribution();
@@ -1799,12 +1997,74 @@ fn persist_run_with_ai_diagnostics(
     Ok(())
 }
 
+fn persist_intraday_audit(
+    tx: &Transaction<'_>,
+    experiment_id: &str,
+    runs: &[AgentRun],
+    candles: &[Candle],
+) -> Result<(), String> {
+    let session_by_timestamp: HashMap<&str, &str> = candles
+        .iter()
+        .map(|candle| (candle.timestamp.as_str(), candle.session_id.as_str()))
+        .collect();
+    for run in runs {
+        for audit in &run.trigger_audits {
+            tx.execute(
+                "INSERT INTO market_decision_trigger_audits(experiment_id,agent_id,candle_index,timestamp_utc,session_id,should_evaluate,trigger_reason,skip_reason,cooldown_remaining,call_index) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+                params![experiment_id,run.id,audit.candle_index,audit.timestamp_utc,audit.session_id,audit.should_evaluate,audit.trigger_reason,audit.skip_reason,audit.cooldown_remaining,audit.call_index],
+            ).map_err(|error| error.to_string())?;
+        }
+        let mut grouped: BTreeMap<String, Vec<&SnapshotRow>> = BTreeMap::new();
+        for snapshot in &run.snapshots {
+            let session = candles
+                .get(snapshot.candle_index)
+                .map(|candle| candle.session_id.clone())
+                .unwrap_or_else(|| "UNKNOWN".into());
+            grouped.entry(session).or_default().push(snapshot);
+        }
+        for (session_id, snapshots) in grouped {
+            let first = snapshots.first().ok_or("snapshot de sessão ausente")?;
+            let last = snapshots.last().ok_or("snapshot de sessão ausente")?;
+            let mut peak = first.equity;
+            let mut max_drawdown: f64 = 0.0;
+            for snapshot in &snapshots {
+                peak = peak.max(snapshot.equity);
+                if peak > 0.0 {
+                    max_drawdown = max_drawdown.max((peak - snapshot.equity) / peak * 100.0);
+                }
+            }
+            let audits = run
+                .trigger_audits
+                .iter()
+                .filter(|audit| audit.session_id == session_id);
+            let audit_rows = audits.collect::<Vec<_>>();
+            let trade_count = run
+                .decisions
+                .iter()
+                .filter(|decision| {
+                    decision.execution.as_ref().is_some_and(|execution| {
+                        session_by_timestamp
+                            .get(execution.timestamp.as_str())
+                            .copied()
+                            == Some(session_id.as_str())
+                    })
+                })
+                .count();
+            tx.execute(
+                "INSERT INTO market_session_metrics(experiment_id,agent_id,session_id,start_equity,end_equity,return_pct,max_drawdown_pct,trade_count,ai_call_count,trigger_count,no_call_count) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+                params![experiment_id,run.id,session_id,first.equity,last.equity,if first.equity>0.0{round((last.equity/first.equity-1.0)*100.0)}else{0.0},round(max_drawdown),trade_count,audit_rows.iter().filter(|audit|audit.should_evaluate).count(),audit_rows.iter().filter(|audit|audit.trigger_reason.is_some()).count(),audit_rows.iter().filter(|audit|!audit.should_evaluate).count()],
+            ).map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 fn summary_query(
     connection: &Connection,
     where_clause: &str,
     arg: Option<&str>,
 ) -> Result<Vec<MarketExperimentSummary>, String> {
-    let sql=format!("SELECT e.id,e.name,e.dataset_id,d.name,e.asset,e.timeframe,e.currency,e.initial_capital,e.risk_profile_id,e.random_seed,e.fee_pct,e.slippage_pct,e.status,e.error,e.started_at,e.completed_at,e.created_at FROM market_experiments e JOIN market_datasets d ON d.id=e.dataset_id {where_clause} ORDER BY e.created_at DESC");
+    let sql=format!("SELECT e.id,e.name,e.dataset_id,d.name,e.asset,e.timeframe,e.currency,e.initial_capital,e.risk_profile_id,e.random_seed,e.fee_pct,e.slippage_pct,e.status,e.error,e.started_at,e.completed_at,e.created_at,e.market,e.timezone,e.session_type,e.annualization_factor,e.execution_model_version,e.trigger_engine_version FROM market_experiments e JOIN market_datasets d ON d.id=e.dataset_id {where_clause} ORDER BY e.created_at DESC");
     let mut s = connection.prepare(&sql).map_err(|e| e.to_string())?;
     let mapper = |r: &rusqlite::Row<'_>| -> rusqlite::Result<MarketExperimentSummary> {
         let id: String = r.get(0)?;
@@ -1833,6 +2093,12 @@ fn summary_query(
             started_at: r.get(14)?,
             completed_at: r.get(15)?,
             created_at: r.get(16)?,
+            market: r.get(17)?,
+            timezone: r.get(18)?,
+            session_type: r.get(19)?,
+            annualization_factor: r.get(20)?,
+            execution_model_version: r.get(21)?,
+            trigger_engine_version: r.get(22)?,
         })
     };
     if let Some(v) = arg {
@@ -1921,6 +2187,44 @@ pub fn get_experiment(connection: &Connection, id: &str) -> Result<MarketExperim
         .map_err(|e| e.to_string())?;
     let observatory = market_observatory::load(connection, id)?;
     let position_lifecycle = market_positions::load_report(connection, id)?;
+    let mut trigger_statement = connection.prepare("SELECT id,agent_id,candle_index,timestamp_utc,session_id,should_evaluate,trigger_reason,skip_reason,cooldown_remaining,call_index FROM market_decision_trigger_audits WHERE experiment_id=?1 ORDER BY candle_index DESC,agent_id LIMIT 2000").map_err(|error|error.to_string())?;
+    let trigger_audits = trigger_statement
+        .query_map([id], |row| {
+            Ok(MarketDecisionTriggerAudit {
+                id: row.get(0)?,
+                agent_id: row.get(1)?,
+                candle_index: row.get(2)?,
+                timestamp_utc: row.get(3)?,
+                session_id: row.get(4)?,
+                should_evaluate: row.get(5)?,
+                trigger_reason: row.get(6)?,
+                skip_reason: row.get(7)?,
+                cooldown_remaining: row.get(8)?,
+                call_index: row.get(9)?,
+            })
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    let mut session_statement = connection.prepare("SELECT agent_id,session_id,start_equity,end_equity,return_pct,max_drawdown_pct,trade_count,ai_call_count,trigger_count,no_call_count FROM market_session_metrics WHERE experiment_id=?1 ORDER BY session_id DESC,agent_id").map_err(|error|error.to_string())?;
+    let session_metrics = session_statement
+        .query_map([id], |row| {
+            Ok(MarketSessionMetric {
+                agent_id: row.get(0)?,
+                session_id: row.get(1)?,
+                start_equity: row.get(2)?,
+                end_equity: row.get(3)?,
+                return_pct: row.get(4)?,
+                max_drawdown_pct: row.get(5)?,
+                trade_count: row.get(6)?,
+                ai_call_count: row.get(7)?,
+                trigger_count: row.get(8)?,
+                no_call_count: row.get(9)?,
+            })
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
     Ok(MarketExperimentResult {
         experiment,
         metrics,
@@ -1928,6 +2232,8 @@ pub fn get_experiment(connection: &Connection, id: &str) -> Result<MarketExperim
         decisions,
         observatory,
         position_lifecycle,
+        trigger_audits,
+        session_metrics,
     })
 }
 pub fn rerun(connection: &mut Connection, id: &str) -> Result<MarketExperimentResult, String> {
@@ -1977,7 +2283,11 @@ fn map_ai_runtime(row: &rusqlite::Row<'_>) -> rusqlite::Result<MarketAiRuntimeMe
     let retry_total_latency_ms: u64 = row.get(35)?;
     let opportunities = final_valid_count + final_invalid_count;
     let rate = |numerator: usize, denominator: usize| {
-        if denominator == 0 { 0.0 } else { numerator as f64 / denominator as f64 * 100.0 }
+        if denominator == 0 {
+            0.0
+        } else {
+            numerator as f64 / denominator as f64 * 100.0
+        }
     };
     Ok(MarketAiRuntimeMetric {
         agent_id: row.get(0)?,
@@ -2016,8 +2326,16 @@ fn map_ai_runtime(row: &rusqlite::Row<'_>) -> rusqlite::Result<MarketAiRuntimeMe
         final_valid_count,
         final_invalid_count,
         system_fallback_count,
-        first_attempt_average_latency_ms: if opportunities == 0 { 0.0 } else { first_attempt_total_latency_ms as f64 / opportunities as f64 },
-        retry_average_latency_ms: if retry_count == 0 { 0.0 } else { retry_total_latency_ms as f64 / retry_count as f64 },
+        first_attempt_average_latency_ms: if opportunities == 0 {
+            0.0
+        } else {
+            first_attempt_total_latency_ms as f64 / opportunities as f64
+        },
+        retry_average_latency_ms: if retry_count == 0 {
+            0.0
+        } else {
+            retry_total_latency_ms as f64 / retry_count as f64
+        },
         p50_latency_ms: row.get(36)?,
         p95_latency_ms: row.get(37)?,
         slow_call_count: row.get(38)?,
@@ -2116,7 +2434,10 @@ pub fn list_ai_decisions(
                         result: result.clone(),
                         reason: reason.clone(),
                         approved_position_pct,
-                        classification: market_risk::classify_exposure_change(current_exposure_pct, target),
+                        classification: market_risk::classify_exposure_change(
+                            current_exposure_pct,
+                            target,
+                        ),
                         current_exposure_pct,
                         target_exposure_pct: target,
                         exposure_delta_pct: target - current_exposure_pct,
@@ -2549,6 +2870,10 @@ mod tests {
         };
         let candle = Candle {
             timestamp: "T+1".into(),
+            timestamp_utc: "1970-01-01T00:00:01Z".into(),
+            epoch_seconds: 1,
+            session_id: "1970-01-01".into(),
+            session_state: "DAILY".into(),
             open: 20.0,
             high: 20.0,
             low: 20.0,
@@ -2629,6 +2954,10 @@ mod v041_context_tests {
             .enumerate()
             .map(|(index, close)| Candle {
                 timestamp: format!("T{index}"),
+                timestamp_utc: format!("1970-01-01T00:00:{index:02}Z"),
+                epoch_seconds: index as i64,
+                session_id: "1970-01-01".into(),
+                session_state: "DAILY".into(),
                 open: *close,
                 high: *close + 1.0,
                 low: *close - 1.0,
@@ -2666,6 +2995,8 @@ mod v041_context_tests {
             position_manager: Default::default(),
             risk_day: None,
             risk_day_start_equity: 1_000.0,
+            trigger_engine: Default::default(),
+            trigger_audits: Vec::new(),
         }
     }
 
@@ -2691,9 +3022,15 @@ mod v041_context_tests {
             asset: "AAPL".into(),
             timeframe: "1D".into(),
             currency: "USD".into(),
+            market: "UNSPECIFIED".into(),
+            timezone: "UTC".into(),
+            session_type: "DAILY".into(),
             start_at: "T0".into(),
             end_at: "T20".into(),
             candle_count: 21,
+            session_count: 21,
+            expected_gap_count: 0,
+            unexpected_gap_count: 0,
             fingerprint: "fixture".into(),
             source_path: "fixture.csv".into(),
             imported_at: "now".into(),

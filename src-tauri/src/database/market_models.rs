@@ -8,9 +8,15 @@ pub struct MarketDataset {
     pub asset: String,
     pub timeframe: String,
     pub currency: String,
+    pub market: String,
+    pub timezone: String,
+    pub session_type: String,
     pub start_at: String,
     pub end_at: String,
     pub candle_count: usize,
+    pub session_count: usize,
+    pub expected_gap_count: usize,
+    pub unexpected_gap_count: usize,
     pub fingerprint: String,
     pub source_path: String,
     pub imported_at: String,
@@ -50,6 +56,12 @@ pub struct ImportMarketDatasetInput {
     pub asset: String,
     pub timeframe: String,
     pub currency: Option<String>,
+    #[serde(default)]
+    pub market: Option<String>,
+    #[serde(default)]
+    pub timezone: Option<String>,
+    #[serde(default)]
+    pub session_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -294,6 +306,10 @@ pub struct MarketTradeLifecycle {
     pub initial_exposure_pct: f64,
     pub max_exposure_pct: f64,
     pub holding_candles: usize,
+    pub entry_session_id: Option<String>,
+    pub exit_session_id: Option<String>,
+    pub holding_market_minutes: usize,
+    pub overnight: bool,
     pub realized_pnl: f64,
     pub realized_pnl_pct: f64,
     pub mfe_pct: f64,
@@ -366,6 +382,12 @@ pub struct MarketExperimentSummary {
     pub asset: String,
     pub timeframe: String,
     pub currency: String,
+    pub market: String,
+    pub timezone: String,
+    pub session_type: String,
+    pub annualization_factor: f64,
+    pub execution_model_version: String,
+    pub trigger_engine_version: Option<String>,
     pub initial_capital: f64,
     pub risk_profile_id: String,
     pub random_seed: u64,
@@ -388,6 +410,38 @@ pub struct MarketExperimentResult {
     pub decisions: Vec<MarketDecisionLog>,
     pub observatory: MarketObservatory,
     pub position_lifecycle: MarketPositionLifecycleReport,
+    pub trigger_audits: Vec<MarketDecisionTriggerAudit>,
+    pub session_metrics: Vec<MarketSessionMetric>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketDecisionTriggerAudit {
+    pub id: i64,
+    pub agent_id: String,
+    pub candle_index: usize,
+    pub timestamp_utc: String,
+    pub session_id: String,
+    pub should_evaluate: bool,
+    pub trigger_reason: Option<String>,
+    pub skip_reason: Option<String>,
+    pub cooldown_remaining: usize,
+    pub call_index: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketSessionMetric {
+    pub agent_id: String,
+    pub session_id: String,
+    pub start_equity: f64,
+    pub end_equity: f64,
+    pub return_pct: f64,
+    pub max_drawdown_pct: f64,
+    pub trade_count: usize,
+    pub ai_call_count: usize,
+    pub trigger_count: usize,
+    pub no_call_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

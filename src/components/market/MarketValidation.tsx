@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { marketLabRepository } from "../../repositories/marketLabRepository";
 import type { MarketAgentDefinition, MarketAiRuntimeMetric, MarketDataset, MarketRegimeMetric, MarketRiskProfile, MarketRollingMetric, MarketValidationInput, MarketValidationResult, MarketValidationSummary } from "../../types";
+import { annualizationFor } from "./marketIntraday";
 
 type ValidationDetail = "summary" | "windows" | "regimes" | "rolling" | "benchmarks" | "audit";
 type RollingMode = "rollingReturnPct" | "rollingVolatilityPct" | "rollingSharpe" | "rollingDrawdownPct";
@@ -48,7 +49,7 @@ export function MarketValidation({ datasets, agents, profiles, datasetId, riskPr
   const [split, setSplit] = useState({ inSamplePct: 60, validationPct: 20, outOfSamplePct: 20 });
   const [walk, setWalk] = useState({ trainWindowSize: Math.max(4, Math.floor(candleCount * 0.4)), testWindowSize: suggestedTest, stepSize: suggestedTest });
   const [rollingWindow, setRollingWindow] = useState(Math.max(3, Math.min(20, Math.floor(candleCount / 6))));
-  const [annualizationFactor, setAnnualizationFactor] = useState(252);
+  const annualizationFactor = dataset ? annualizationFor(dataset.timeframe) : 252;
   const [result, setResult] = useState<MarketValidationResult | null>(null);
   const [history, setHistory] = useState<MarketValidationSummary[]>([]);
   const [busy, setBusy] = useState(false);
@@ -80,7 +81,7 @@ export function MarketValidation({ datasets, agents, profiles, datasetId, riskPr
       <div className="panel-heading"><strong>SCIENTIFIC VALIDATION</strong><span>CONFIGURAÇÃO EXPLÍCITA E IMUTÁVEL</span></div>
       <div className="market-validation__form">
         <label>VALIDATION RUN<input value={name} onChange={(event) => setName(event.target.value)} /></label>
-        <label>ANNUALIZATION FACTOR<input type="number" min="1" value={annualizationFactor} onChange={(event) => setAnnualizationFactor(Number(event.target.value))} /></label>
+        <label>ANNUALIZATION FACTOR<input type="number" value={annualizationFactor} readOnly title="Derivado automaticamente do timeframe" /></label>
         <label>ROLLING WINDOW<input type="number" min="2" max={candleCount} value={rollingWindow} onChange={(event) => setRollingWindow(Number(event.target.value))} /></label>
       </div>
       <div className="market-validation__method">

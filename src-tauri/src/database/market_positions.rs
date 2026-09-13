@@ -112,9 +112,10 @@ pub fn generate_from_intent(
         return Err("INVALID_POSITION_INTENT".into());
     }
     let (lifecycle_action, target) = match (state, intent) {
-        (PositionState::Flat, PositionIntent::Enter) => {
-            (LifecycleAction::EnterLong, config.default_entry_exposure_pct)
-        }
+        (PositionState::Flat, PositionIntent::Enter) => (
+            LifecycleAction::EnterLong,
+            config.default_entry_exposure_pct,
+        ),
         (PositionState::Flat, PositionIntent::Hold) => (LifecycleAction::StayFlat, 0.0),
         (PositionState::LongOpen | PositionState::LongReduced, PositionIntent::Enter)
             if current_exposure_pct >= 100.0 - EPSILON =>
@@ -137,7 +138,10 @@ pub fn generate_from_intent(
             let reduction = config
                 .default_reduce_step_pct
                 .min(current_exposure_pct / 2.0);
-            (LifecycleAction::ReduceLong, current_exposure_pct - reduction)
+            (
+                LifecycleAction::ReduceLong,
+                current_exposure_pct - reduction,
+            )
         }
         (PositionState::LongOpen | PositionState::LongReduced, PositionIntent::Exit) => {
             (LifecycleAction::ExitLong, 0.0)
@@ -600,7 +604,7 @@ pub fn load_report(
     connection: &Connection,
     experiment_id: &str,
 ) -> Result<MarketPositionLifecycleReport, String> {
-    let mut lifecycle_statement=connection.prepare("SELECT id,agent_id,asset,lifecycle_index,opened_at,closed_at,entry_price,average_entry_price,exit_price,initial_exposure_pct,max_exposure_pct,holding_candles,realized_pnl,realized_pnl_pct,mfe_pct,mae_pct,exit_efficiency_pct,profit_giveback_pct,entry_reason_code,exit_reason_code,status,reentry FROM market_trade_lifecycles WHERE experiment_id=?1 ORDER BY agent_id,lifecycle_index").map_err(|error|error.to_string())?;
+    let mut lifecycle_statement=connection.prepare("SELECT id,agent_id,asset,lifecycle_index,opened_at,closed_at,entry_price,average_entry_price,exit_price,initial_exposure_pct,max_exposure_pct,holding_candles,realized_pnl,realized_pnl_pct,mfe_pct,mae_pct,exit_efficiency_pct,profit_giveback_pct,entry_reason_code,exit_reason_code,status,reentry,entry_session_id,exit_session_id,holding_market_minutes,overnight FROM market_trade_lifecycles WHERE experiment_id=?1 ORDER BY agent_id,lifecycle_index").map_err(|error|error.to_string())?;
     let lifecycles = lifecycle_statement
         .query_map([experiment_id], |row| {
             Ok(MarketTradeLifecycle {
@@ -626,6 +630,10 @@ pub fn load_report(
                 exit_reason_code: row.get(19)?,
                 status: row.get(20)?,
                 reentry: row.get::<_, i64>(21)? != 0,
+                entry_session_id: row.get(22)?,
+                exit_session_id: row.get(23)?,
+                holding_market_minutes: row.get(24)?,
+                overnight: row.get::<_, i64>(25)? != 0,
             })
         })
         .map_err(|error| error.to_string())?
@@ -695,18 +703,35 @@ mod tests {
     #[test]
     fn v42_position_sizing_maps_intents_deterministically() {
         let config = PositionSizingConfig::default();
-        let enter_flat = generate_from_intent(PositionState::Flat, 0.0, PositionIntent::Enter, &config).unwrap();
+        let enter_flat =
+            generate_from_intent(PositionState::Flat, 0.0, PositionIntent::Enter, &config).unwrap();
         assert_eq!(enter_flat.lifecycle_action, LifecycleAction::EnterLong);
         assert_eq!(enter_flat.generated_target_exposure_pct, 25.0);
-        let enter_long = generate_from_intent(PositionState::LongOpen, 25.0, PositionIntent::Enter, &config).unwrap();
+        let enter_long = generate_from_intent(
+            PositionState::LongOpen,
+            25.0,
+            PositionIntent::Enter,
+            &config,
+        )
+        .unwrap();
         assert_eq!(enter_long.lifecycle_action, LifecycleAction::IncreaseLong);
         assert_eq!(enter_long.generated_target_exposure_pct, 35.0);
-        let hold = generate_from_intent(PositionState::LongOpen, 40.0, PositionIntent::Hold, &config).unwrap();
+        let hold =
+            generate_from_intent(PositionState::LongOpen, 40.0, PositionIntent::Hold, &config)
+                .unwrap();
         assert_eq!(hold.generated_target_exposure_pct, 40.0);
-        let reduce = generate_from_intent(PositionState::LongOpen, 40.0, PositionIntent::Reduce, &config).unwrap();
+        let reduce = generate_from_intent(
+            PositionState::LongOpen,
+            40.0,
+            PositionIntent::Reduce,
+            &config,
+        )
+        .unwrap();
         assert_eq!(reduce.lifecycle_action, LifecycleAction::ReduceLong);
         assert_eq!(reduce.generated_target_exposure_pct, 25.0);
-        let exit = generate_from_intent(PositionState::LongOpen, 40.0, PositionIntent::Exit, &config).unwrap();
+        let exit =
+            generate_from_intent(PositionState::LongOpen, 40.0, PositionIntent::Exit, &config)
+                .unwrap();
         assert_eq!(exit.lifecycle_action, LifecycleAction::ExitLong);
         assert_eq!(exit.generated_target_exposure_pct, 0.0);
     }
@@ -720,11 +745,29 @@ mod tests {
                 "INVALID_POSITION_INTENT"
             );
         }
-        let reduced = generate_from_intent(PositionState::LongReduced, 10.0, PositionIntent::Reduce, &config).unwrap();
+        let reduced = generate_from_intent(
+            PositionState::LongReduced,
+            10.0,
+            PositionIntent::Reduce,
+            &config,
+        )
+        .unwrap();
         assert_eq!(reduced.generated_target_exposure_pct, 5.0);
-        let saturated = generate_from_intent(PositionState::LongOpen, 100.0, PositionIntent::Enter, &config).unwrap();
+        let saturated = generate_from_intent(
+            PositionState::LongOpen,
+            100.0,
+            PositionIntent::Enter,
+            &config,
+        )
+        .unwrap();
         assert_eq!(saturated.lifecycle_action, LifecycleAction::HoldPosition);
-        let tiny = generate_from_intent(PositionState::LongReduced, 0.02, PositionIntent::Reduce, &config).unwrap();
+        let tiny = generate_from_intent(
+            PositionState::LongReduced,
+            0.02,
+            PositionIntent::Reduce,
+            &config,
+        )
+        .unwrap();
         assert_eq!(tiny.lifecycle_action, LifecycleAction::HoldPosition);
     }
     #[test]

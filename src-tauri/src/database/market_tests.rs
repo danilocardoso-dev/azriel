@@ -179,7 +179,9 @@ struct ReliabilityFakeProvider {
     prompts: Mutex<Vec<market_ai::MarketAiPrompt>>,
 }
 impl market_ai::MarketAiProvider for ReliabilityFakeProvider {
-    fn supports_structured_output(&self) -> bool { true }
+    fn supports_structured_output(&self) -> bool {
+        true
+    }
 
     fn complete(
         &self,
@@ -188,17 +190,30 @@ impl market_ai::MarketAiProvider for ReliabilityFakeProvider {
     ) -> Result<market_ai::MarketAiProviderResponse, market_ai::MarketAiProviderError> {
         let is_retry = prompt.retry_instruction.is_some();
         let snapshot: serde_json::Value = serde_json::from_str(&prompt.snapshot_json).unwrap();
-        let state = snapshot.pointer("/position/state").and_then(|value| value.as_str()).unwrap_or("FLAT");
-        let exposure = snapshot.pointer("/position/exposurePct").and_then(|value| value.as_f64()).unwrap_or(0.0);
+        let state = snapshot
+            .pointer("/position/state")
+            .and_then(|value| value.as_str())
+            .unwrap_or("FLAT");
+        let exposure = snapshot
+            .pointer("/position/exposurePct")
+            .and_then(|value| value.as_f64())
+            .unwrap_or(0.0);
         let content = if !is_retry {
             "{ action: INVALID }".into()
         } else if state == "FLAT" {
             r#"{"action":"ENTER_LONG","target_exposure_pct":30,"confidence":0.7,"reason_code":"ALIGNED_BULLISH_SIGNAL","reason":"retry recovered"}"#.into()
         } else {
-            format!(r#"{{"action":"HOLD_POSITION","target_exposure_pct":{exposure},"confidence":0.6,"reason_code":"POSITION_ALREADY_OPTIMAL","reason":"retry recovered"}}"#)
+            format!(
+                r#"{{"action":"HOLD_POSITION","target_exposure_pct":{exposure},"confidence":0.6,"reason_code":"POSITION_ALREADY_OPTIMAL","reason":"retry recovered"}}"#
+            )
         };
         self.prompts.lock().unwrap().push(prompt);
-        Ok(market_ai::MarketAiProviderResponse { content, model: "fake:qwen-v4-1".into(), input_tokens: Some(40), output_tokens: Some(15) })
+        Ok(market_ai::MarketAiProviderResponse {
+            content,
+            model: "fake:qwen-v4-1".into(),
+            input_tokens: Some(40),
+            output_tokens: Some(15),
+        })
     }
 }
 
@@ -221,7 +236,9 @@ struct IntentContractFakeProvider {
 }
 
 impl market_ai::MarketAiProvider for IntentContractFakeProvider {
-    fn supports_structured_output(&self) -> bool { true }
+    fn supports_structured_output(&self) -> bool {
+        true
+    }
 
     fn complete(
         &self,
@@ -229,7 +246,10 @@ impl market_ai::MarketAiProvider for IntentContractFakeProvider {
         _: &market_ai::MarketAiConfig,
     ) -> Result<market_ai::MarketAiProviderResponse, market_ai::MarketAiProviderError> {
         let snapshot: serde_json::Value = serde_json::from_str(&prompt.snapshot_json).unwrap();
-        let state = snapshot.pointer("/position/state").and_then(|value| value.as_str()).unwrap();
+        let state = snapshot
+            .pointer("/position/state")
+            .and_then(|value| value.as_str())
+            .unwrap();
         let (intent, reason_code) = if state == "FLAT" {
             ("ENTER", "ALIGNED_BULLISH_SIGNAL")
         } else {
@@ -237,7 +257,9 @@ impl market_ai::MarketAiProvider for IntentContractFakeProvider {
         };
         self.prompts.lock().unwrap().push(prompt);
         Ok(market_ai::MarketAiProviderResponse {
-            content: format!(r#"{{"intent":"{intent}","confidence_pct":83,"reason_code":"{reason_code}","reason":"controlled intent"}}"#),
+            content: format!(
+                r#"{{"intent":"{intent}","confidence_pct":83,"reason_code":"{reason_code}","reason":"controlled intent"}}"#
+            ),
             model: "fake:qwen-v4-2".into(),
             input_tokens: Some(30),
             output_tokens: Some(10),
@@ -294,6 +316,9 @@ fn complete_market_flow_is_persistent_auditable_and_reproducible() {
         asset: "TST".into(),
         timeframe: "1D".into(),
         currency: Some("BRL".into()),
+        market: None,
+        timezone: None,
+        session_type: None,
     };
     let dataset = market_repository::import_dataset(&mut connection, &import()).unwrap();
     let duplicate = market_repository::import_dataset(&mut connection, &import()).unwrap();
@@ -377,6 +402,106 @@ fn complete_market_flow_is_persistent_auditable_and_reproducible() {
 }
 
 #[test]
+fn intraday_15m_import_replay_and_session_metrics_are_deterministic() {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!("azriel-market-intraday-{suffix}.csv"));
+    let mut csv = String::from("timestamp,open,high,low,close,volume\n");
+    let mut price = 100.0;
+    for date in [
+        "2026-01-02",
+        "2026-01-05",
+        "2026-01-06",
+        "2026-01-07",
+        "2026-01-08",
+    ] {
+        for candle in 0..26 {
+            let minutes = 570 + candle * 15;
+            let hour = minutes / 60;
+            let minute = minutes % 60;
+            csv.push_str(&format!(
+                "{date} {hour:02}:{minute:02},{price},{},{},{},1000\n",
+                price + 1.0,
+                price - 1.0,
+                price + 0.25
+            ));
+            price += 0.25;
+        }
+    }
+    fs::write(&path, csv).unwrap();
+    let mut connection = database();
+    let dataset = market_repository::import_dataset(
+        &mut connection,
+        &ImportMarketDatasetInput {
+            path: path.to_string_lossy().into_owned(),
+            name: "AAPL 15M".into(),
+            asset: "AAPL".into(),
+            timeframe: "15M".into(),
+            currency: Some("USD".into()),
+            market: Some("US_EQUITIES".into()),
+            timezone: Some("America/New_York".into()),
+            session_type: Some("REGULAR".into()),
+        },
+    )
+    .unwrap();
+    assert_eq!(dataset.session_count, 5);
+    assert_eq!(dataset.expected_gap_count, 4);
+    assert_eq!(dataset.unexpected_gap_count, 0);
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT timestamp_utc FROM market_candles WHERE dataset_id=?1 AND candle_index=0",
+                [&dataset.id],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+        "2026-01-02T14:30:00Z"
+    );
+    let input = MarketExperimentInput {
+        name: "INTRADAY-FOUNDATION".into(),
+        dataset_id: dataset.id,
+        risk_profile_id: "balanced-v1".into(),
+        agent_ids: vec![
+            "cash".into(),
+            "buy-hold".into(),
+            "simple-trend".into(),
+            market_ai::AI_AGENT_V4_2_ID.into(),
+        ],
+        initial_capital: 10_000.0,
+        random_seed: 42,
+        fee_pct: 0.1,
+        slippage_pct: 0.05,
+    };
+    let provider = IntentContractFakeProvider {
+        prompts: Mutex::new(Vec::new()),
+    };
+    let result = market_repository::run_experiment_with_provider(
+        &mut connection,
+        &input,
+        &provider,
+        &fake_ai_v4_2_config(),
+    )
+    .unwrap();
+    assert_eq!(result.experiment.annualization_factor, 6552.0);
+    assert_eq!(
+        result.experiment.execution_model_version,
+        "EXECUTION_MODEL_V1"
+    );
+    assert_eq!(result.session_metrics.len(), 20);
+    assert_eq!(result.trigger_audits.len(), 130);
+    let calls = result
+        .trigger_audits
+        .iter()
+        .filter(|audit| audit.should_evaluate)
+        .count();
+    assert!(calls > 0 && calls < 130);
+    assert_eq!(provider.prompts.lock().unwrap().len(), calls);
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn six_agents_are_rejected_before_an_experiment_is_created() {
     let mut connection = database();
     let input = MarketExperimentInput {
@@ -448,6 +573,9 @@ fn cohorts_support_three_four_and_five_agents_with_equal_starting_capital() {
             asset: "TST".into(),
             timeframe: "1D".into(),
             currency: Some("BRL".into()),
+            market: None,
+            timezone: None,
+            session_type: None,
         },
     )
     .unwrap();
@@ -509,6 +637,9 @@ fn scientific_validation_is_persistent_frozen_and_reproducible() {
             asset: "TST".into(),
             timeframe: "1D".into(),
             currency: Some("BRL".into()),
+            market: None,
+            timezone: None,
+            session_type: None,
         },
     )
     .unwrap();
@@ -620,6 +751,9 @@ fn scientific_validation_persists_failed_status_after_runtime_error() {
             asset: "TST".into(),
             timeframe: "1D".into(),
             currency: Some("BRL".into()),
+            market: None,
+            timezone: None,
+            session_type: None,
         },
     )
     .unwrap();
@@ -692,6 +826,9 @@ fn scientific_regime_fixture_imports_all_candles_in_temporal_order() {
             asset: "TST-REGIME".into(),
             timeframe: "1D".into(),
             currency: Some("BRL".into()),
+            market: None,
+            timezone: None,
+            session_type: None,
         },
     )
     .unwrap();
@@ -717,6 +854,9 @@ fn ai_agent_uses_structured_snapshots_risk_and_persistent_runtime() {
             asset: "TST".into(),
             timeframe: "1D".into(),
             currency: Some("BRL".into()),
+            market: None,
+            timezone: None,
+            session_type: None,
         },
     )
     .unwrap();
@@ -861,6 +1001,9 @@ fn ai_v2_persists_rich_context_distribution_forward_returns_and_ab_metadata() {
             asset: "AAPL".into(),
             timeframe: "1D".into(),
             currency: Some("USD".into()),
+            market: None,
+            timezone: None,
+            session_type: None,
         },
     )
     .unwrap();
@@ -1005,6 +1148,9 @@ fn ai_v3_persists_signal_trace_reason_codes_diagnostics_and_frozen_config() {
             asset: "AAPL".into(),
             timeframe: "1D".into(),
             currency: Some("USD".into()),
+            market: None,
+            timezone: None,
+            session_type: None,
         },
     )
     .unwrap();
@@ -1111,6 +1257,9 @@ fn ai_v4_manages_and_persists_a_complete_position_lifecycle() {
             asset: "AAPL".into(),
             timeframe: "1D".into(),
             currency: Some("USD".into()),
+            market: None,
+            timezone: None,
+            session_type: None,
         },
     )
     .unwrap();
@@ -1208,64 +1357,166 @@ fn ai_v4_manages_and_persists_a_complete_position_lifecycle() {
 
 #[test]
 fn ai_v4_1_persists_retry_stages_raw_output_and_reliability_metrics() {
-    let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
     let path = std::env::temp_dir().join(format!("azriel-market-ai-v4-1-{suffix}.csv"));
     fs::write(&path, fixture_csv()).unwrap();
     let mut connection = database();
-    let dataset = market_repository::import_dataset(&mut connection, &ImportMarketDatasetInput {
-        path: path.to_string_lossy().into_owned(), name: "Reliability fixture".into(), asset: "AAPL".into(), timeframe: "1D".into(), currency: Some("USD".into()),
-    }).unwrap();
+    let dataset = market_repository::import_dataset(
+        &mut connection,
+        &ImportMarketDatasetInput {
+            path: path.to_string_lossy().into_owned(),
+            name: "Reliability fixture".into(),
+            asset: "AAPL".into(),
+            timeframe: "1D".into(),
+            currency: Some("USD".into()),
+            market: None,
+            timezone: None,
+            session_type: None,
+        },
+    )
+    .unwrap();
     let input = MarketExperimentInput {
-        name: "AI-RELIABILITY-PERSISTENCE".into(), dataset_id: dataset.id, risk_profile_id: "balanced-v1".into(),
-        agent_ids: vec!["cash".into(), "buy-hold".into(), "simple-trend".into(), market_ai::AI_AGENT_V4_1_ID.into()],
-        initial_capital: 10_000.0, random_seed: 42, fee_pct: 0.1, slippage_pct: 0.05,
+        name: "AI-RELIABILITY-PERSISTENCE".into(),
+        dataset_id: dataset.id,
+        risk_profile_id: "balanced-v1".into(),
+        agent_ids: vec![
+            "cash".into(),
+            "buy-hold".into(),
+            "simple-trend".into(),
+            market_ai::AI_AGENT_V4_1_ID.into(),
+        ],
+        initial_capital: 10_000.0,
+        random_seed: 42,
+        fee_pct: 0.1,
+        slippage_pct: 0.05,
     };
-    let provider = ReliabilityFakeProvider { prompts: Mutex::new(Vec::new()) };
-    let result = market_repository::run_experiment_with_provider(&mut connection, &input, &provider, &fake_ai_v4_1_config()).unwrap();
-    let runtime = market_repository::list_ai_runtime(&connection, &result.experiment.id).unwrap().remove(0);
+    let provider = ReliabilityFakeProvider {
+        prompts: Mutex::new(Vec::new()),
+    };
+    let result = market_repository::run_experiment_with_provider(
+        &mut connection,
+        &input,
+        &provider,
+        &fake_ai_v4_1_config(),
+    )
+    .unwrap();
+    let runtime = market_repository::list_ai_runtime(&connection, &result.experiment.id)
+        .unwrap()
+        .remove(0);
     assert!(runtime.retry_recovered_count > 0);
     assert_eq!(runtime.final_invalid_count, 0);
     assert_eq!(runtime.final_valid_count, runtime.retry_recovered_count);
     assert_eq!(runtime.system_fallback_count, 0);
-    let decisions = market_repository::list_ai_decisions(&connection, &result.experiment.id).unwrap();
-    let called = decisions.iter().filter(|item| item.call_status == "VALID").collect::<Vec<_>>();
+    let decisions =
+        market_repository::list_ai_decisions(&connection, &result.experiment.id).unwrap();
+    let called = decisions
+        .iter()
+        .filter(|item| item.call_status == "VALID")
+        .collect::<Vec<_>>();
     assert!(!called.is_empty());
     assert!(called.iter().all(|item| item.output_attempts.len() == 2));
-    assert!(called.iter().all(|item| item.output_attempts[0].raw_response.as_deref() == Some("{ action: INVALID }")));
-    assert!(called.iter().all(|item| item.output_attempts[0].error_type.as_deref() == Some("INVALID_JSON")));
+    assert!(
+        called
+            .iter()
+            .all(|item| item.output_attempts[0].raw_response.as_deref()
+                == Some("{ action: INVALID }"))
+    );
+    assert!(called
+        .iter()
+        .all(|item| item.output_attempts[0].error_type.as_deref() == Some("INVALID_JSON")));
     let prompts = provider.prompts.lock().unwrap();
-    assert!(prompts.iter().all(|prompt| prompt.structured_output_schema.is_some()));
-    assert!(prompts.iter().any(|prompt| prompt.retry_instruction.is_some()));
+    assert!(prompts
+        .iter()
+        .all(|prompt| prompt.structured_output_schema.is_some()));
+    assert!(prompts
+        .iter()
+        .any(|prompt| prompt.retry_instruction.is_some()));
     let _ = fs::remove_file(path);
 }
 
 #[test]
 fn ai_v4_2_persists_explicit_position_intent_and_generated_target() {
-    let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
     let path = std::env::temp_dir().join(format!("azriel-market-ai-v4-2-{suffix}.csv"));
     fs::write(&path, fixture_csv()).unwrap();
     let mut connection = database();
-    let dataset = market_repository::import_dataset(&mut connection, &ImportMarketDatasetInput {
-        path: path.to_string_lossy().into_owned(), name: "Intent fixture".into(), asset: "AAPL".into(), timeframe: "1D".into(), currency: Some("USD".into()),
-    }).unwrap();
+    let dataset = market_repository::import_dataset(
+        &mut connection,
+        &ImportMarketDatasetInput {
+            path: path.to_string_lossy().into_owned(),
+            name: "Intent fixture".into(),
+            asset: "AAPL".into(),
+            timeframe: "1D".into(),
+            currency: Some("USD".into()),
+            market: None,
+            timezone: None,
+            session_type: None,
+        },
+    )
+    .unwrap();
     let input = MarketExperimentInput {
-        name: "AI-CONTRACT-FIX-PERSISTENCE".into(), dataset_id: dataset.id, risk_profile_id: "balanced-v1".into(),
-        agent_ids: vec!["cash".into(), "buy-hold".into(), "simple-trend".into(), market_ai::AI_AGENT_V4_2_ID.into()],
-        initial_capital: 10_000.0, random_seed: 42, fee_pct: 0.1, slippage_pct: 0.05,
+        name: "AI-CONTRACT-FIX-PERSISTENCE".into(),
+        dataset_id: dataset.id,
+        risk_profile_id: "balanced-v1".into(),
+        agent_ids: vec![
+            "cash".into(),
+            "buy-hold".into(),
+            "simple-trend".into(),
+            market_ai::AI_AGENT_V4_2_ID.into(),
+        ],
+        initial_capital: 10_000.0,
+        random_seed: 42,
+        fee_pct: 0.1,
+        slippage_pct: 0.05,
     };
-    let provider = IntentContractFakeProvider { prompts: Mutex::new(Vec::new()) };
-    let result = market_repository::run_experiment_with_provider(&mut connection, &input, &provider, &fake_ai_v4_2_config()).unwrap();
-    let decisions = market_repository::list_ai_decisions(&connection, &result.experiment.id).unwrap();
-    let called = decisions.iter().filter(|item| item.call_status == "VALID").collect::<Vec<_>>();
+    let provider = IntentContractFakeProvider {
+        prompts: Mutex::new(Vec::new()),
+    };
+    let result = market_repository::run_experiment_with_provider(
+        &mut connection,
+        &input,
+        &provider,
+        &fake_ai_v4_2_config(),
+    )
+    .unwrap();
+    let decisions =
+        market_repository::list_ai_decisions(&connection, &result.experiment.id).unwrap();
+    let called = decisions
+        .iter()
+        .filter(|item| item.call_status == "VALID")
+        .collect::<Vec<_>>();
     assert!(!called.is_empty());
-    assert!(called.iter().all(|item| matches!(item.intent.as_deref(), Some("ENTER" | "HOLD"))));
-    assert!(called.iter().all(|item| item.generated_target_exposure_pct.is_some()));
-    assert!(called.iter().all(|item| item.position_sizing_version.as_deref() == Some("POSITION_SIZING_V1")));
+    assert!(called
+        .iter()
+        .all(|item| matches!(item.intent.as_deref(), Some("ENTER" | "HOLD"))));
+    assert!(called
+        .iter()
+        .all(|item| item.generated_target_exposure_pct.is_some()));
+    assert!(called
+        .iter()
+        .all(|item| item.position_sizing_version.as_deref() == Some("POSITION_SIZING_V1")));
     assert!(called.iter().all(|item| item.confidence == Some(0.83)));
-    assert!(called.iter().all(|item| item.risk_trace.policy_version == "RISK_POLICY_V2"));
+    assert!(called
+        .iter()
+        .all(|item| item.risk_trace.policy_version == "RISK_POLICY_V2"));
     assert!(called.iter().all(|item| !item.risk_trace.rules.is_empty()));
-    assert!(called.iter().all(|item| item.risk_trace.rules.iter().any(|rule| rule.rule == "MAX_OPERATIONS")));
-    assert!(called.iter().all(|item| item.input_snapshot.as_ref().and_then(|snapshot| snapshot.pointer("/position/state")).and_then(|value| value.as_str()).is_some_and(|state| state == "FLAT" || state == "LONG")));
+    assert!(called.iter().all(|item| item
+        .risk_trace
+        .rules
+        .iter()
+        .any(|rule| rule.rule == "MAX_OPERATIONS")));
+    assert!(called.iter().all(|item| item
+        .input_snapshot
+        .as_ref()
+        .and_then(|snapshot| snapshot.pointer("/position/state"))
+        .and_then(|value| value.as_str())
+        .is_some_and(|state| state == "FLAT" || state == "LONG")));
     let comparison = market_repository::list_ai_experiment_comparisons(&connection)
         .unwrap()
         .into_iter()
@@ -1274,10 +1525,21 @@ fn ai_v4_2_persists_explicit_position_intent_and_generated_target() {
     assert_eq!(comparison.final_invalid_count, 0);
     assert!(comparison.final_valid_count > 0);
     assert_eq!(comparison.system_fallback_count, 0);
-    assert_eq!(comparison.enter_count + comparison.intent_hold_count, comparison.final_valid_count);
+    assert_eq!(
+        comparison.enter_count + comparison.intent_hold_count,
+        comparison.final_valid_count
+    );
     assert!(comparison.average_generated_target_exposure_pct.is_some());
-    assert_eq!(comparison.risk_increasing_count + comparison.risk_reducing_count + comparison.risk_neutral_count, decisions.len());
+    assert_eq!(
+        comparison.risk_increasing_count
+            + comparison.risk_reducing_count
+            + comparison.risk_neutral_count,
+        decisions.len()
+    );
     let prompts = provider.prompts.lock().unwrap();
-    assert!(prompts.iter().all(|prompt| prompt.structured_output_schema.as_ref().is_some_and(|schema| schema.pointer("/properties/target_exposure_pct").is_none())));
+    assert!(prompts.iter().all(|prompt| prompt
+        .structured_output_schema
+        .as_ref()
+        .is_some_and(|schema| schema.pointer("/properties/target_exposure_pct").is_none())));
     let _ = fs::remove_file(path);
 }

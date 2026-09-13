@@ -19,6 +19,8 @@ pub mod market_signals;
 pub mod market_statistics;
 #[cfg(test)]
 mod market_tests;
+pub mod market_time;
+pub mod market_triggers;
 pub mod market_validation;
 pub mod models;
 pub mod repository;
@@ -166,6 +168,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         25,
         "market_risk_reduction_policy",
         include_str!("../../migrations/0025_market_risk_reduction_policy.sql"),
+    ),
+    (
+        26,
+        "market_intraday_foundation",
+        include_str!("../../migrations/0026_market_intraday_foundation.sql"),
     ),
 ];
 
@@ -986,14 +993,43 @@ mod tests {
         assert_eq!(connection.query_row("SELECT decision_interval FROM market_ai_agent_configs WHERE agent_id='ai-technical-v4'", [], |row| row.get::<_, usize>(0)).unwrap(), 7);
         assert_eq!(connection.query_row("SELECT prompt_version FROM market_ai_agent_configs WHERE agent_id='ai-technical-v4-1'", [], |row| row.get::<_, String>(0)).unwrap(), "MARKET_AI_AGENT_V4_1");
         for table in ["market_ai_output_attempts", "market_ai_validation_stages"] {
-            assert_eq!(connection.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1", [table], |row| row.get::<_, usize>(0)).unwrap(), 1);
+            assert_eq!(
+                connection
+                    .query_row(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                        [table],
+                        |row| row.get::<_, usize>(0)
+                    )
+                    .unwrap(),
+                1
+            );
         }
-        let decision_columns = connection.prepare("PRAGMA table_info(market_ai_decisions)").unwrap().query_map([], |row| row.get::<_, String>(1)).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
-        assert!(decision_columns.iter().any(|column| column == "first_failure_type"));
-        assert!(decision_columns.iter().any(|column| column == "fallback_reason"));
-        let runtime_columns = connection.prepare("PRAGMA table_info(market_ai_runtime_metrics)").unwrap().query_map([], |row| row.get::<_, String>(1)).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
-        assert!(runtime_columns.iter().any(|column| column == "first_pass_valid_count"));
-        assert!(runtime_columns.iter().any(|column| column == "p95_latency_ms"));
+        let decision_columns = connection
+            .prepare("PRAGMA table_info(market_ai_decisions)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(decision_columns
+            .iter()
+            .any(|column| column == "first_failure_type"));
+        assert!(decision_columns
+            .iter()
+            .any(|column| column == "fallback_reason"));
+        let runtime_columns = connection
+            .prepare("PRAGMA table_info(market_ai_runtime_metrics)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(runtime_columns
+            .iter()
+            .any(|column| column == "first_pass_valid_count"));
+        assert!(runtime_columns
+            .iter()
+            .any(|column| column == "p95_latency_ms"));
     }
 
     #[test]
@@ -1076,8 +1112,18 @@ mod tests {
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         ).unwrap();
         assert_eq!(sizing, (25.0, 10.0, 15.0));
-        let columns = connection.prepare("PRAGMA table_info(market_ai_decisions)").unwrap().query_map([], |row| row.get::<_, String>(1)).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
-        for expected in ["intent", "generated_target_exposure_pct", "position_sizing_version"] {
+        let columns = connection
+            .prepare("PRAGMA table_info(market_ai_decisions)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        for expected in [
+            "intent",
+            "generated_target_exposure_pct",
+            "position_sizing_version",
+        ] {
             assert!(columns.iter().any(|column| column == expected));
         }
     }
@@ -1087,7 +1133,9 @@ mod tests {
         let mut connection = Connection::open_in_memory().unwrap();
         prepare_migration_registry(&connection).unwrap();
         apply_migrations_through(&mut connection, 24).unwrap();
-        connection.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
+        connection
+            .execute_batch("PRAGMA foreign_keys = OFF;")
+            .unwrap();
         connection.execute(
             "INSERT INTO market_risk_evaluations(decision_id,result,reason,risk_state_json) VALUES(999,'APPROVED','legacy','{}')",
             [],
@@ -1095,16 +1143,83 @@ mod tests {
         apply_migrations_through(&mut connection, 25).unwrap();
 
         assert_eq!(schema_version(&connection).unwrap(), 25);
-        assert_eq!(connection.query_row("SELECT reason FROM market_risk_evaluations WHERE decision_id=999", [], |row| row.get::<_, String>(0)).unwrap(), "legacy");
-        let columns = connection.prepare("PRAGMA table_info(market_risk_evaluations)").unwrap().query_map([], |row| row.get::<_, String>(1)).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
-        for expected in ["exposure_change_class", "current_exposure_pct", "target_exposure_pct", "exposure_delta_pct", "policy_version"] {
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT reason FROM market_risk_evaluations WHERE decision_id=999",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "legacy"
+        );
+        let columns = connection
+            .prepare("PRAGMA table_info(market_risk_evaluations)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        for expected in [
+            "exposure_change_class",
+            "current_exposure_pct",
+            "target_exposure_pct",
+            "exposure_delta_pct",
+            "policy_version",
+        ] {
             assert!(columns.iter().any(|column| column == expected));
         }
         connection.execute(
             "INSERT INTO market_risk_rule_evaluations(decision_id,rule_order,rule,status,reason) VALUES(999,0,'MAX_OPERATIONS','NOT_APPLICABLE','RISK_REDUCING_ACTION')",
             [],
         ).unwrap();
-        assert_eq!(connection.query_row("SELECT status FROM market_risk_rule_evaluations WHERE decision_id=999", [], |row| row.get::<_, String>(0)).unwrap(), "NOT_APPLICABLE");
-        connection.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT status FROM market_risk_rule_evaluations WHERE decision_id=999",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "NOT_APPLICABLE"
+        );
+        connection
+            .execute_batch("PRAGMA foreign_keys = ON;")
+            .unwrap();
+    }
+
+    #[test]
+    fn migration_twenty_six_preserves_market_history_and_adds_intraday_audit() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 25).unwrap();
+        connection.execute("INSERT INTO market_datasets(id,name,asset,timeframe,start_at,end_at,candle_count,fingerprint,source_path) VALUES('keep-intraday','Preservar','AAPL','1D','2026-01-01','2026-01-02',2,'keep-intraday-fingerprint','fixture.csv')", []).unwrap();
+
+        apply_migrations_through(&mut connection, 26).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 26);
+        let metadata: (String, String, String) = connection
+            .query_row(
+                "SELECT market,timezone,session_type FROM market_datasets WHERE id='keep-intraday'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            metadata,
+            ("UNSPECIFIED".into(), "UTC".into(), "DAILY".into())
+        );
+        for table in ["market_decision_trigger_audits", "market_session_metrics"] {
+            assert_eq!(
+                connection
+                    .query_row(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                        [table],
+                        |row| row.get::<_, usize>(0)
+                    )
+                    .unwrap(),
+                1
+            );
+        }
     }
 }
