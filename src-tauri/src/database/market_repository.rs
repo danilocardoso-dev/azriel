@@ -1,6 +1,6 @@
 use super::{
     ai_repository, market_ai, market_models::*, market_observatory, market_positions,
-    market_regimes, market_signals,
+    market_regimes, market_risk, market_signals,
 };
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde_json::json;
@@ -88,6 +88,8 @@ pub(crate) struct AgentRun {
     pub(crate) hold_count: usize,
     pub(crate) ai_runtime: market_ai::MarketAiRuntimeMetrics,
     position_manager: market_positions::PositionManager,
+    risk_day: Option<String>,
+    risk_day_start_equity: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -98,6 +100,7 @@ pub(crate) struct DecisionRow {
     pub(crate) decision: Decision,
     risk_result: String,
     risk_reason: String,
+    risk_evaluation: market_risk::RiskEvaluation,
     validation_code: Option<String>,
     approved_pct: Option<f64>,
     cash_before: f64,
@@ -762,6 +765,46 @@ fn execute(
     })
 }
 
+fn evaluate_risk(
+    decision: &Decision,
+    p: &Portfolio,
+    price: f64,
+    profile: &MarketRiskProfile,
+    asset: &str,
+    kill: bool,
+    daily_loss_pct: f64,
+    position_allowed: bool,
+) -> market_risk::RiskEvaluation {
+    let current = exposure(p, price);
+    let target = decision
+        .desired_pct
+        .unwrap_or(if decision.action == "SELL" { 0.0 } else { current })
+        .clamp(0.0, 100.0);
+    let current_equity = equity(p, price);
+    let drawdown_pct = if p.peak_equity > 0.0 {
+        ((p.peak_equity - current_equity) / p.peak_equity * 100.0).max(0.0)
+    } else {
+        0.0
+    };
+    market_risk::evaluate(market_risk::RiskEvaluationInput {
+        current_exposure_pct: current,
+        target_exposure_pct: target,
+        operation_count: p.trades,
+        daily_loss_pct,
+        drawdown_pct,
+        asset_allowed: profile.allowed_assets.is_empty()
+            || profile
+                .allowed_assets
+                .iter()
+                .any(|allowed| allowed.eq_ignore_ascii_case(asset)),
+        position_allowed,
+        kill_switch_active: kill || kill_switch_active(),
+        hold_without_order: decision.action == "HOLD",
+        profile,
+    })
+}
+
+#[cfg(test)]
 fn risk(
     decision: &Decision,
     p: &Portfolio,
@@ -770,63 +813,12 @@ fn risk(
     asset: &str,
     kill: bool,
 ) -> (String, String, Option<f64>) {
-    if kill || kill_switch_active() {
-        return ("REJECTED".into(), "Kill switch ativo".into(), None);
-    }
-    if !profile.allowed_assets.is_empty()
-        && !profile
-            .allowed_assets
-            .iter()
-            .any(|a| a.eq_ignore_ascii_case(asset))
-    {
-        return ("REJECTED".into(), "Ativo fora da allowlist".into(), None);
-    }
-    if decision.action == "HOLD" {
-        return ("APPROVED".into(), "HOLD não gera ordem".into(), None);
-    }
-    if profile
-        .max_trades_per_day
-        .is_some_and(|max| p.trades >= max)
-    {
-        return (
-            "REJECTED".into(),
-            "Limite de operações atingido".into(),
-            None,
-        );
-    }
-    let e = equity(p, price);
-    let drawdown = if p.peak_equity > 0.0 {
-        (p.peak_equity - e) / p.peak_equity * 100.0
-    } else {
-        0.0
-    };
-    if drawdown >= profile.max_drawdown_pct {
-        return ("REJECTED".into(), "Drawdown máximo atingido".into(), None);
-    }
-    let requested = decision
-        .desired_pct
-        .unwrap_or(if decision.action == "SELL" {
-            0.0
-        } else {
-            exposure(p, price)
-        })
-        .clamp(0.0, 100.0);
-    let approved = requested
-        .min(profile.max_position_pct)
-        .min(profile.max_total_exposure_pct);
-    if (approved - requested).abs() > 0.000001 {
-        (
-            "MODIFIED".into(),
-            format!("Exposição limitada a {:.2}%", approved),
-            Some(approved),
-        )
-    } else {
-        (
-            "APPROVED".into(),
-            "Dentro dos limites do perfil".into(),
-            Some(approved),
-        )
-    }
+    let evaluation = evaluate_risk(decision, p, price, profile, asset, kill, 0.0, true);
+    (
+        evaluation.result,
+        evaluation.reason,
+        evaluation.approved_position_pct,
+    )
 }
 
 fn build_v2_snapshot(
@@ -1171,6 +1163,8 @@ pub(crate) fn simulate_range_with_provider(
             hold_count: 0,
             ai_runtime: Default::default(),
             position_manager: Default::default(),
+            risk_day: None,
+            risk_day_start_equity: round(input.initial_capital),
         })
         .collect();
     for index in start..=end {
@@ -1179,6 +1173,20 @@ pub(crate) fn simulate_range_with_provider(
         for run in &mut runs {
             if run.status != "completed" {
                 continue;
+            }
+            let risk_day = candle
+                .timestamp
+                .split(['T', ' '])
+                .next()
+                .unwrap_or(&candle.timestamp)
+                .to_string();
+            if run.risk_day.as_deref() != Some(risk_day.as_str()) {
+                run.risk_day = Some(risk_day);
+                run.risk_day_start_equity = run
+                    .snapshots
+                    .last()
+                    .map(|snapshot| snapshot.equity)
+                    .unwrap_or(input.initial_capital);
             }
             if let Some(pending) = run.pending.take() {
                 let had_position = run.portfolio.quantity > 0.0;
@@ -1418,22 +1426,25 @@ pub(crate) fn simulate_range_with_provider(
                 && decision.action == "SELL"
                 && run.portfolio.quantity <= 0.0
                 && !profile.allow_short;
-            let (result, reason, approved) = if invalid_position {
-                (
-                    "REJECTED".into(),
-                    "SELL sem posição rejeitado; short está desabilitado".into(),
-                    None,
-                )
+            let daily_loss_pct = if run.risk_day_start_equity > 0.0 {
+                ((run.risk_day_start_equity - before) / run.risk_day_start_equity * 100.0)
+                    .max(0.0)
             } else {
-                risk(
-                    &decision,
-                    &run.portfolio,
-                    candle.close,
-                    profile,
-                    &dataset.asset,
-                    false,
-                )
+                0.0
             };
+            let risk_evaluation = evaluate_risk(
+                &decision,
+                &run.portfolio,
+                candle.close,
+                profile,
+                &dataset.asset,
+                false,
+                daily_loss_pct,
+                !invalid_position,
+            );
+            let result = risk_evaluation.result.clone();
+            let reason = risk_evaluation.reason.clone();
+            let approved = risk_evaluation.approved_position_pct;
             let decision_index = run.decisions.len();
             if effective_lifecycle_action == Some(market_positions::LifecycleAction::HoldPosition) {
                 let bias = ai
@@ -1462,6 +1473,7 @@ pub(crate) fn simulate_range_with_provider(
                 decision: decision.clone(),
                 risk_result: result.clone(),
                 risk_reason: reason,
+                risk_evaluation,
                 validation_code: lifecycle_validation
                     .or_else(|| invalid_position.then(|| "INVALID_POSITION_ACTION".into())),
                 approved_pct: approved,
@@ -1616,7 +1628,15 @@ fn persist_run(
                     }
                 }
             }
-            tx.execute("INSERT INTO market_risk_evaluations(decision_id,result,reason,requested_position_pct,approved_position_pct,risk_state_json) VALUES(?1,?2,?3,?4,?5,?6)",params![decision_id,d.risk_result,d.risk_reason,d.decision.desired_pct,d.approved_pct,"{}"] ).map_err(|e|e.to_string())?;
+            let risk_state_json = serde_json::to_string(&d.risk_evaluation)
+                .map_err(|error| error.to_string())?;
+            tx.execute("INSERT INTO market_risk_evaluations(decision_id,result,reason,requested_position_pct,approved_position_pct,risk_state_json,exposure_change_class,current_exposure_pct,target_exposure_pct,exposure_delta_pct,policy_version) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",params![decision_id,d.risk_result,d.risk_reason,d.decision.desired_pct,d.approved_pct,risk_state_json,d.risk_evaluation.classification.as_str(),d.risk_evaluation.current_exposure_pct,d.risk_evaluation.target_exposure_pct,d.risk_evaluation.exposure_delta_pct,d.risk_evaluation.policy_version]).map_err(|e|e.to_string())?;
+            for (rule_order, evaluation) in d.risk_evaluation.rules.iter().enumerate() {
+                tx.execute(
+                    "INSERT INTO market_risk_rule_evaluations(decision_id,rule_order,rule,status,reason) VALUES(?1,?2,?3,?4,?5)",
+                    params![decision_id, rule_order, evaluation.rule, evaluation.status.as_str(), evaluation.reason],
+                ).map_err(|error| error.to_string())?;
+            }
             if let Some(ex) = &d.execution {
                 tx.execute("INSERT INTO market_orders(decision_id,agent_id,asset,side,quantity,requested_price,status) SELECT ?1,?2,asset,?3,?4,?5,'filled' FROM market_experiments WHERE id=?6",params![decision_id,run.id,ex.side,ex.quantity,ex.requested_price,experiment_id]).map_err(|e|e.to_string())?;
                 let order_id = tx.last_insert_rowid();
@@ -2076,20 +2096,44 @@ pub fn list_ai_decisions(
     connection: &Connection,
     experiment_id: &str,
 ) -> Result<Vec<MarketAiDecisionLog>, String> {
-    let mut statement=connection.prepare("SELECT d.id,d.timestamp,d.action,d.desired_position_pct,d.confidence,d.reasoning,r.result,r.reason,r.approved_position_pct,x.execution_price,a.call_status,a.provider,a.model,a.prompt_version,a.latency_ms,a.attempts,a.fallback_used,c.input_snapshot_json,v.forward_return_1,v.forward_return_5,v.forward_return_10,a.reason_code,a.validation_code,COALESCE(s.disagreement,0),a.lifecycle_action,a.first_failure_type,a.fallback_reason,a.intent,a.generated_target_exposure_pct,a.position_sizing_version FROM market_decisions d JOIN market_risk_evaluations r ON r.decision_id=d.id JOIN market_ai_decisions a ON a.decision_id=d.id LEFT JOIN market_orders o ON o.decision_id=d.id LEFT JOIN market_executions x ON x.order_id=o.id LEFT JOIN market_ai_decision_context c ON c.decision_id=d.id LEFT JOIN market_ai_decision_evaluations v ON v.decision_id=d.id LEFT JOIN market_ai_signal_traces s ON s.decision_id=d.id WHERE d.experiment_id=?1 ORDER BY d.candle_index DESC LIMIT 1000").map_err(|error|error.to_string())?;
+    let mut statement=connection.prepare("SELECT d.id,d.timestamp,d.action,d.desired_position_pct,d.confidence,d.reasoning,r.result,r.reason,r.approved_position_pct,x.execution_price,a.call_status,a.provider,a.model,a.prompt_version,a.latency_ms,a.attempts,a.fallback_used,c.input_snapshot_json,v.forward_return_1,v.forward_return_5,v.forward_return_10,a.reason_code,a.validation_code,COALESCE(s.disagreement,0),a.lifecycle_action,a.first_failure_type,a.fallback_reason,a.intent,a.generated_target_exposure_pct,a.position_sizing_version,r.risk_state_json,d.exposure_before FROM market_decisions d JOIN market_risk_evaluations r ON r.decision_id=d.id JOIN market_ai_decisions a ON a.decision_id=d.id LEFT JOIN market_orders o ON o.decision_id=d.id LEFT JOIN market_executions x ON x.order_id=o.id LEFT JOIN market_ai_decision_context c ON c.decision_id=d.id LEFT JOIN market_ai_decision_evaluations v ON v.decision_id=d.id LEFT JOIN market_ai_signal_traces s ON s.decision_id=d.id WHERE d.experiment_id=?1 ORDER BY d.candle_index DESC LIMIT 1000").map_err(|error|error.to_string())?;
     let rows = statement
         .query_map([experiment_id], |row| {
             let raw: Option<String> = row.get(17)?;
+            let decision_id: i64 = row.get(0)?;
+            let result: String = row.get(6)?;
+            let reason: String = row.get(7)?;
+            let approved_position_pct: Option<f64> = row.get(8)?;
+            let target_exposure_pct: Option<f64> = row.get(3)?;
+            let current_exposure_pct: f64 = row.get(31)?;
+            let risk_trace = row
+                .get::<_, String>(30)
+                .ok()
+                .and_then(|value| serde_json::from_str::<market_risk::RiskEvaluation>(&value).ok())
+                .unwrap_or_else(|| {
+                    let target = target_exposure_pct.unwrap_or(current_exposure_pct);
+                    market_risk::RiskEvaluation {
+                        result: result.clone(),
+                        reason: reason.clone(),
+                        approved_position_pct,
+                        classification: market_risk::classify_exposure_change(current_exposure_pct, target),
+                        current_exposure_pct,
+                        target_exposure_pct: target,
+                        exposure_delta_pct: target - current_exposure_pct,
+                        policy_version: "LEGACY_RISK_POLICY".into(),
+                        rules: Vec::new(),
+                    }
+                });
             Ok(MarketAiDecisionLog {
-                decision_id: row.get(0)?,
+                decision_id,
                 timestamp: row.get(1)?,
                 action: row.get(2)?,
                 desired_position_pct: row.get(3)?,
                 confidence: row.get(4)?,
                 reason: row.get(5)?,
-                risk_result: row.get(6)?,
-                risk_reason: row.get(7)?,
-                approved_position_pct: row.get(8)?,
+                risk_result: result,
+                risk_reason: reason,
+                approved_position_pct,
                 execution_price: row.get(9)?,
                 call_status: row.get(10)?,
                 provider: row.get(11)?,
@@ -2111,6 +2155,7 @@ pub fn list_ai_decisions(
                 intent: row.get(27)?,
                 generated_target_exposure_pct: row.get(28)?,
                 position_sizing_version: row.get(29)?,
+                risk_trace,
                 output_attempts: load_ai_output_attempts(connection, row.get(0)?)?,
             })
         })
@@ -2134,7 +2179,14 @@ pub fn list_ai_experiment_comparisons(
                     r.final_invalid_count,r.system_fallback_count,r.p95_latency_ms,
                     r.max_latency_ms,COALESCE(i.enter_count,0),COALESCE(i.hold_count,0),
                     COALESCE(i.reduce_count,0),COALESCE(i.exit_count,0),
-                    i.average_generated_target_exposure_pct
+                    i.average_generated_target_exposure_pct,
+                    COALESCE(rp.risk_increasing_count,0),
+                    COALESCE(rp.risk_reducing_count,0),
+                    COALESCE(rp.risk_neutral_count,0),
+                    COALESCE(rp.max_operations_rejection_count,0),
+                    COALESCE(rp.max_operations_not_applicable_count,0),
+                    COALESCE(rp.reductions_executed_count,0),
+                    COALESCE(rp.exits_executed_count,0)
              FROM market_experiments e
              JOIN market_datasets d ON d.id=e.dataset_id
              JOIN market_ai_runtime_metrics r ON r.experiment_id=e.id
@@ -2150,6 +2202,20 @@ pub fn list_ai_experiment_comparisons(
                 JOIN market_ai_decisions ad ON ad.decision_id=md.id
                 GROUP BY md.experiment_id,md.agent_id
              ) i ON i.experiment_id=e.id AND i.agent_id=r.agent_id
+             LEFT JOIN (
+                SELECT md.experiment_id,md.agent_id,
+                       SUM(CASE WHEN re.exposure_change_class='RISK_INCREASING' THEN 1 ELSE 0 END) AS risk_increasing_count,
+                       SUM(CASE WHEN re.exposure_change_class='RISK_REDUCING' THEN 1 ELSE 0 END) AS risk_reducing_count,
+                       SUM(CASE WHEN re.exposure_change_class='RISK_NEUTRAL' THEN 1 ELSE 0 END) AS risk_neutral_count,
+                       SUM(CASE WHEN EXISTS(SELECT 1 FROM market_risk_rule_evaluations rr WHERE rr.decision_id=md.id AND rr.rule='MAX_OPERATIONS' AND rr.status='REJECTED') THEN 1 ELSE 0 END) AS max_operations_rejection_count,
+                       SUM(CASE WHEN EXISTS(SELECT 1 FROM market_risk_rule_evaluations rr WHERE rr.decision_id=md.id AND rr.rule='MAX_OPERATIONS' AND rr.status='NOT_APPLICABLE') THEN 1 ELSE 0 END) AS max_operations_not_applicable_count,
+                       SUM(CASE WHEN ad.lifecycle_action='REDUCE_LONG' AND EXISTS(SELECT 1 FROM market_orders mo JOIN market_executions mx ON mx.order_id=mo.id WHERE mo.decision_id=md.id) THEN 1 ELSE 0 END) AS reductions_executed_count,
+                       SUM(CASE WHEN ad.lifecycle_action='EXIT_LONG' AND EXISTS(SELECT 1 FROM market_orders mo JOIN market_executions mx ON mx.order_id=mo.id WHERE mo.decision_id=md.id) THEN 1 ELSE 0 END) AS exits_executed_count
+                FROM market_decisions md
+                JOIN market_ai_decisions ad ON ad.decision_id=md.id
+                JOIN market_risk_evaluations re ON re.decision_id=md.id
+                GROUP BY md.experiment_id,md.agent_id
+             ) rp ON rp.experiment_id=e.id AND rp.agent_id=r.agent_id
              WHERE e.status='completed'
              ORDER BY e.created_at DESC",
         )
@@ -2206,6 +2272,13 @@ pub fn list_ai_experiment_comparisons(
                 reduce_count: row.get(34)?,
                 exit_count: row.get(35)?,
                 average_generated_target_exposure_pct: row.get(36)?,
+                risk_increasing_count: row.get(37)?,
+                risk_reducing_count: row.get(38)?,
+                risk_neutral_count: row.get(39)?,
+                max_operations_rejection_count: row.get(40)?,
+                max_operations_not_applicable_count: row.get(41)?,
+                reductions_executed_count: row.get(42)?,
+                exits_executed_count: row.get(43)?,
             })
         })
         .map_err(|error| error.to_string())?;
@@ -2591,6 +2664,8 @@ mod v041_context_tests {
             hold_count: 0,
             ai_runtime: Default::default(),
             position_manager: Default::default(),
+            risk_day: None,
+            risk_day_start_equity: 1_000.0,
         }
     }
 

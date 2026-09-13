@@ -1262,6 +1262,9 @@ fn ai_v4_2_persists_explicit_position_intent_and_generated_target() {
     assert!(called.iter().all(|item| item.generated_target_exposure_pct.is_some()));
     assert!(called.iter().all(|item| item.position_sizing_version.as_deref() == Some("POSITION_SIZING_V1")));
     assert!(called.iter().all(|item| item.confidence == Some(0.83)));
+    assert!(called.iter().all(|item| item.risk_trace.policy_version == "RISK_POLICY_V2"));
+    assert!(called.iter().all(|item| !item.risk_trace.rules.is_empty()));
+    assert!(called.iter().all(|item| item.risk_trace.rules.iter().any(|rule| rule.rule == "MAX_OPERATIONS")));
     assert!(called.iter().all(|item| item.input_snapshot.as_ref().and_then(|snapshot| snapshot.pointer("/position/state")).and_then(|value| value.as_str()).is_some_and(|state| state == "FLAT" || state == "LONG")));
     let comparison = market_repository::list_ai_experiment_comparisons(&connection)
         .unwrap()
@@ -1273,6 +1276,7 @@ fn ai_v4_2_persists_explicit_position_intent_and_generated_target() {
     assert_eq!(comparison.system_fallback_count, 0);
     assert_eq!(comparison.enter_count + comparison.intent_hold_count, comparison.final_valid_count);
     assert!(comparison.average_generated_target_exposure_pct.is_some());
+    assert_eq!(comparison.risk_increasing_count + comparison.risk_reducing_count + comparison.risk_neutral_count, decisions.len());
     let prompts = provider.prompts.lock().unwrap();
     assert!(prompts.iter().all(|prompt| prompt.structured_output_schema.as_ref().is_some_and(|schema| schema.pointer("/properties/target_exposure_pct").is_none())));
     let _ = fs::remove_file(path);

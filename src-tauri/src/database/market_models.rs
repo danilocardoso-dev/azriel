@@ -600,6 +600,7 @@ pub struct MarketAiDecisionLog {
     pub intent: Option<String>,
     pub generated_target_exposure_pct: Option<f64>,
     pub position_sizing_version: Option<String>,
+    pub risk_trace: super::market_risk::RiskEvaluation,
     pub output_attempts: Vec<MarketAiAttemptLog>,
 }
 
@@ -644,6 +645,13 @@ pub struct MarketAiExperimentComparison {
     pub reduce_count: usize,
     pub exit_count: usize,
     pub average_generated_target_exposure_pct: Option<f64>,
+    pub risk_increasing_count: usize,
+    pub risk_reducing_count: usize,
+    pub risk_neutral_count: usize,
+    pub max_operations_rejection_count: usize,
+    pub max_operations_not_applicable_count: usize,
+    pub reductions_executed_count: usize,
+    pub exits_executed_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -471,7 +471,7 @@ Status: 🧪 Implementada em 12/09/2026; validação operacional com AAPL 2022/2
 
 ## Market Lab v0.4.4.1 — Contract Simplification & Position Context Fix
 
-Status: 🧪 Implementada em 12/09/2026; aceite operacional com AAPL 2022/2023 e Ollama pendente.
+Status: ✅ Concluída e validada em 12/09/2026.
 
 - `AI Technical V4.2` recebe posição explícita e decide apenas `ENTER`, `HOLD`, `REDUCE` ou `EXIT`;
 - `confidence_pct` usa a faixa 0–100 e é normalizada internamente, eliminando a ambiguidade observada na V4.1;
@@ -479,3 +479,17 @@ Status: 🧪 Implementada em 12/09/2026; aceite operacional com AAPL 2022/2023 e
 - estado de posição inconsistente gera `POSITION_CONTEXT_ERROR` e não chama o LLM;
 - Inspector e comparação A/B mostram contexto, intent, target gerado, confiabilidade, fallback e latência;
 - V1–V4.1, Signal Engine V1, Risk Engine, execução, portfólio e validação científica permanecem preservados.
+- aceite operacional AAPL 2022 e AAPL 2023: final valid rate de 100%, fallback de 0% e timeout de 0 em ambos.
+
+## Market Lab v0.4.4.2 — Risk-Reducing Actions Policy
+
+Status: 🧪 Implementada em 12/09/2026; aceite operacional AAPL 2022/2023 pendente.
+
+- `RISK_POLICY_V2` classifica cada target por exposição atual versus exposição alvo, com tolerância numérica;
+- `MAX_OPERATIONS`, perda diária e drawdown continuam bloqueando novo risco, mas não aprisionam posições ao rejeitar redução ou saída;
+- posição máxima e exposição máxima limitam apenas ações que aumentam risco;
+- Kill Switch preserva a política explícita `BLOCK_ALL`, inclusive para redução e saída;
+- cada regra persiste `PASSED`, `REJECTED` ou `NOT_APPLICABLE`, com motivo e ordem auditáveis;
+- Decision Inspector mostra classificação, exposições, delta, matriz aplicada, resultado final e motivo exato;
+- comparação A/B inclui classes de risco, rejeições por operações, regras não aplicáveis, reduções e saídas executadas;
+- V4.2, Position Sizing V1, Signal Engine V1, Execution Simulator, Portfolio Engine e Scientific Validation permanecem preservados.

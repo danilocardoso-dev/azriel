@@ -14,6 +14,7 @@ pub mod market_observatory;
 pub mod market_positions;
 pub mod market_regimes;
 pub mod market_repository;
+pub mod market_risk;
 pub mod market_signals;
 pub mod market_statistics;
 #[cfg(test)]
@@ -160,6 +161,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         24,
         "market_ai_contract_v42",
         include_str!("../../migrations/0024_market_ai_contract_v42.sql"),
+    ),
+    (
+        25,
+        "market_risk_reduction_policy",
+        include_str!("../../migrations/0025_market_risk_reduction_policy.sql"),
     ),
 ];
 
@@ -1074,5 +1080,31 @@ mod tests {
         for expected in ["intent", "generated_target_exposure_pct", "position_sizing_version"] {
             assert!(columns.iter().any(|column| column == expected));
         }
+    }
+
+    #[test]
+    fn migration_twenty_five_adds_risk_trace_without_losing_history() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 24).unwrap();
+        connection.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
+        connection.execute(
+            "INSERT INTO market_risk_evaluations(decision_id,result,reason,risk_state_json) VALUES(999,'APPROVED','legacy','{}')",
+            [],
+        ).unwrap();
+        apply_migrations_through(&mut connection, 25).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 25);
+        assert_eq!(connection.query_row("SELECT reason FROM market_risk_evaluations WHERE decision_id=999", [], |row| row.get::<_, String>(0)).unwrap(), "legacy");
+        let columns = connection.prepare("PRAGMA table_info(market_risk_evaluations)").unwrap().query_map([], |row| row.get::<_, String>(1)).unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+        for expected in ["exposure_change_class", "current_exposure_pct", "target_exposure_pct", "exposure_delta_pct", "policy_version"] {
+            assert!(columns.iter().any(|column| column == expected));
+        }
+        connection.execute(
+            "INSERT INTO market_risk_rule_evaluations(decision_id,rule_order,rule,status,reason) VALUES(999,0,'MAX_OPERATIONS','NOT_APPLICABLE','RISK_REDUCING_ACTION')",
+            [],
+        ).unwrap();
+        assert_eq!(connection.query_row("SELECT status FROM market_risk_rule_evaluations WHERE decision_id=999", [], |row| row.get::<_, String>(0)).unwrap(), "NOT_APPLICABLE");
+        connection.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
     }
 }
