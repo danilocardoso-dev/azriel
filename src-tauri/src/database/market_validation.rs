@@ -473,38 +473,59 @@ pub fn run(
     input: &MarketValidationInput,
 ) -> Result<MarketValidationResult, String> {
     let base = experiment_input(input);
-    let (ai_config, endpoint) = market_repository::resolve_ai_config(connection, &base)?;
+    let (ai_configs, endpoint) = market_repository::resolve_ai_configs(connection, &base)?;
     if input.agent_ids.iter().any(|id| market_ai::is_ai_agent(id)) {
+        let timeout_ms = ai_configs
+            .values()
+            .map(|config| config.timeout_ms)
+            .min()
+            .unwrap_or(30_000);
         let health = tauri::async_runtime::block_on(crate::ollama::status(
             &endpoint,
-            (ai_config.timeout_ms / 1000).clamp(5, 8),
+            (timeout_ms / 1000).clamp(5, 8),
         ))?;
-        if health.available && health.models.iter().any(|model| model == &ai_config.model) {
+        if health.available
+            && ai_configs
+                .values()
+                .all(|config| health.models.iter().any(|model| model == &config.model))
+        {
             let provider = market_ai::OllamaMarketAiProvider::new(endpoint);
-            run_with_provider(connection, input, &provider, &ai_config)
+            run_with_provider_configs(connection, input, &provider, &ai_configs)
         } else {
-            run_with_provider(
+            run_with_provider_configs(
                 connection,
                 input,
                 &market_ai::UnavailableMarketAiProvider,
-                &ai_config,
+                &ai_configs,
             )
         }
     } else {
-        run_with_provider(
+        run_with_provider_configs(
             connection,
             input,
             &market_ai::UnavailableMarketAiProvider,
-            &ai_config,
+            &ai_configs,
         )
     }
 }
 
+#[cfg(test)]
 pub(crate) fn run_with_provider(
     connection: &mut Connection,
     input: &MarketValidationInput,
     provider: &dyn market_ai::MarketAiProvider,
     ai_config: &market_ai::MarketAiConfig,
+) -> Result<MarketValidationResult, String> {
+    let mut configs = market_repository::MarketAiConfigMap::new();
+    configs.insert(ai_config.agent_id.clone(), ai_config.clone());
+    run_with_provider_configs(connection, input, provider, &configs)
+}
+
+pub(crate) fn run_with_provider_configs(
+    connection: &mut Connection,
+    input: &MarketValidationInput,
+    provider: &dyn market_ai::MarketAiProvider,
+    ai_configs: &market_repository::MarketAiConfigMap,
 ) -> Result<MarketValidationResult, String> {
     let base = experiment_input(input);
     let (dataset, risk, agents, candles) = market_repository::validate_input(connection, &base)?;
@@ -519,7 +540,7 @@ pub(crate) fn run_with_provider(
     let (splits, walk_forward) = validate(input, candles.len())?;
     let id = new_id();
     let frozen_agents: Vec<_> = agents.iter().map(|agent| json!({"id":agent.id,"strategyType":agent.strategy_type,"strategyVersion":agent.strategy_version,"parameters":serde_json::from_str::<serde_json::Value>(&agent.default_config_json).unwrap_or_default()})).collect();
-    let frozen = json!({"datasetHash":dataset.fingerprint,"agents":frozen_agents,"riskProfile":risk,"initialCapital":input.initial_capital,"seed":input.random_seed,"feePct":input.fee_pct,"slippagePct":input.slippage_pct,"executionTiming":"decision-close-T/execution-open-T+1","riskFreeRate":0.0,"aiConfig":ai_config});
+    let frozen = json!({"datasetHash":dataset.fingerprint,"agents":frozen_agents,"riskProfile":risk,"initialCapital":input.initial_capital,"seed":input.random_seed,"feePct":input.fee_pct,"slippagePct":input.slippage_pct,"executionTiming":"decision-close-T/execution-open-T+1","riskFreeRate":0.0,"aiConfigs":ai_configs});
     connection.execute("INSERT INTO market_validation_runs(id,name,dataset_id,dataset_hash,risk_profile_id,agent_ids_json,frozen_config_json,split_config_json,walk_forward_config_json,regime_config_json,rolling_window,annualization_factor,validation_engine_version,metric_formula_version,regime_engine_version,status,started_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,'running',CURRENT_TIMESTAMP)", params![id,input.name.trim(),dataset.id,dataset.fingerprint,risk.id,serde_json::to_string(&input.agent_ids).map_err(|error|error.to_string())?,frozen.to_string(),serde_json::to_string(&input.split_config).map_err(|error|error.to_string())?,serde_json::to_string(&input.walk_forward_config).map_err(|error|error.to_string())?,serde_json::to_string(&input.regime_config).map_err(|error|error.to_string())?,input.rolling_window,input.annualization_factor,VALIDATION_ENGINE_VERSION,market_statistics::METRIC_FORMULA_VERSION,market_regimes::REGIME_ENGINE_VERSION]).map_err(|error|error.to_string())?;
 
     let execution = (|| -> Result<bool, String> {
@@ -532,22 +553,25 @@ pub(crate) fn run_with_provider(
         );
         persist_regimes(connection, &id, &candles, &labels)?;
         let mut all_metrics = Vec::new();
-        let mut ai_runtime = market_ai::MarketAiRuntimeMetrics::default();
+        let mut ai_runtime: HashMap<String, market_ai::MarketAiRuntimeMetrics> = HashMap::new();
         for spec in splits.iter().chain(walk_forward.iter()) {
             if market_repository::kill_switch_active() {
                 connection.execute("UPDATE market_validation_runs SET status='aborted',completed_at=CURRENT_TIMESTAMP,error='Kill Switch acionado' WHERE id=?1", [&id]).map_err(|error| error.to_string())?;
                 return Ok(false);
             }
             let window_id = persist_window(connection, &id, spec, &candles)?;
-            let simulations = market_repository::simulate_range_with_provider(
+            let simulations = market_repository::simulate_range_with_provider_configs(
                 &dataset, &risk, &agents, &candles, spec.start, spec.end, &base, provider,
-                ai_config,
+                ai_configs,
             )?;
-            if let Some(run) = simulations
+            for run in simulations
                 .iter()
-                .find(|run| market_ai::is_ai_agent(&run.id))
+                .filter(|run| market_ai::is_ai_agent(&run.id))
             {
-                ai_runtime.merge(&run.ai_runtime);
+                ai_runtime
+                    .entry(run.id.clone())
+                    .or_default()
+                    .merge(&run.ai_runtime);
             }
             let buy_hold = benchmark_buy_hold(&candles, spec.start, spec.end);
             for run in &simulations {
@@ -564,7 +588,7 @@ pub(crate) fn run_with_provider(
                 all_metrics.push(metric);
             }
         }
-        let full_runs = market_repository::simulate_range_with_provider(
+        let full_runs = market_repository::simulate_range_with_provider_configs(
             &dataset,
             &risk,
             &agents,
@@ -573,10 +597,16 @@ pub(crate) fn run_with_provider(
             candles.len() - 1,
             &base,
             provider,
-            ai_config,
+            ai_configs,
         )?;
-        if let Some(run) = full_runs.iter().find(|run| market_ai::is_ai_agent(&run.id)) {
-            ai_runtime.merge(&run.ai_runtime);
+        for run in full_runs
+            .iter()
+            .filter(|run| market_ai::is_ai_agent(&run.id))
+        {
+            ai_runtime
+                .entry(run.id.clone())
+                .or_default()
+                .merge(&run.ai_runtime);
         }
         persist_rolling(
             connection,
@@ -588,10 +618,14 @@ pub(crate) fn run_with_provider(
         persist_regime_metrics(connection, &id, &full_runs, &labels, &input.regime_config)?;
         let reports = build_reports(&all_metrics, &agents, &risk);
         persist_reports(connection, &id, &reports)?;
-        if let Some(agent) = agents
+        for agent in agents
             .iter()
-            .find(|agent| market_ai::is_ai_agent(&agent.id))
+            .filter(|agent| market_ai::is_ai_agent(&agent.id))
         {
+            let ai_runtime = ai_runtime.get(&agent.id).cloned().unwrap_or_default();
+            let ai_config = ai_configs
+                .get(&agent.id)
+                .ok_or("configuração da IA ausente na validação")?;
             let distribution = ai_runtime.confidence_distribution();
             connection.execute("INSERT INTO market_validation_ai_runtime_metrics(validation_run_id,agent_id,call_count,successful_call_count,invalid_response_count,timeout_count,retry_count,fallback_count,average_latency_ms,max_latency_ms,total_latency_ms,input_tokens,output_tokens,prompt_version,buy_count,sell_count,llm_hold_count,no_llm_call_count,average_confidence,average_buy_confidence,average_sell_confidence,average_hold_confidence,min_confidence,max_confidence,median_confidence,confidence_00_20,confidence_20_40,confidence_40_60,confidence_60_80,confidence_80_100,first_pass_valid_count,retry_recovered_count,final_valid_count,final_invalid_count,system_fallback_count,first_attempt_total_latency_ms,retry_total_latency_ms,p50_latency_ms,p95_latency_ms,slow_call_count) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32,?33,?34,?35,?36,?37,?38,?39,?40)",params![id,agent.id,ai_runtime.call_count,ai_runtime.successful_call_count,ai_runtime.invalid_response_count,ai_runtime.timeout_count,ai_runtime.retry_count,ai_runtime.fallback_count,ai_runtime.average_latency_ms,ai_runtime.max_latency_ms,ai_runtime.total_latency_ms,ai_runtime.input_tokens,ai_runtime.output_tokens,ai_config.prompt_version,ai_runtime.buy_count,ai_runtime.sell_count,ai_runtime.llm_hold_count,ai_runtime.no_llm_call_count,ai_runtime.average_confidence(),ai_runtime.average_buy_confidence(),ai_runtime.average_sell_confidence(),ai_runtime.average_hold_confidence(),ai_runtime.min_confidence(),ai_runtime.max_confidence(),ai_runtime.median_confidence(),distribution[0],distribution[1],distribution[2],distribution[3],distribution[4],ai_runtime.first_pass_valid_count,ai_runtime.retry_recovered_count,ai_runtime.final_valid_count,ai_runtime.final_invalid_count,ai_runtime.system_fallback_count,ai_runtime.first_attempt_total_latency_ms,ai_runtime.retry_total_latency_ms,ai_runtime.p50_latency_ms(),ai_runtime.p95_latency_ms(),ai_runtime.slow_call_count]).map_err(|error|error.to_string())?;
         }

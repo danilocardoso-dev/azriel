@@ -98,6 +98,30 @@ pub async fn rerun_market_experiment(
 }
 
 #[tauri::command]
+pub async fn run_market_repeatability(
+    state: State<'_, DatabaseState>,
+    input: MarketRepeatabilityInput,
+) -> Result<MarketRepeatabilityReport, String> {
+    market_repository::set_kill_switch(false);
+    let path = state.path.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut connection = worker_connection(&path)?;
+        market_repository::run_repeatability(&mut connection, &input)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub fn get_market_repeatability(
+    state: State<'_, DatabaseState>,
+    group_id: String,
+) -> Result<MarketRepeatabilityReport, String> {
+    let connection = lock(&state)?;
+    market_repository::get_repeatability(&connection, &group_id)
+}
+
+#[tauri::command]
 pub fn activate_market_kill_switch() -> bool {
     market_repository::set_kill_switch(true);
     true

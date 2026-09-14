@@ -521,3 +521,16 @@ Status: 🧪 Implementada em 12/09/2026; validação operacional AAPL 15M e comp
 - Strategy Observatory compara estilo, fase da sessão, duração, overlap de direção/entrada/saída e mantém Feature/Strategy Inspectors paginados;
 - Risk Policy V2, Execution Model V1, Portfolio, Position Manager, Scientific Validation e AI Technical V4.2 permanecem separados e preservados;
 - testes automatizados usam provider falso e fixture sintética de 520 candles/20 sessões; não representam o aceite real AAPL/Ollama.
+
+## Market Lab v0.5.2 — Intraday AI Agent
+
+Status: 🧪 Implementada em 13/09/2026; validação operacional AAPL 15M/Ollama e repetibilidade N=3 pendentes.
+
+- `AI Intraday V1` utiliza contrato, prompt e contexto próprios, sem compartilhar estado com o `AI Technical V4.2`;
+- o contexto intraday inclui fase da sessão, EMA 9/21, VWAP, RSI 14, ATR 14, volume relativo, range, posição e duração da posição;
+- `MARKET_DECISION_TRIGGER_V2` adiciona eventos intraday, mantendo cooldown e limites de chamadas auditáveis;
+- até duas IAs podem participar da mesma coorte somente no comparativo controlado V4.2 versus Intraday V1;
+- intent, Position Sizing V1, Risk Policy V2, execução T+1 e persistência continuam separados e congelados por experimento;
+- o Observatory apresenta contexto serializado, resposta bruta, validação, risco, execução, divergências e metadados de inferência por agente;
+- a rotina de repetibilidade persiste grupos de 2 a 5 execuções idênticas e agrega retorno, drawdown, chamadas e distribuição de intents;
+- testes automatizados usam provider falso e dados sintéticos; não substituem o aceite real com AAPL 15M e Ollama local.

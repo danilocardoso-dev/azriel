@@ -1,5 +1,5 @@
 import { invokeDatabase } from "./tauri";
-import type { ImportMarketDatasetInput, MarketAgentDefinition, MarketAiDecisionLog, MarketAiExperimentComparison, MarketAiRuntimeMetric, MarketAiStatus, MarketDataset, MarketExperimentInput, MarketExperimentResult, MarketExperimentSummary, MarketRiskProfile, MarketSignalDiagnostics, MarketValidationInput, MarketValidationResult, MarketValidationSummary, UpdateMarketAiConfigInput } from "../types";
+import type { ImportMarketDatasetInput, MarketAgentDefinition, MarketAiDecisionLog, MarketAiExperimentComparison, MarketAiRuntimeMetric, MarketAiStatus, MarketDataset, MarketExperimentInput, MarketExperimentResult, MarketExperimentSummary, MarketRepeatabilityInput, MarketRepeatabilityReport, MarketRiskProfile, MarketSignalDiagnostics, MarketValidationInput, MarketValidationResult, MarketValidationSummary, UpdateMarketAiConfigInput } from "../types";
 
 export const marketLabRepository = {
   listDatasets: () => invokeDatabase<MarketDataset[]>("list_market_datasets"),
@@ -10,6 +10,8 @@ export const marketLabRepository = {
   getExperiment: (id: string) => invokeDatabase<MarketExperimentResult>("get_market_experiment", { id }),
   runExperiment: (input: MarketExperimentInput) => invokeDatabase<MarketExperimentResult>("run_market_experiment", { input }),
   rerunExperiment: (id: string) => invokeDatabase<MarketExperimentResult>("rerun_market_experiment", { id }),
+  runRepeatability: (input: MarketRepeatabilityInput) => invokeDatabase<MarketRepeatabilityReport>("run_market_repeatability", { input }),
+  getRepeatability: (groupId: string) => invokeDatabase<MarketRepeatabilityReport>("get_market_repeatability", { groupId }),
   activateKillSwitch: () => invokeDatabase<boolean>("activate_market_kill_switch"),
   runValidation: (input: MarketValidationInput) => invokeDatabase<MarketValidationResult>("run_market_validation", { input }),
   listValidations: () => invokeDatabase<MarketValidationSummary[]>("list_market_validations"),

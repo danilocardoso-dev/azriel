@@ -10,9 +10,9 @@ mod git_monitor;
 mod market_commands;
 mod ollama;
 mod routine_commands;
+mod stark_commands;
 mod system_commands;
 mod system_monitor;
-mod stark_commands;
 
 use database::DatabaseState;
 use tauri::Manager;
@@ -146,6 +146,8 @@ pub fn run() {
             market_commands::list_market_experiments,
             market_commands::get_market_experiment,
             market_commands::rerun_market_experiment,
+            market_commands::run_market_repeatability,
+            market_commands::get_market_repeatability,
             market_commands::activate_market_kill_switch,
             market_commands::run_market_validation,
             market_commands::list_market_validations,

@@ -8,6 +8,7 @@ pub mod engineering_models;
 pub mod engineering_repository;
 pub mod learning_engine;
 pub mod market_ai;
+pub mod market_ai_intraday;
 pub mod market_ai_reliability;
 pub mod market_intraday;
 pub mod market_intraday_observatory;
@@ -180,6 +181,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         27,
         "market_intraday_strategy_lab",
         include_str!("../../migrations/0027_market_intraday_strategy_lab.sql"),
+    ),
+    (
+        28,
+        "market_ai_intraday",
+        include_str!("../../migrations/0028_market_ai_intraday.sql"),
     ),
 ];
 
@@ -1240,8 +1246,26 @@ mod tests {
         apply_migrations_through(&mut connection, 27).unwrap();
 
         assert_eq!(schema_version(&connection).unwrap(), 27);
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_datasets WHERE id='keep-v051'",[],|row|row.get::<_,usize>(0)).unwrap(),1);
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM market_agents WHERE id LIKE 'intraday-%-v1'",[],|row|row.get::<_,usize>(0)).unwrap(),3);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM market_datasets WHERE id='keep-v051'",
+                    [],
+                    |row| row.get::<_, usize>(0)
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM market_agents WHERE id LIKE 'intraday-%-v1'",
+                    [],
+                    |row| row.get::<_, usize>(0)
+                )
+                .unwrap(),
+            3
+        );
         for table in [
             "market_intraday_feature_traces",
             "market_intraday_strategy_decisions",
@@ -1250,7 +1274,53 @@ mod tests {
             "market_holding_time_distribution",
             "market_intraday_agent_overlap",
         ] {
-            assert_eq!(connection.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",[table],|row|row.get::<_,usize>(0)).unwrap(),1);
+            assert_eq!(
+                connection
+                    .query_row(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                        [table],
+                        |row| row.get::<_, usize>(0)
+                    )
+                    .unwrap(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn migration_twenty_eight_adds_intraday_ai_and_repeatability_without_data_loss() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 27).unwrap();
+        connection.execute("INSERT INTO market_datasets(id,name,asset,timeframe,start_at,end_at,candle_count,fingerprint,source_path) VALUES('keep-v052','Preservar v0.5.1','AAPL','15M','2026-01-01','2026-01-02',2,'keep-v052-fingerprint','fixture.csv')", []).unwrap();
+        apply_migrations_through(&mut connection, 28).unwrap();
+        assert_eq!(schema_version(&connection).unwrap(), 28);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM market_datasets WHERE id='keep-v052'",
+                    [],
+                    |row| row.get::<_, usize>(0)
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(connection.query_row("SELECT prompt_version FROM market_ai_agent_configs WHERE agent_id='ai-intraday-v1'",[],|row|row.get::<_,String>(0)).unwrap(),"MARKET_AI_INTRADAY_V1");
+        for table in [
+            "market_ai_execution_metadata",
+            "market_repeatability_groups",
+            "market_repeatability_runs",
+        ] {
+            assert_eq!(
+                connection
+                    .query_row(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                        [table],
+                        |row| row.get::<_, usize>(0)
+                    )
+                    .unwrap(),
+                1
+            );
         }
     }
 }

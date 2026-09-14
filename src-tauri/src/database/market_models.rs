@@ -715,6 +715,7 @@ pub struct MarketValidationResult {
 #[serde(rename_all = "camelCase")]
 pub struct MarketAiDecisionLog {
     pub decision_id: i64,
+    pub agent_id: String,
     pub timestamp: String,
     pub action: String,
     pub desired_position_pct: Option<f64>,
@@ -744,8 +745,55 @@ pub struct MarketAiDecisionLog {
     pub intent: Option<String>,
     pub generated_target_exposure_pct: Option<f64>,
     pub position_sizing_version: Option<String>,
+    pub context_version: Option<String>,
+    pub trigger_version: Option<String>,
+    pub context_bytes: Option<usize>,
+    pub temperature: Option<f64>,
+    pub random_seed: Option<u64>,
+    pub seed_supported: Option<bool>,
     pub risk_trace: super::market_risk::RiskEvaluation,
     pub output_attempts: Vec<MarketAiAttemptLog>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketRepeatabilityInput {
+    pub source_experiment_id: String,
+    pub repetitions: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketRepeatabilityMetric {
+    pub agent_id: String,
+    pub agent_name: String,
+    pub run_count: usize,
+    pub return_mean_pct: f64,
+    pub return_min_pct: f64,
+    pub return_max_pct: f64,
+    pub return_std_pct: f64,
+    pub drawdown_mean_pct: f64,
+    pub drawdown_min_pct: f64,
+    pub drawdown_max_pct: f64,
+    pub call_count_mean: f64,
+    pub enter_count: usize,
+    pub hold_count: usize,
+    pub reduce_count: usize,
+    pub exit_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketRepeatabilityReport {
+    pub group_id: String,
+    pub name: String,
+    pub source_experiment_id: String,
+    pub repetitions: usize,
+    pub status: String,
+    pub experiment_ids: Vec<String>,
+    pub metrics: Vec<MarketRepeatabilityMetric>,
+    pub created_at: String,
+    pub completed_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

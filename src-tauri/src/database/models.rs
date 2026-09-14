@@ -44,7 +44,9 @@ pub struct KnowledgeInput {
     pub parent_id: Option<String>,
 }
 
-fn default_node_type() -> String { "area".into() }
+fn default_node_type() -> String {
+    "area".into()
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

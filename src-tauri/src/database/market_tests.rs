@@ -281,6 +281,67 @@ fn fake_ai_v4_2_config() -> market_ai::MarketAiConfig {
     }
 }
 
+fn fake_ai_intraday_config() -> market_ai::MarketAiConfig {
+    market_ai::MarketAiConfig {
+        agent_id: market_ai::AI_INTRADAY_V1_ID.into(),
+        provider: "ollama".into(),
+        model: "fake:qwen-intraday".into(),
+        prompt_version: market_ai::PROMPT_INTRADAY_V1_VERSION.into(),
+        temperature: 0.1,
+        decision_interval: 5,
+        timeout_ms: 5000,
+        max_retries: 1,
+        position_sizing: Default::default(),
+    }
+}
+
+struct MultiAiIntradayProvider {
+    calls: Mutex<Vec<(String, String, String)>>,
+}
+
+impl market_ai::MarketAiProvider for MultiAiIntradayProvider {
+    fn supports_structured_output(&self) -> bool {
+        true
+    }
+    fn complete(
+        &self,
+        prompt: market_ai::MarketAiPrompt,
+        config: &market_ai::MarketAiConfig,
+    ) -> Result<market_ai::MarketAiProviderResponse, market_ai::MarketAiProviderError> {
+        let snapshot: serde_json::Value = serde_json::from_str(&prompt.snapshot_json).unwrap();
+        let state = snapshot
+            .pointer("/position/state")
+            .and_then(|value| value.as_str())
+            .unwrap_or("FLAT");
+        let intraday = config.agent_id == market_ai::AI_INTRADAY_V1_ID;
+        let reason_code = if intraday {
+            if state == "FLAT" {
+                "INTRADAY_TREND_ALIGNMENT"
+            } else {
+                "POSITION_ALREADY_OPTIMAL"
+            }
+        } else if state == "FLAT" {
+            "ALIGNED_BULLISH_SIGNAL"
+        } else {
+            "POSITION_ALREADY_OPTIMAL"
+        };
+        let intent = if state == "FLAT" { "ENTER" } else { "HOLD" };
+        self.calls.lock().unwrap().push((
+            config.agent_id.clone(),
+            prompt.system,
+            prompt.snapshot_json,
+        ));
+        Ok(market_ai::MarketAiProviderResponse {
+            content: format!(
+                r#"{{"intent":"{intent}","confidence_pct":72,"reason_code":"{reason_code}","reason":"controlled multi agent decision"}}"#
+            ),
+            model: config.model.clone(),
+            input_tokens: Some(25),
+            output_tokens: Some(9),
+        })
+    }
+}
+
 fn fixture_csv() -> String {
     let mut output = String::from("timestamp,open,high,low,close,volume\n");
     for day in 1..=30 {
@@ -503,68 +564,357 @@ fn intraday_15m_import_replay_and_session_metrics_are_deterministic() {
 
 #[test]
 fn intraday_strategy_lab_runs_520_candles_and_persists_auditable_distinct_styles() {
-    let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
     let path = std::env::temp_dir().join(format!("azriel-market-v051-{suffix}.csv"));
     let mut csv = String::from("timestamp,open,high,low,close,volume\n");
     let mut base = 100.0;
     for day in 1..=28 {
-        if matches!(day, 3 | 4 | 10 | 11 | 17 | 18 | 24 | 25) { continue; }
+        if matches!(day, 3 | 4 | 10 | 11 | 17 | 18 | 24 | 25) {
+            continue;
+        }
         for candle in 0..26 {
             let minutes = 570 + candle * 15;
             let wave = ((candle as f64 / 3.0).sin() * 0.7) + if day % 3 == 0 { -0.3 } else { 0.25 };
             let close = base + wave;
             let volume = 900.0 + candle as f64 * 25.0 + if candle % 8 == 0 { 900.0 } else { 0.0 };
-            csv.push_str(&format!("2026-01-{day:02} {:02}:{:02},{base},{},{},{close},{volume}\n",minutes/60,minutes%60,close.max(base)+0.45,close.min(base)-0.45));
+            csv.push_str(&format!(
+                "2026-01-{day:02} {:02}:{:02},{base},{},{},{close},{volume}\n",
+                minutes / 60,
+                minutes % 60,
+                close.max(base) + 0.45,
+                close.min(base) - 0.45
+            ));
             base = close;
         }
     }
     fs::write(&path, csv).unwrap();
     let mut connection = database();
-    let dataset = market_repository::import_dataset(&mut connection, &ImportMarketDatasetInput { path:path.to_string_lossy().into_owned(),name:"AAPL 20 sessions".into(),asset:"AAPL".into(),timeframe:"15M".into(),currency:Some("USD".into()),market:Some("US_EQUITIES".into()),timezone:Some("America/New_York".into()),session_type:Some("REGULAR".into()) }).unwrap();
+    let dataset = market_repository::import_dataset(
+        &mut connection,
+        &ImportMarketDatasetInput {
+            path: path.to_string_lossy().into_owned(),
+            name: "AAPL 20 sessions".into(),
+            asset: "AAPL".into(),
+            timeframe: "15M".into(),
+            currency: Some("USD".into()),
+            market: Some("US_EQUITIES".into()),
+            timezone: Some("America/New_York".into()),
+            session_type: Some("REGULAR".into()),
+        },
+    )
+    .unwrap();
     assert_eq!(dataset.candle_count, 520);
     assert_eq!(dataset.session_count, 20);
-    let input=MarketExperimentInput{name:"INTRADAY STRATEGY LAB".into(),dataset_id:dataset.id.clone(),risk_profile_id:"balanced-v1".into(),agent_ids:vec!["intraday-trend-v1".into(),"intraday-momentum-v1".into(),"intraday-mean-reversion-v1".into()],initial_capital:10_000.0,random_seed:42,fee_pct:0.1,slippage_pct:0.05};
-    let result=market_repository::run_experiment_with_provider(&mut connection,&input,&market_ai::UnavailableMarketAiProvider,&fake_ai_v4_2_config()).unwrap();
+    let input = MarketExperimentInput {
+        name: "INTRADAY STRATEGY LAB".into(),
+        dataset_id: dataset.id.clone(),
+        risk_profile_id: "balanced-v1".into(),
+        agent_ids: vec![
+            "intraday-trend-v1".into(),
+            "intraday-momentum-v1".into(),
+            "intraday-mean-reversion-v1".into(),
+        ],
+        initial_capital: 10_000.0,
+        random_seed: 42,
+        fee_pct: 0.1,
+        slippage_pct: 0.05,
+    };
+    let result = market_repository::run_experiment_with_provider(
+        &mut connection,
+        &input,
+        &market_ai::UnavailableMarketAiProvider,
+        &fake_ai_v4_2_config(),
+    )
+    .unwrap();
     assert_eq!(result.intraday_strategy.feature_traces.len(), 520);
     assert_eq!(result.intraday_strategy.decisions.len(), 1_560);
     assert_eq!(result.intraday_strategy.metrics.len(), 3);
     assert_eq!(result.intraday_strategy.overlaps.len(), 3);
     assert!(!result.intraday_strategy.holding_distribution.is_empty());
     assert!(!result.intraday_strategy.phase_performance.is_empty());
-    assert!(result.intraday_strategy.decisions.iter().all(|item| !item.reason_code.is_empty() && item.thresholds.is_object() && item.indicators.is_object()));
-    let distributions=result.metrics.iter().map(|metric|(metric.agent_id.clone(),metric.trade_count,metric.hold_count)).collect::<Vec<_>>();
-    assert_eq!(distributions.len(),3);
-    assert!(distributions.windows(2).any(|pair| pair[0].1 != pair[1].1 || pair[0].2 != pair[1].2));
-    let frozen:String=connection.query_row("SELECT config_json FROM market_experiments WHERE id=?1",[&result.experiment.id],|row|row.get(0)).unwrap();
+    assert!(result
+        .intraday_strategy
+        .decisions
+        .iter()
+        .all(|item| !item.reason_code.is_empty()
+            && item.thresholds.is_object()
+            && item.indicators.is_object()));
+    let distributions = result
+        .metrics
+        .iter()
+        .map(|metric| {
+            (
+                metric.agent_id.clone(),
+                metric.trade_count,
+                metric.hold_count,
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(distributions.len(), 3);
+    assert!(distributions
+        .windows(2)
+        .any(|pair| pair[0].1 != pair[1].1 || pair[0].2 != pair[1].2));
+    let frozen: String = connection
+        .query_row(
+            "SELECT config_json FROM market_experiments WHERE id=?1",
+            [&result.experiment.id],
+            |row| row.get(0),
+        )
+        .unwrap();
     assert!(frozen.contains("INTRADAY_FEATURE_ENGINE_V1"));
-    assert!(result.intraday_strategy.decisions.iter().all(|item|matches!(item.risk_result.as_str(),"APPROVED"|"MODIFIED"|"REJECTED")));
-    let _=fs::remove_file(path);
+    assert!(result
+        .intraday_strategy
+        .decisions
+        .iter()
+        .all(|item| matches!(
+            item.risk_result.as_str(),
+            "APPROVED" | "MODIFIED" | "REJECTED"
+        )));
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn ai_intraday_runs_beside_v4_2_with_isolated_contexts_and_runtimes() {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!("azriel-market-v052-{suffix}.csv"));
+    let mut csv = String::from("timestamp,open,high,low,close,volume\n");
+    let mut base = 100.0;
+    for day in 1..=28 {
+        if matches!(day, 3 | 4 | 10 | 11 | 17 | 18 | 24 | 25) {
+            continue;
+        }
+        for candle in 0..26 {
+            let minutes = 570 + candle * 15;
+            let close = base + (candle as f64 / 4.0).sin() * 0.5 + 0.04;
+            csv.push_str(&format!(
+                "2026-03-{day:02} {:02}:{:02},{base},{},{},{close},{}\n",
+                minutes / 60,
+                minutes % 60,
+                close.max(base) + 0.3,
+                close.min(base) - 0.3,
+                1000 + candle * 20
+            ));
+            base = close;
+        }
+    }
+    fs::write(&path, csv).unwrap();
+    let mut connection = database();
+    let dataset = market_repository::import_dataset(
+        &mut connection,
+        &ImportMarketDatasetInput {
+            path: path.to_string_lossy().into_owned(),
+            name: "AAPL V052".into(),
+            asset: "AAPL".into(),
+            timeframe: "15M".into(),
+            currency: Some("USD".into()),
+            market: Some("US_EQUITIES".into()),
+            timezone: Some("America/New_York".into()),
+            session_type: Some("REGULAR".into()),
+        },
+    )
+    .unwrap();
+    assert_eq!(dataset.candle_count, 520);
+    let input = MarketExperimentInput {
+        name: "AI INTRADAY COMPARISON".into(),
+        dataset_id: dataset.id,
+        risk_profile_id: "balanced-v1".into(),
+        agent_ids: vec![
+            market_ai::AI_AGENT_V4_2_ID.into(),
+            market_ai::AI_INTRADAY_V1_ID.into(),
+            "intraday-trend-v1".into(),
+            "intraday-momentum-v1".into(),
+            "intraday-mean-reversion-v1".into(),
+        ],
+        initial_capital: 10_000.0,
+        random_seed: 42,
+        fee_pct: 0.1,
+        slippage_pct: 0.05,
+    };
+    let mut configs = market_repository::MarketAiConfigMap::new();
+    let technical = fake_ai_v4_2_config();
+    let intraday = fake_ai_intraday_config();
+    configs.insert(technical.agent_id.clone(), technical);
+    configs.insert(intraday.agent_id.clone(), intraday);
+    let provider = MultiAiIntradayProvider {
+        calls: Mutex::new(Vec::new()),
+    };
+    let result = market_repository::run_experiment_with_provider_configs(
+        &mut connection,
+        &input,
+        &provider,
+        &configs,
+    )
+    .unwrap();
+    assert_eq!(result.metrics.len(), 5);
+    let runtimes = market_repository::list_ai_runtime(&connection, &result.experiment.id).unwrap();
+    assert_eq!(runtimes.len(), 2);
+    assert!(runtimes
+        .iter()
+        .all(|runtime| runtime.call_count > 0 && runtime.call_count <= 200));
+    let decisions =
+        market_repository::list_ai_decisions(&connection, &result.experiment.id).unwrap();
+    assert!(decisions
+        .iter()
+        .any(|decision| decision.agent_id == market_ai::AI_INTRADAY_V1_ID
+            && decision.context_version.as_deref()
+                == Some(market_ai::CONTEXT_INTRADAY_V1_VERSION)
+            && decision.trigger_version.as_deref()
+                == Some(market_triggers::TRIGGER_ENGINE_V2_VERSION)));
+    let intraday_context = decisions
+        .iter()
+        .find(|decision| {
+            decision.agent_id == market_ai::AI_INTRADAY_V1_ID && decision.input_snapshot.is_some()
+        })
+        .unwrap()
+        .input_snapshot
+        .as_ref()
+        .unwrap();
+    assert_eq!(
+        intraday_context["contextVersion"],
+        market_ai::CONTEXT_INTRADAY_V1_VERSION
+    );
+    assert!(intraday_context.pointer("/market/sessionPhase").is_some());
+    assert!(intraday_context.pointer("/indicators/vwap").is_some());
+    assert!(intraday_context
+        .pointer("/breakoutFlags/breakoutAboveRecentHigh")
+        .is_some());
+    assert!(intraday_context
+        .pointer("/position/holdingMarketMinutes")
+        .is_some());
+    let calls = provider.calls.lock().unwrap();
+    assert!(calls
+        .iter()
+        .any(|(agent, system, _)| agent == market_ai::AI_INTRADAY_V1_ID
+            && system.contains("AI Intraday V1")));
+    assert!(calls
+        .iter()
+        .any(|(agent, system, _)| agent == market_ai::AI_AGENT_V4_2_ID
+            && !system.contains("AI Intraday V1")));
+    drop(calls);
+    let repeated = market_repository::run_experiment_with_provider_configs(
+        &mut connection,
+        &input,
+        &provider,
+        &configs,
+    )
+    .unwrap();
+    let group_id = format!("repeatability-test-{suffix}");
+    connection
+        .execute(
+            "INSERT INTO market_repeatability_groups(id,name,source_experiment_id,repetitions,frozen_config_json,status,completed_at) VALUES(?1,?2,?3,2,'{}','completed',CURRENT_TIMESTAMP)",
+            (&group_id, "N=2", &result.experiment.id),
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO market_repeatability_runs(group_id,run_index,experiment_id) VALUES(?1,1,?2)",
+            (&group_id, &result.experiment.id),
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO market_repeatability_runs(group_id,run_index,experiment_id) VALUES(?1,2,?2)",
+            (&group_id, &repeated.experiment.id),
+        )
+        .unwrap();
+    let repeatability = market_repository::get_repeatability(&connection, &group_id).unwrap();
+    assert_eq!(repeatability.experiment_ids.len(), 2);
+    assert_eq!(repeatability.metrics.len(), 5);
+    assert!(repeatability
+        .metrics
+        .iter()
+        .all(|metric| metric.run_count == 2 && metric.return_std_pct == 0.0));
+    let _ = fs::remove_file(path);
 }
 
 #[test]
 fn intraday_agents_are_rejected_for_daily_datasets() {
-    let suffix=SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    let path=std::env::temp_dir().join(format!("azriel-market-v051-daily-{suffix}.csv"));
-    fs::write(&path,fixture_csv()).unwrap();
-    let mut connection=database();
-    let dataset=market_repository::import_dataset(&mut connection,&ImportMarketDatasetInput{path:path.to_string_lossy().into_owned(),name:"Daily".into(),asset:"AAPL".into(),timeframe:"1D".into(),currency:Some("USD".into()),market:None,timezone:None,session_type:None}).unwrap();
-    let input=MarketExperimentInput{name:"INVALID INTRADAY".into(),dataset_id:dataset.id,risk_profile_id:"balanced-v1".into(),agent_ids:vec!["intraday-trend-v1".into(),"intraday-momentum-v1".into(),"intraday-mean-reversion-v1".into()],initial_capital:10_000.0,random_seed:42,fee_pct:0.1,slippage_pct:0.05};
-    let error=market_repository::validate_input(&connection,&input).unwrap_err();
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!("azriel-market-v051-daily-{suffix}.csv"));
+    fs::write(&path, fixture_csv()).unwrap();
+    let mut connection = database();
+    let dataset = market_repository::import_dataset(
+        &mut connection,
+        &ImportMarketDatasetInput {
+            path: path.to_string_lossy().into_owned(),
+            name: "Daily".into(),
+            asset: "AAPL".into(),
+            timeframe: "1D".into(),
+            currency: Some("USD".into()),
+            market: None,
+            timezone: None,
+            session_type: None,
+        },
+    )
+    .unwrap();
+    let input = MarketExperimentInput {
+        name: "INVALID INTRADAY".into(),
+        dataset_id: dataset.id,
+        risk_profile_id: "balanced-v1".into(),
+        agent_ids: vec![
+            "intraday-trend-v1".into(),
+            "intraday-momentum-v1".into(),
+            "intraday-mean-reversion-v1".into(),
+        ],
+        initial_capital: 10_000.0,
+        random_seed: 42,
+        fee_pct: 0.1,
+        slippage_pct: 0.05,
+    };
+    let error = market_repository::validate_input(&connection, &input).unwrap_err();
     assert!(error.contains("somente datasets 15M"));
-    let _=fs::remove_file(path);
+    let _ = fs::remove_file(path);
 }
 
 #[test]
 fn volume_dependent_intraday_agents_reject_incomplete_ohlcv() {
-    let suffix=SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    let path=std::env::temp_dir().join(format!("azriel-market-v051-no-volume-{suffix}.csv"));
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!("azriel-market-v051-no-volume-{suffix}.csv"));
     fs::write(&path,"timestamp,open,high,low,close\n2026-01-05 09:30,100,101,99,100.5\n2026-01-05 09:45,100.5,102,100,101.5\n").unwrap();
-    let mut connection=database();
-    let dataset=market_repository::import_dataset(&mut connection,&ImportMarketDatasetInput{path:path.to_string_lossy().into_owned(),name:"No volume".into(),asset:"AAPL".into(),timeframe:"15M".into(),currency:Some("USD".into()),market:Some("US_EQUITIES".into()),timezone:Some("America/New_York".into()),session_type:Some("REGULAR".into())}).unwrap();
-    let input=MarketExperimentInput{name:"INVALID VOLUME".into(),dataset_id:dataset.id,risk_profile_id:"balanced-v1".into(),agent_ids:vec!["cash".into(),"intraday-trend-v1".into(),"intraday-momentum-v1".into()],initial_capital:10_000.0,random_seed:42,fee_pct:0.1,slippage_pct:0.05};
-    let error=market_repository::validate_input(&connection,&input).unwrap_err();
+    let mut connection = database();
+    let dataset = market_repository::import_dataset(
+        &mut connection,
+        &ImportMarketDatasetInput {
+            path: path.to_string_lossy().into_owned(),
+            name: "No volume".into(),
+            asset: "AAPL".into(),
+            timeframe: "15M".into(),
+            currency: Some("USD".into()),
+            market: Some("US_EQUITIES".into()),
+            timezone: Some("America/New_York".into()),
+            session_type: Some("REGULAR".into()),
+        },
+    )
+    .unwrap();
+    let input = MarketExperimentInput {
+        name: "INVALID VOLUME".into(),
+        dataset_id: dataset.id,
+        risk_profile_id: "balanced-v1".into(),
+        agent_ids: vec![
+            "cash".into(),
+            "intraday-trend-v1".into(),
+            "intraday-momentum-v1".into(),
+        ],
+        initial_capital: 10_000.0,
+        random_seed: 42,
+        fee_pct: 0.1,
+        slippage_pct: 0.05,
+    };
+    let error = market_repository::validate_input(&connection, &input).unwrap_err();
     assert!(error.contains("exigem volume completo"));
-    let _=fs::remove_file(path);
+    let _ = fs::remove_file(path);
 }
 
 #[test]

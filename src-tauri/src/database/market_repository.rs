@@ -1,7 +1,7 @@
 use super::{
-    ai_repository, market_ai, market_intraday, market_intraday_observatory, market_models::*,
-    market_observatory, market_positions, market_regimes, market_risk, market_signals,
-    market_time, market_triggers,
+    ai_repository, market_ai, market_ai_intraday, market_intraday, market_intraday_observatory,
+    market_models::*, market_observatory, market_positions, market_regimes, market_risk,
+    market_signals, market_time, market_triggers,
 };
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde_json::json;
@@ -14,6 +14,7 @@ use std::{
 };
 
 pub const MAX_CONCURRENT_AGENTS: usize = 5;
+pub(crate) type MarketAiConfigMap = BTreeMap<String, market_ai::MarketAiConfig>;
 const MONEY_SCALE: f64 = 1_000_000.0;
 static MARKET_KILL_SWITCH: AtomicBool = AtomicBool::new(false);
 
@@ -96,6 +97,7 @@ pub(crate) struct AgentRun {
     risk_day: Option<String>,
     risk_day_start_equity: f64,
     trigger_engine: market_triggers::MarketDecisionTriggerEngine,
+    intraday_trigger_engine: market_triggers::MarketDecisionTriggerEngineV2,
     trigger_audits: Vec<TriggerAuditRow>,
 }
 
@@ -1167,7 +1169,22 @@ pub(crate) fn validate_input(
         .count()
         > market_ai::MAX_AI_AGENTS
     {
-        return Err("a v0.4.1 permite no máximo um AI Agent por coorte; compare V1 e V2 em experimentos separados".into());
+        return Err("uma coorte permite no máximo dois AI Agents".into());
+    }
+    let ai_ids = input
+        .agent_ids
+        .iter()
+        .filter(|id| market_ai::is_ai_agent(id))
+        .collect::<Vec<_>>();
+    if ai_ids.len() == 2
+        && !ai_ids
+            .iter()
+            .any(|id| id.as_str() == market_ai::AI_INTRADAY_V1_ID)
+    {
+        return Err(
+            "no máximo um AI Agent legado por coorte; duas IAs são permitidas somente quando uma delas é AI Intraday V1"
+                .into(),
+        );
     }
     if !input.initial_capital.is_finite() || input.initial_capital <= 0.0 {
         return Err("capital inicial inválido".into());
@@ -1200,15 +1217,33 @@ pub(crate) fn validate_input(
     if candles.len() < 2 {
         return Err("dataset precisa de ao menos 2 candles".into());
     }
-    if input.agent_ids.iter().any(|id| market_intraday::is_intraday_agent(id))
+    if input
+        .agent_ids
+        .iter()
+        .any(|id| market_intraday::is_intraday_agent(id))
         && dataset.timeframe != "15M"
     {
         return Err("agentes intraday v0.5.1 aceitam somente datasets 15M".into());
     }
-    if input.agent_ids.iter().any(|id| market_intraday::requires_volume(id))
+    if input
+        .agent_ids
+        .iter()
+        .any(|id| market_intraday::requires_volume(id))
         && candles.iter().any(|candle| candle.volume.is_none())
     {
-        return Err("Intraday Momentum e Mean Reversion exigem volume completo em todos os candles".into());
+        return Err(
+            "Intraday Momentum e Mean Reversion exigem volume completo em todos os candles".into(),
+        );
+    }
+    if input
+        .agent_ids
+        .iter()
+        .any(|id| id == market_ai::AI_INTRADAY_V1_ID)
+    {
+        market_ai_intraday::validate_dataset(
+            &dataset.timeframe,
+            candles.iter().all(|candle| candle.volume.is_some()),
+        )?;
     }
     Ok((dataset, profile, agents, candles))
 }
@@ -1217,16 +1252,36 @@ pub(crate) fn resolve_ai_config(
     connection: &Connection,
     input: &MarketExperimentInput,
 ) -> Result<(market_ai::MarketAiConfig, String), String> {
+    let (configs, endpoint) = resolve_ai_configs(connection, input)?;
+    let config = configs
+        .into_values()
+        .next()
+        .ok_or("configuração de AI Agent não encontrada")?;
+    Ok((config, endpoint))
+}
+
+pub(crate) fn resolve_ai_configs(
+    connection: &Connection,
+    input: &MarketExperimentInput,
+) -> Result<(MarketAiConfigMap, String), String> {
     let settings = ai_repository::get_settings(connection)?;
-    let agent_id = input
+    let mut agent_ids = input
         .agent_ids
         .iter()
-        .find(|id| market_ai::is_ai_agent(id))
+        .filter(|id| market_ai::is_ai_agent(id))
         .cloned()
-        .unwrap_or_else(|| market_ai::AI_AGENT_V2_ID.into());
-    let(provider,default_model,prompt_version,temperature,decision_interval,default_timeout,max_retries):(String,String,String,f64,usize,u64,usize)=connection.query_row("SELECT provider,model,prompt_version,temperature,decision_interval,timeout_ms,max_retries FROM market_ai_agent_configs WHERE agent_id=?1",[&agent_id],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?))).map_err(|error|error.to_string())?;
-    let position_sizing = if prompt_version == market_ai::PROMPT_V4_2_VERSION {
-        connection.query_row(
+        .collect::<Vec<_>>();
+    if agent_ids.is_empty() {
+        agent_ids.push(market_ai::AI_AGENT_V2_ID.into());
+    }
+    let mut configs = BTreeMap::new();
+    for agent_id in agent_ids {
+        let(provider,default_model,prompt_version,temperature,decision_interval,default_timeout,max_retries):(String,String,String,f64,usize,u64,usize)=connection.query_row("SELECT provider,model,prompt_version,temperature,decision_interval,timeout_ms,max_retries FROM market_ai_agent_configs WHERE agent_id=?1",[&agent_id],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?))).map_err(|error|error.to_string())?;
+        let position_sizing = if matches!(
+            prompt_version.as_str(),
+            market_ai::PROMPT_V4_2_VERSION | market_ai::PROMPT_INTRADAY_V1_VERSION
+        ) {
+            connection.query_row(
             "SELECT version,default_entry_exposure_pct,default_increase_step_pct,default_reduce_step_pct FROM market_position_sizing_configs WHERE version=?1",
             [market_positions::POSITION_SIZING_VERSION],
             |row| Ok(market_positions::PositionSizingConfig {
@@ -1236,29 +1291,31 @@ pub(crate) fn resolve_ai_config(
                 default_reduce_step_pct: row.get(3)?,
             }),
         ).map_err(|error| error.to_string())?
-    } else {
-        market_positions::PositionSizingConfig::default()
-    };
-    let config = market_ai::MarketAiConfig {
-        agent_id,
-        provider,
-        model: if settings.model.trim().is_empty() {
-            default_model
         } else {
-            settings.model
-        },
-        prompt_version,
-        temperature,
-        decision_interval,
-        timeout_ms: default_timeout.min((settings.timeout_seconds as u64) * 1000),
-        max_retries,
-        position_sizing,
-    };
-    config.validate()?;
-    Ok((config, settings.endpoint))
+            market_positions::PositionSizingConfig::default()
+        };
+        let config = market_ai::MarketAiConfig {
+            agent_id,
+            provider,
+            model: if settings.model.trim().is_empty() {
+                default_model
+            } else {
+                settings.model.clone()
+            },
+            prompt_version,
+            temperature,
+            decision_interval,
+            timeout_ms: default_timeout.min((settings.timeout_seconds as u64) * 1000),
+            max_retries,
+            position_sizing,
+        };
+        config.validate()?;
+        configs.insert(config.agent_id.clone(), config);
+    }
+    Ok((configs, settings.endpoint))
 }
 
-pub(crate) fn simulate_range_with_provider(
+pub(crate) fn simulate_range_with_provider_configs(
     dataset: &MarketDataset,
     profile: &MarketRiskProfile,
     agents: &[MarketAgentDefinition],
@@ -1267,15 +1324,14 @@ pub(crate) fn simulate_range_with_provider(
     end: usize,
     input: &MarketExperimentInput,
     provider: &dyn market_ai::MarketAiProvider,
-    ai_config: &market_ai::MarketAiConfig,
+    ai_configs: &MarketAiConfigMap,
 ) -> Result<Vec<AgentRun>, String> {
     if start > end || end >= candles.len() {
         return Err("intervalo de replay inválido".into());
     }
-    let intraday_features = if agents
-        .iter()
-        .any(|agent| market_intraday::is_intraday_agent(&agent.id))
-    {
+    let intraday_features = if agents.iter().any(|agent| {
+        market_intraday::is_intraday_agent(&agent.id) || agent.id == market_ai::AI_INTRADAY_V1_ID
+    }) {
         market_intraday::compute_features(candles, &dataset.timezone)?
     } else {
         Vec::new()
@@ -1310,6 +1366,7 @@ pub(crate) fn simulate_range_with_provider(
             risk_day: None,
             risk_day_start_equity: round(input.initial_capital),
             trigger_engine: Default::default(),
+            intraday_trigger_engine: Default::default(),
             trigger_audits: Vec::new(),
         })
         .collect();
@@ -1317,6 +1374,10 @@ pub(crate) fn simulate_range_with_provider(
         let candle = &candles[index];
         let features = feature_at(candles, index);
         for run in &mut runs {
+            let ai_config = ai_configs
+                .get(&run.id)
+                .or_else(|| ai_configs.values().next())
+                .ok_or("configuração de AI Agent ausente")?;
             if run.status != "completed" {
                 continue;
             }
@@ -1338,10 +1399,7 @@ pub(crate) fn simulate_range_with_provider(
                         .intraday
                         .as_ref()
                         .map(|audit| audit.lifecycle_action.as_str().to_string())
-                        .or_else(|| row
-                        .ai
-                        .as_ref()
-                        .and_then(|ai| ai.lifecycle_action.clone()))
+                        .or_else(|| row.ai.as_ref().and_then(|ai| ai.lifecycle_action.clone()))
                         .unwrap_or_else(|| {
                             if row.decision.action == "BUY" {
                                 if had_position {
@@ -1428,9 +1486,41 @@ pub(crate) fn simulate_range_with_provider(
             run.portfolio.peak_equity = run.portfolio.peak_equity.max(before);
             let exp = exposure(&run.portfolio, candle.close);
             let ai = if market_ai::is_ai_agent(&run.id) {
+                let risk_state = if before
+                    <= run.risk_day_start_equity * (1.0 - profile.max_daily_loss_pct / 100.0)
+                {
+                    "DAILY_LOSS"
+                } else if run.max_drawdown >= profile.max_drawdown_pct {
+                    "DRAWDOWN"
+                } else {
+                    "NORMAL"
+                };
+                let intraday_ai = run.id == market_ai::AI_INTRADAY_V1_ID;
                 let event_driven = dataset.timeframe == "15M"
-                    && ai_config.prompt_version == market_ai::PROMPT_V4_2_VERSION;
-                let trigger = if event_driven {
+                    && matches!(
+                        ai_config.prompt_version.as_str(),
+                        market_ai::PROMPT_V4_2_VERSION | market_ai::PROMPT_INTRADAY_V1_VERSION
+                    );
+                let trigger = if intraday_ai {
+                    let current = intraday_features
+                        .get(index)
+                        .ok_or("feature intraday ausente para AI Intraday V1")?;
+                    let (state, flags, signals) = market_ai_intraday::derive_state(current);
+                    run.intraday_trigger_engine.should_evaluate(
+                        &market_triggers::IntradayTriggerSnapshot {
+                            candle_index: index - start,
+                            session_id: &candle.session_id,
+                            trend: &signals.trend,
+                            vwap_position: state.vwap_position.as_str(),
+                            relative_volume_state: &state.volume,
+                            breakout: flags.breakout_above_recent_high,
+                            breakdown: flags.breakdown_below_recent_low,
+                            conflict: signals.conflict,
+                            position_risk_state: risk_state,
+                        },
+                        &market_triggers::DecisionTriggerConfig::default(),
+                    )
+                } else if event_driven {
                     let bias = match (features.sma_short, features.sma_long) {
                         (Some(short), Some(long)) if short > long => "BULLISH",
                         (Some(short), Some(long)) if short < long => "BEARISH",
@@ -1448,15 +1538,6 @@ pub(crate) fn simulate_range_with_provider(
                     };
                     let conflict = matches!((bias, features.returns), ("BULLISH", Some(value)) if value < 0.0)
                         || matches!((bias, features.returns), ("BEARISH", Some(value)) if value > 0.0);
-                    let risk_state = if before
-                        <= run.risk_day_start_equity * (1.0 - profile.max_daily_loss_pct / 100.0)
-                    {
-                        "DAILY_LOSS"
-                    } else if run.max_drawdown >= profile.max_drawdown_pct {
-                        "DRAWDOWN"
-                    } else {
-                        "NORMAL"
-                    };
                     run.trigger_engine.should_evaluate(
                         &market_triggers::TriggerSnapshot {
                             candle_index: index - start,
@@ -1490,7 +1571,35 @@ pub(crate) fn simulate_range_with_provider(
                     call_index: trigger.call_index,
                 });
                 let outcome = if trigger.should_evaluate {
-                    if ai_config.prompt_version == market_ai::PROMPT_V4_2_VERSION {
+                    if ai_config.prompt_version == market_ai::PROMPT_INTRADAY_V1_VERSION {
+                        let base = build_v4_2_snapshot(
+                            dataset, profile, candles, index, run, before, exp,
+                        )?;
+                        let current = intraday_features
+                            .get(index)
+                            .ok_or("feature intraday ausente para AI Intraday V1")?;
+                        let overnight = run.position_started_index.is_some_and(|started_index| {
+                            candles
+                                .get(started_index)
+                                .is_some_and(|started| started.session_id != candle.session_id)
+                        });
+                        let snapshot = market_ai_intraday::build_snapshot(
+                            &dataset.asset,
+                            &dataset.timeframe,
+                            current,
+                            &base.position,
+                            (run.portfolio.quantity > 0.0).then_some(run.portfolio.average_entry),
+                            overnight,
+                            base.risk_context,
+                        );
+                        market_ai::MarketAIAgent::decide_intraday(
+                            provider,
+                            &snapshot,
+                            exp,
+                            run.position_manager.state(),
+                            ai_config,
+                        )
+                    } else if ai_config.prompt_version == market_ai::PROMPT_V4_2_VERSION {
                         match build_v4_2_snapshot(
                             dataset, profile, candles, index, run, before, exp,
                         ) {
@@ -1639,19 +1748,23 @@ pub(crate) fn simulate_range_with_provider(
             let mut effective_lifecycle_action = None;
             if intraday.is_some()
                 || (matches!(
-                ai_config.prompt_version.as_str(),
-                market_ai::PROMPT_V4_VERSION
-                    | market_ai::PROMPT_V4_1_VERSION
-                    | market_ai::PROMPT_V4_2_VERSION
-            ) && run.id == ai_config.agent_id)
+                    ai_config.prompt_version.as_str(),
+                    market_ai::PROMPT_V4_VERSION
+                        | market_ai::PROMPT_V4_1_VERSION
+                        | market_ai::PROMPT_V4_2_VERSION
+                        | market_ai::PROMPT_INTRADAY_V1_VERSION
+                ) && run.id == ai_config.agent_id)
             {
                 let requested = intraday
                     .as_ref()
                     .map(|value| value.lifecycle_action)
-                    .or_else(|| ai
-                    .as_ref()
-                    .and_then(|value| value.lifecycle_action.as_ref())
-                    .and_then(|value| value.parse::<market_positions::LifecycleAction>().ok()))
+                    .or_else(|| {
+                        ai.as_ref()
+                            .and_then(|value| value.lifecycle_action.as_ref())
+                            .and_then(|value| {
+                                value.parse::<market_positions::LifecycleAction>().ok()
+                            })
+                    })
                     .unwrap_or(if run.portfolio.quantity > 0.0 {
                         market_positions::LifecycleAction::HoldPosition
                     } else {
@@ -1803,38 +1916,59 @@ pub fn run_experiment(
     connection: &mut Connection,
     input: &MarketExperimentInput,
 ) -> Result<MarketExperimentResult, String> {
-    let (ai_config, endpoint) = resolve_ai_config(connection, input)?;
+    let (ai_configs, endpoint) = resolve_ai_configs(connection, input)?;
     if input.agent_ids.iter().any(|id| market_ai::is_ai_agent(id)) {
+        let timeout_ms = ai_configs
+            .values()
+            .map(|config| config.timeout_ms)
+            .min()
+            .unwrap_or(30_000);
         let health = tauri::async_runtime::block_on(crate::ollama::status(
             &endpoint,
-            (ai_config.timeout_ms / 1000).clamp(5, 8),
+            (timeout_ms / 1000).clamp(5, 8),
         ))?;
-        if health.available && health.models.iter().any(|model| model == &ai_config.model) {
+        if health.available
+            && ai_configs
+                .values()
+                .all(|config| health.models.iter().any(|model| model == &config.model))
+        {
             let provider = market_ai::OllamaMarketAiProvider::new(endpoint);
-            run_experiment_with_provider(connection, input, &provider, &ai_config)
+            run_experiment_with_provider_configs(connection, input, &provider, &ai_configs)
         } else {
-            run_experiment_with_provider(
+            run_experiment_with_provider_configs(
                 connection,
                 input,
                 &market_ai::UnavailableMarketAiProvider,
-                &ai_config,
+                &ai_configs,
             )
         }
     } else {
-        run_experiment_with_provider(
+        run_experiment_with_provider_configs(
             connection,
             input,
             &market_ai::UnavailableMarketAiProvider,
-            &ai_config,
+            &ai_configs,
         )
     }
 }
 
+#[cfg(test)]
 pub(crate) fn run_experiment_with_provider(
     connection: &mut Connection,
     input: &MarketExperimentInput,
     provider: &dyn market_ai::MarketAiProvider,
     ai_config: &market_ai::MarketAiConfig,
+) -> Result<MarketExperimentResult, String> {
+    let mut configs = MarketAiConfigMap::new();
+    configs.insert(ai_config.agent_id.clone(), ai_config.clone());
+    run_experiment_with_provider_configs(connection, input, provider, &configs)
+}
+
+pub(crate) fn run_experiment_with_provider_configs(
+    connection: &mut Connection,
+    input: &MarketExperimentInput,
+    provider: &dyn market_ai::MarketAiProvider,
+    ai_configs: &MarketAiConfigMap,
 ) -> Result<MarketExperimentResult, String> {
     let (dataset, profile, agents, candles) = validate_input(connection, input)?;
     let id = new_id("experiment");
@@ -1842,20 +1976,47 @@ pub(crate) fn run_experiment_with_provider(
     let annualization_factor = timeframe.annualization_factor();
     let trigger_config = market_triggers::DecisionTriggerConfig::default();
     trigger_config.validate()?;
-    let event_driven =
-        dataset.timeframe == "15M" && ai_config.prompt_version == market_ai::PROMPT_V4_2_VERSION;
+    let event_driven = dataset.timeframe == "15M"
+        && ai_configs.values().any(|config| {
+            matches!(
+                config.prompt_version.as_str(),
+                market_ai::PROMPT_V4_2_VERSION | market_ai::PROMPT_INTRADAY_V1_VERSION
+            )
+        });
     let signal_config = market_signals::SignalEngineConfig::default();
-    let signal_aware = matches!(
-        ai_config.prompt_version.as_str(),
-        market_ai::PROMPT_V3_VERSION
-            | market_ai::PROMPT_V4_VERSION
-            | market_ai::PROMPT_V4_1_VERSION
-            | market_ai::PROMPT_V4_2_VERSION
-    );
-    let has_intraday_strategy = agents.iter().any(|agent| market_intraday::is_intraday_agent(&agent.id));
-    let config = json!({"datasetFingerprint":dataset.fingerprint,"agentIds":input.agent_ids,"riskProfile":profile,"initialCapital":round(input.initial_capital),"randomSeed":input.random_seed,"feePct":input.fee_pct,"slippagePct":input.slippage_pct,"executionTiming":"decision-close-T/execution-open-T+1","executionModelVersion":market_time::EXECUTION_MODEL_VERSION,"annualizationFactor":annualization_factor,"market":dataset.market,"timezone":dataset.timezone,"sessionType":dataset.session_type,"precisionScale":6,"maxConcurrentAgents":MAX_CONCURRENT_AGENTS,"aiConfig":ai_config,"signalEngineVersion":signal_aware.then_some(market_signals::SIGNAL_ENGINE_VERSION),"signalConfig":signal_aware.then_some(signal_config),"positionEngineVersion":(has_intraday_strategy||matches!(ai_config.prompt_version.as_str(),market_ai::PROMPT_V4_VERSION|market_ai::PROMPT_V4_1_VERSION|market_ai::PROMPT_V4_2_VERSION)).then_some(market_positions::POSITION_ENGINE_VERSION),"featureEngineVersion":has_intraday_strategy.then_some(market_intraday::FEATURE_ENGINE_VERSION),"triggerEngineVersion":event_driven.then_some(market_triggers::TRIGGER_ENGINE_VERSION),"triggerConfig":event_driven.then_some(&trigger_config)});
-    connection.execute("INSERT INTO market_experiments(id,name,dataset_id,asset,timeframe,currency,initial_capital,risk_profile_id,random_seed,fee_pct,slippage_pct,config_json,status,started_at,market,timezone,session_type,annualization_factor,execution_model_version,trigger_engine_version,trigger_config_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'running',CURRENT_TIMESTAMP,?13,?14,?15,?16,?17,?18,?19)",params![id,input.name.trim(),dataset.id,dataset.asset,dataset.timeframe,dataset.currency,round(input.initial_capital),profile.id,input.random_seed as i64,input.fee_pct,input.slippage_pct,config.to_string(),dataset.market,dataset.timezone,dataset.session_type,annualization_factor,market_time::EXECUTION_MODEL_VERSION,event_driven.then_some(market_triggers::TRIGGER_ENGINE_VERSION),event_driven.then(||serde_json::to_string(&trigger_config).unwrap_or_default())]).map_err(|e|e.to_string())?;
-    let runs = simulate_range_with_provider(
+    let signal_aware = ai_configs.values().any(|config| {
+        matches!(
+            config.prompt_version.as_str(),
+            market_ai::PROMPT_V3_VERSION
+                | market_ai::PROMPT_V4_VERSION
+                | market_ai::PROMPT_V4_1_VERSION
+                | market_ai::PROMPT_V4_2_VERSION
+                | market_ai::PROMPT_INTRADAY_V1_VERSION
+        )
+    });
+    let has_intraday_strategy = agents.iter().any(|agent| {
+        market_intraday::is_intraday_agent(&agent.id) || agent.id == market_ai::AI_INTRADAY_V1_ID
+    });
+    let position_aware = has_intraday_strategy
+        || ai_configs.values().any(|config| {
+            matches!(
+                config.prompt_version.as_str(),
+                market_ai::PROMPT_V4_VERSION
+                    | market_ai::PROMPT_V4_1_VERSION
+                    | market_ai::PROMPT_V4_2_VERSION
+                    | market_ai::PROMPT_INTRADAY_V1_VERSION
+            )
+        });
+    let trigger_version = if ai_configs.contains_key(market_ai::AI_INTRADAY_V1_ID) {
+        Some(market_triggers::TRIGGER_ENGINE_V2_VERSION)
+    } else if event_driven {
+        Some(market_triggers::TRIGGER_ENGINE_VERSION)
+    } else {
+        None
+    };
+    let config = json!({"datasetFingerprint":dataset.fingerprint,"agentIds":input.agent_ids,"riskProfile":profile,"initialCapital":round(input.initial_capital),"randomSeed":input.random_seed,"feePct":input.fee_pct,"slippagePct":input.slippage_pct,"executionTiming":"decision-close-T/execution-open-T+1","executionModelVersion":market_time::EXECUTION_MODEL_VERSION,"annualizationFactor":annualization_factor,"market":dataset.market,"timezone":dataset.timezone,"sessionType":dataset.session_type,"precisionScale":6,"maxConcurrentAgents":MAX_CONCURRENT_AGENTS,"aiConfigs":ai_configs,"signalEngineVersion":signal_aware.then_some(market_signals::SIGNAL_ENGINE_VERSION),"signalConfig":signal_aware.then_some(signal_config),"positionEngineVersion":position_aware.then_some(market_positions::POSITION_ENGINE_VERSION),"featureEngineVersion":has_intraday_strategy.then_some(market_intraday::FEATURE_ENGINE_VERSION),"triggerEngineVersion":trigger_version,"triggerConfig":event_driven.then_some(&trigger_config)});
+    connection.execute("INSERT INTO market_experiments(id,name,dataset_id,asset,timeframe,currency,initial_capital,risk_profile_id,random_seed,fee_pct,slippage_pct,config_json,status,started_at,market,timezone,session_type,annualization_factor,execution_model_version,trigger_engine_version,trigger_config_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'running',CURRENT_TIMESTAMP,?13,?14,?15,?16,?17,?18,?19)",params![id,input.name.trim(),dataset.id,dataset.asset,dataset.timeframe,dataset.currency,round(input.initial_capital),profile.id,input.random_seed as i64,input.fee_pct,input.slippage_pct,config.to_string(),dataset.market,dataset.timezone,dataset.session_type,annualization_factor,market_time::EXECUTION_MODEL_VERSION,trigger_version,event_driven.then(||serde_json::to_string(&trigger_config).unwrap_or_default())]).map_err(|e|e.to_string())?;
+    let runs = simulate_range_with_provider_configs(
         &dataset,
         &profile,
         &agents,
@@ -1864,7 +2025,7 @@ pub(crate) fn run_experiment_with_provider(
         candles.len() - 1,
         input,
         provider,
-        ai_config,
+        ai_configs,
     )?;
     let tx = connection.transaction().map_err(|e| e.to_string())?;
     if has_intraday_strategy {
@@ -1878,8 +2039,9 @@ pub(crate) fn run_experiment_with_provider(
         &runs,
         input.initial_capital,
         &candles,
-        ai_config,
+        ai_configs,
         &dataset.asset,
+        input.random_seed,
     )?;
     persist_intraday_audit(&tx, &id, &runs, &candles)?;
     if has_intraday_strategy {
@@ -2042,12 +2204,16 @@ fn persist_run_with_ai_diagnostics(
     runs: &[AgentRun],
     initial: f64,
     candles: &[Candle],
-    ai_config: &market_ai::MarketAiConfig,
+    ai_configs: &MarketAiConfigMap,
     asset: &str,
+    random_seed: u64,
 ) -> Result<(), String> {
     persist_run(tx, experiment_id, agents, runs, initial)?;
     persist_position_lifecycles(tx, experiment_id, asset, runs, candles)?;
     for run in runs.iter().filter(|run| market_ai::is_ai_agent(&run.id)) {
+        let ai_config = ai_configs
+            .get(&run.id)
+            .ok_or_else(|| format!("configuração ausente para {}", run.id))?;
         let metrics = &run.ai_runtime;
         let distribution = metrics.confidence_distribution();
         tx.execute(
@@ -2065,6 +2231,26 @@ fn persist_run_with_ai_diagnostics(
                 params![ai.lifecycle_action, decision_id],
             )
             .map_err(|error| error.to_string())?;
+            let context_version = if ai.prompt_version == market_ai::PROMPT_INTRADAY_V1_VERSION {
+                market_ai::CONTEXT_INTRADAY_V1_VERSION
+            } else {
+                "MARKET_AI_CONTEXT_TECHNICAL"
+            };
+            let trigger_version = if ai.prompt_version == market_ai::PROMPT_INTRADAY_V1_VERSION {
+                market_triggers::TRIGGER_ENGINE_V2_VERSION
+            } else if ai.prompt_version == market_ai::PROMPT_V4_2_VERSION {
+                market_triggers::TRIGGER_ENGINE_VERSION
+            } else {
+                "LEGACY_CADENCE"
+            };
+            let context_bytes = ai
+                .input_snapshot_json
+                .as_ref()
+                .map_or(0, |value| value.len());
+            tx.execute(
+                "INSERT INTO market_ai_execution_metadata(decision_id,model_version,temperature,random_seed,seed_supported,context_version,trigger_version,context_bytes) VALUES(?1,?2,?3,?4,0,?5,?6,?7)",
+                params![decision_id,ai.model,ai_config.temperature,random_seed as i64,context_version,trigger_version,context_bytes],
+            ).map_err(|error| error.to_string())?;
             if let Some(snapshot) = &ai.input_snapshot_json {
                 tx.execute("INSERT INTO market_ai_decision_context(decision_id,input_snapshot_json) VALUES(?1,?2)",params![decision_id,snapshot]).map_err(|error|error.to_string())?;
                 if matches!(
@@ -2365,6 +2551,165 @@ pub fn rerun(connection: &mut Connection, id: &str) -> Result<MarketExperimentRe
     )
 }
 
+pub fn run_repeatability(
+    connection: &mut Connection,
+    input: &MarketRepeatabilityInput,
+) -> Result<MarketRepeatabilityReport, String> {
+    if !(2..=5).contains(&input.repetitions) {
+        return Err("repeatability exige entre 2 e 5 execuções explícitas".into());
+    }
+    let source = get_experiment(connection, &input.source_experiment_id)?.experiment;
+    if source.status != "completed" {
+        return Err("somente um experimento concluído pode iniciar repeatability".into());
+    }
+    let group_id = new_id("repeatability");
+    let name = format!("{} / REPEATABILITY N={}", source.name, input.repetitions);
+    let frozen = json!({"sourceExperimentId":source.id,"datasetId":source.dataset_id,"riskProfileId":source.risk_profile_id,"agentIds":source.agent_ids,"initialCapital":source.initial_capital,"randomSeed":source.random_seed,"feePct":source.fee_pct,"slippagePct":source.slippage_pct,"repetitions":input.repetitions});
+    connection.execute(
+        "INSERT INTO market_repeatability_groups(id,name,source_experiment_id,repetitions,frozen_config_json,status) VALUES(?1,?2,?3,?4,?5,'running')",
+        params![group_id,name,source.id,input.repetitions,frozen.to_string()],
+    ).map_err(|error| error.to_string())?;
+    for run_index in 1..=input.repetitions {
+        let run_input = MarketExperimentInput {
+            name: format!("{} / REPEAT {run_index}", source.name),
+            dataset_id: source.dataset_id.clone(),
+            risk_profile_id: source.risk_profile_id.clone(),
+            agent_ids: source.agent_ids.clone(),
+            initial_capital: source.initial_capital,
+            random_seed: source.random_seed,
+            fee_pct: source.fee_pct,
+            slippage_pct: source.slippage_pct,
+        };
+        match run_experiment(connection, &run_input) {
+            Ok(result) => {
+                connection.execute(
+                    "INSERT INTO market_repeatability_runs(group_id,run_index,experiment_id) VALUES(?1,?2,?3)",
+                    params![group_id,run_index,result.experiment.id],
+                ).map_err(|error| error.to_string())?;
+            }
+            Err(error) => {
+                connection.execute("UPDATE market_repeatability_groups SET status='failed',error=?2,completed_at=CURRENT_TIMESTAMP WHERE id=?1",params![group_id,error]).map_err(|db_error|db_error.to_string())?;
+                return Err(error);
+            }
+        }
+    }
+    connection.execute("UPDATE market_repeatability_groups SET status='completed',completed_at=CURRENT_TIMESTAMP WHERE id=?1",[&group_id]).map_err(|error|error.to_string())?;
+    get_repeatability(connection, &group_id)
+}
+
+pub fn get_repeatability(
+    connection: &Connection,
+    group_id: &str,
+) -> Result<MarketRepeatabilityReport, String> {
+    let (name,source_experiment_id,repetitions,status,created_at,completed_at):(String,String,usize,String,String,Option<String>)=connection.query_row(
+        "SELECT name,source_experiment_id,repetitions,status,created_at,completed_at FROM market_repeatability_groups WHERE id=?1",
+        [group_id],
+        |row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?)),
+    ).map_err(|error|error.to_string())?;
+    let mut statement=connection.prepare("SELECT experiment_id FROM market_repeatability_runs WHERE group_id=?1 ORDER BY run_index").map_err(|error|error.to_string())?;
+    let experiment_ids = statement
+        .query_map([group_id], |row| row.get(0))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<String>, _>>()
+        .map_err(|error| error.to_string())?;
+    let mut samples: BTreeMap<String, (String, Vec<f64>, Vec<f64>, Vec<f64>, [usize; 4])> =
+        BTreeMap::new();
+    for experiment_id in &experiment_ids {
+        let result = get_experiment(connection, experiment_id)?;
+        let runtimes = list_ai_runtime(connection, experiment_id)?;
+        let decisions = list_ai_decisions(connection, experiment_id)?;
+        for metric in result.metrics {
+            let calls = runtimes
+                .iter()
+                .find(|runtime| runtime.agent_id == metric.agent_id)
+                .map_or(0.0, |runtime| runtime.call_count as f64);
+            let intents = decisions
+                .iter()
+                .filter(|decision| decision.agent_id == metric.agent_id)
+                .fold([0usize; 4], |mut acc, decision| {
+                    match decision.intent.as_deref() {
+                        Some("ENTER") => acc[0] += 1,
+                        Some("HOLD") => acc[1] += 1,
+                        Some("REDUCE") => acc[2] += 1,
+                        Some("EXIT") => acc[3] += 1,
+                        _ => {}
+                    }
+                    acc
+                });
+            let entry = samples.entry(metric.agent_id).or_insert_with(|| {
+                (
+                    metric.agent_name,
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    [0; 4],
+                )
+            });
+            entry.1.push(metric.total_return_pct);
+            entry.2.push(metric.max_drawdown_pct);
+            entry.3.push(calls);
+            for (target, value) in entry.4.iter_mut().zip(intents) {
+                *target += value;
+            }
+        }
+    }
+    let stats = |values: &[f64]| -> (f64, f64, f64, f64) {
+        if values.is_empty() {
+            return (0.0, 0.0, 0.0, 0.0);
+        }
+        let mean = values.iter().sum::<f64>() / values.len() as f64;
+        let variance = values
+            .iter()
+            .map(|value| (value - mean).powi(2))
+            .sum::<f64>()
+            / values.len() as f64;
+        (
+            mean,
+            values.iter().copied().fold(f64::INFINITY, f64::min),
+            values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+            variance.sqrt(),
+        )
+    };
+    let metrics = samples
+        .into_iter()
+        .map(
+            |(agent_id, (agent_name, returns, drawdowns, calls, intents))| {
+                let (return_mean_pct, return_min_pct, return_max_pct, return_std_pct) =
+                    stats(&returns);
+                let (drawdown_mean_pct, drawdown_min_pct, drawdown_max_pct, _) = stats(&drawdowns);
+                MarketRepeatabilityMetric {
+                    agent_id,
+                    agent_name,
+                    run_count: returns.len(),
+                    return_mean_pct,
+                    return_min_pct,
+                    return_max_pct,
+                    return_std_pct,
+                    drawdown_mean_pct,
+                    drawdown_min_pct,
+                    drawdown_max_pct,
+                    call_count_mean: stats(&calls).0,
+                    enter_count: intents[0],
+                    hold_count: intents[1],
+                    reduce_count: intents[2],
+                    exit_count: intents[3],
+                }
+            },
+        )
+        .collect();
+    Ok(MarketRepeatabilityReport {
+        group_id: group_id.into(),
+        name,
+        source_experiment_id,
+        repetitions,
+        status,
+        experiment_ids,
+        metrics,
+        created_at,
+        completed_at,
+    })
+}
+
 pub fn update_ai_config(
     connection: &Connection,
     input: &UpdateMarketAiConfigInput,
@@ -2526,7 +2871,7 @@ pub fn list_ai_decisions(
     connection: &Connection,
     experiment_id: &str,
 ) -> Result<Vec<MarketAiDecisionLog>, String> {
-    let mut statement=connection.prepare("SELECT d.id,d.timestamp,d.action,d.desired_position_pct,d.confidence,d.reasoning,r.result,r.reason,r.approved_position_pct,x.execution_price,a.call_status,a.provider,a.model,a.prompt_version,a.latency_ms,a.attempts,a.fallback_used,c.input_snapshot_json,v.forward_return_1,v.forward_return_5,v.forward_return_10,a.reason_code,a.validation_code,COALESCE(s.disagreement,0),a.lifecycle_action,a.first_failure_type,a.fallback_reason,a.intent,a.generated_target_exposure_pct,a.position_sizing_version,r.risk_state_json,d.exposure_before FROM market_decisions d JOIN market_risk_evaluations r ON r.decision_id=d.id JOIN market_ai_decisions a ON a.decision_id=d.id LEFT JOIN market_orders o ON o.decision_id=d.id LEFT JOIN market_executions x ON x.order_id=o.id LEFT JOIN market_ai_decision_context c ON c.decision_id=d.id LEFT JOIN market_ai_decision_evaluations v ON v.decision_id=d.id LEFT JOIN market_ai_signal_traces s ON s.decision_id=d.id WHERE d.experiment_id=?1 ORDER BY d.candle_index DESC LIMIT 1000").map_err(|error|error.to_string())?;
+    let mut statement=connection.prepare("SELECT d.id,d.timestamp,d.action,d.desired_position_pct,d.confidence,d.reasoning,r.result,r.reason,r.approved_position_pct,x.execution_price,a.call_status,a.provider,a.model,a.prompt_version,a.latency_ms,a.attempts,a.fallback_used,c.input_snapshot_json,v.forward_return_1,v.forward_return_5,v.forward_return_10,a.reason_code,a.validation_code,COALESCE(s.disagreement,0),a.lifecycle_action,a.first_failure_type,a.fallback_reason,a.intent,a.generated_target_exposure_pct,a.position_sizing_version,r.risk_state_json,d.exposure_before,d.agent_id,meta.context_version,meta.trigger_version,meta.context_bytes,meta.temperature,meta.random_seed,meta.seed_supported FROM market_decisions d JOIN market_risk_evaluations r ON r.decision_id=d.id JOIN market_ai_decisions a ON a.decision_id=d.id LEFT JOIN market_orders o ON o.decision_id=d.id LEFT JOIN market_executions x ON x.order_id=o.id LEFT JOIN market_ai_decision_context c ON c.decision_id=d.id LEFT JOIN market_ai_decision_evaluations v ON v.decision_id=d.id LEFT JOIN market_ai_signal_traces s ON s.decision_id=d.id LEFT JOIN market_ai_execution_metadata meta ON meta.decision_id=d.id WHERE d.experiment_id=?1 ORDER BY d.candle_index DESC LIMIT 1000").map_err(|error|error.to_string())?;
     let rows = statement
         .query_map([experiment_id], |row| {
             let raw: Option<String> = row.get(17)?;
@@ -2559,6 +2904,7 @@ pub fn list_ai_decisions(
                 });
             Ok(MarketAiDecisionLog {
                 decision_id,
+                agent_id: row.get(32)?,
                 timestamp: row.get(1)?,
                 action: row.get(2)?,
                 desired_position_pct: row.get(3)?,
@@ -2588,6 +2934,12 @@ pub fn list_ai_decisions(
                 intent: row.get(27)?,
                 generated_target_exposure_pct: row.get(28)?,
                 position_sizing_version: row.get(29)?,
+                context_version: row.get(33)?,
+                trigger_version: row.get(34)?,
+                context_bytes: row.get(35)?,
+                temperature: row.get(36)?,
+                random_seed: row.get::<_, Option<i64>>(37)?.map(|value| value as u64),
+                seed_supported: row.get(38)?,
                 risk_trace,
                 output_attempts: load_ai_output_attempts(connection, row.get(0)?)?,
             })
@@ -2657,6 +3009,7 @@ pub fn list_ai_experiment_comparisons(
         .query_map([], |row| {
             let config: String = row.get(9)?;
             let parsed: serde_json::Value = serde_json::from_str(&config).unwrap_or_default();
+            let agent_id: String = row.get(10)?;
             let calls: usize = row.get(12)?;
             let llm_hold: usize = row.get(18)?;
             Ok(MarketAiExperimentComparison {
@@ -2671,9 +3024,10 @@ pub fn list_ai_experiment_comparisons(
                 slippage_pct: row.get(8)?,
                 decision_interval: parsed
                     .pointer("/aiConfig/decisionInterval")
+                    .or_else(|| parsed.pointer(&format!("/aiConfigs/{agent_id}/decisionInterval")))
                     .and_then(|value| value.as_u64())
                     .unwrap_or(5) as usize,
-                agent_id: row.get(10)?,
+                agent_id,
                 prompt_version: row.get(11)?,
                 call_count: calls,
                 successful_call_count: row.get(13)?,
@@ -3108,6 +3462,7 @@ mod v041_context_tests {
             risk_day: None,
             risk_day_start_equity: 1_000.0,
             trigger_engine: Default::default(),
+            intraday_trigger_engine: Default::default(),
             trigger_audits: Vec::new(),
         }
     }

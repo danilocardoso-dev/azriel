@@ -198,37 +198,41 @@ pub fn evaluate(input: RiskEvaluationInput<'_>) -> RiskEvaluation {
         )
     });
 
-    rules.push(if increasing && input.daily_loss_pct >= input.profile.max_daily_loss_pct {
-        rule(
-            "MAX_DAILY_LOSS",
-            RiskRuleStatus::Rejected,
-            Some("MAX_DAILY_LOSS_REACHED"),
-        )
-    } else if increasing {
-        rule("MAX_DAILY_LOSS", RiskRuleStatus::Passed, None)
-    } else {
-        rule(
-            "MAX_DAILY_LOSS",
-            RiskRuleStatus::NotApplicable,
-            Some(reduction_reason(classification)),
-        )
-    });
+    rules.push(
+        if increasing && input.daily_loss_pct >= input.profile.max_daily_loss_pct {
+            rule(
+                "MAX_DAILY_LOSS",
+                RiskRuleStatus::Rejected,
+                Some("MAX_DAILY_LOSS_REACHED"),
+            )
+        } else if increasing {
+            rule("MAX_DAILY_LOSS", RiskRuleStatus::Passed, None)
+        } else {
+            rule(
+                "MAX_DAILY_LOSS",
+                RiskRuleStatus::NotApplicable,
+                Some(reduction_reason(classification)),
+            )
+        },
+    );
 
-    rules.push(if increasing && input.drawdown_pct >= input.profile.max_drawdown_pct {
-        rule(
-            "MAX_DRAWDOWN",
-            RiskRuleStatus::Rejected,
-            Some("MAX_DRAWDOWN_REACHED"),
-        )
-    } else if increasing {
-        rule("MAX_DRAWDOWN", RiskRuleStatus::Passed, None)
-    } else {
-        rule(
-            "MAX_DRAWDOWN",
-            RiskRuleStatus::NotApplicable,
-            Some(reduction_reason(classification)),
-        )
-    });
+    rules.push(
+        if increasing && input.drawdown_pct >= input.profile.max_drawdown_pct {
+            rule(
+                "MAX_DRAWDOWN",
+                RiskRuleStatus::Rejected,
+                Some("MAX_DRAWDOWN_REACHED"),
+            )
+        } else if increasing {
+            rule("MAX_DRAWDOWN", RiskRuleStatus::Passed, None)
+        } else {
+            rule(
+                "MAX_DRAWDOWN",
+                RiskRuleStatus::NotApplicable,
+                Some(reduction_reason(classification)),
+            )
+        },
+    );
 
     rules.push(rule(
         "KILL_SWITCH",
@@ -329,17 +333,40 @@ mod tests {
     }
 
     fn status(result: &RiskEvaluation, name: &str) -> RiskRuleStatus {
-        result.rules.iter().find(|item| item.rule == name).unwrap().status
+        result
+            .rules
+            .iter()
+            .find(|item| item.rule == name)
+            .unwrap()
+            .status
     }
 
     #[test]
     fn exposure_classification_uses_current_target_and_tolerance() {
-        assert_eq!(classify_exposure_change(0.0, 25.0), ExposureChangeClass::RiskIncreasing);
-        assert_eq!(classify_exposure_change(25.0, 35.0), ExposureChangeClass::RiskIncreasing);
-        assert_eq!(classify_exposure_change(40.0, 25.0), ExposureChangeClass::RiskReducing);
-        assert_eq!(classify_exposure_change(40.0, 0.0), ExposureChangeClass::RiskReducing);
-        assert_eq!(classify_exposure_change(40.0, 40.0), ExposureChangeClass::RiskNeutral);
-        assert_eq!(classify_exposure_change(40.0, 40.00005), ExposureChangeClass::RiskNeutral);
+        assert_eq!(
+            classify_exposure_change(0.0, 25.0),
+            ExposureChangeClass::RiskIncreasing
+        );
+        assert_eq!(
+            classify_exposure_change(25.0, 35.0),
+            ExposureChangeClass::RiskIncreasing
+        );
+        assert_eq!(
+            classify_exposure_change(40.0, 25.0),
+            ExposureChangeClass::RiskReducing
+        );
+        assert_eq!(
+            classify_exposure_change(40.0, 0.0),
+            ExposureChangeClass::RiskReducing
+        );
+        assert_eq!(
+            classify_exposure_change(40.0, 40.0),
+            ExposureChangeClass::RiskNeutral
+        );
+        assert_eq!(
+            classify_exposure_change(40.0, 40.00005),
+            ExposureChangeClass::RiskNeutral
+        );
     }
 
     #[test]
@@ -355,7 +382,10 @@ mod tests {
         }
         for allowed in [&neutral, &reduce, &exit] {
             assert_ne!(allowed.result, "REJECTED");
-            assert_eq!(status(allowed, "MAX_OPERATIONS"), RiskRuleStatus::NotApplicable);
+            assert_eq!(
+                status(allowed, "MAX_OPERATIONS"),
+                RiskRuleStatus::NotApplicable
+            );
         }
     }
 
@@ -376,7 +406,12 @@ mod tests {
                 profile: &profile,
             });
             assert_eq!(result.result, "APPROVED");
-            for name in ["MAX_POSITION", "MAX_EXPOSURE", "MAX_DAILY_LOSS", "MAX_DRAWDOWN"] {
+            for name in [
+                "MAX_POSITION",
+                "MAX_EXPOSURE",
+                "MAX_DAILY_LOSS",
+                "MAX_DRAWDOWN",
+            ] {
                 assert_eq!(status(&result, name), RiskRuleStatus::NotApplicable);
             }
         }
@@ -394,8 +429,14 @@ mod tests {
         });
         assert_eq!(increasing.result, "REJECTED");
         assert_eq!(status(&increasing, "MAX_POSITION"), RiskRuleStatus::Passed);
-        assert_eq!(status(&increasing, "MAX_DAILY_LOSS"), RiskRuleStatus::Rejected);
-        assert_eq!(status(&increasing, "MAX_DRAWDOWN"), RiskRuleStatus::Rejected);
+        assert_eq!(
+            status(&increasing, "MAX_DAILY_LOSS"),
+            RiskRuleStatus::Rejected
+        );
+        assert_eq!(
+            status(&increasing, "MAX_DRAWDOWN"),
+            RiskRuleStatus::Rejected
+        );
     }
 
     #[test]
