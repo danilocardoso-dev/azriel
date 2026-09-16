@@ -10,6 +10,9 @@ pub mod learning_engine;
 pub mod market_ai;
 pub mod market_ai_intraday;
 pub mod market_ai_reliability;
+pub mod market_hold_diagnostics;
+pub mod market_hold_repository;
+pub mod market_identity;
 pub mod market_intraday;
 pub mod market_intraday_observatory;
 pub mod market_models;
@@ -187,6 +190,16 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         "market_ai_intraday",
         include_str!("../../migrations/0028_market_ai_intraday.sql"),
     ),
+    (
+        29,
+        "market_hold_diagnostics",
+        include_str!("../../migrations/0029_market_hold_diagnostics.sql"),
+    ),
+    (
+        30,
+        "market_dataset_identity",
+        include_str!("../../migrations/0030_market_dataset_identity.sql"),
+    ),
 ];
 
 pub fn open(path: &Path) -> Result<Connection, String> {
@@ -202,6 +215,7 @@ pub fn open(path: &Path) -> Result<Connection, String> {
 pub fn initialize(connection: &mut Connection) -> Result<(), String> {
     prepare_migration_registry(connection)?;
     apply_migrations_through(connection, i64::MAX)?;
+    market_identity::repair_legacy_asset_identities(connection)?;
     repository::seed(connection)?;
     stark_repository::ensure_baselines(connection)?;
     stark_repository::ensure_research_seed(connection)
@@ -1322,5 +1336,72 @@ mod tests {
                 1
             );
         }
+    }
+
+    #[test]
+    fn migration_twenty_nine_adds_hold_diagnostics_without_data_loss() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 28).unwrap();
+        connection.execute("INSERT INTO market_datasets(id,name,asset,timeframe,start_at,end_at,candle_count,fingerprint,source_path) VALUES('keep-v0521','Preservar v0.5.2','AAPL','15M','2026-01-01','2026-01-02',2,'keep-v0521-fingerprint','fixture.csv')", []).unwrap();
+
+        apply_migrations_through(&mut connection, 29).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 29);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM market_datasets WHERE id='keep-v0521'",
+                    [],
+                    |row| row.get::<_, usize>(0)
+                )
+                .unwrap(),
+            1
+        );
+        for table in ["market_hold_diagnostic_runs", "market_hold_diagnostics"] {
+            assert_eq!(
+                connection
+                    .query_row(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                        [table],
+                        |row| row.get::<_, usize>(0)
+                    )
+                    .unwrap(),
+                1
+            );
+        }
+        assert_eq!(connection.query_row("SELECT prompt_version FROM market_ai_agent_configs WHERE agent_id='ai-intraday-v1'", [], |row| row.get::<_, String>(0)).unwrap(), "MARKET_AI_INTRADAY_V1");
+    }
+
+    #[test]
+    fn migration_thirty_adds_identity_repair_audit_without_data_loss() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 29).unwrap();
+        connection.execute("INSERT INTO market_datasets(id,name,asset,timeframe,start_at,end_at,candle_count,fingerprint,source_path) VALUES('keep-identity','AAPL_real_15m','AAPL - REAL','15M','2026-01-01','2026-01-02',2,'keep-identity-fingerprint','AAPL_real_15m.csv')", []).unwrap();
+
+        apply_migrations_through(&mut connection, 30).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 30);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT fingerprint FROM market_datasets WHERE id='keep-identity'",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "keep-identity-fingerprint"
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='market_dataset_identity_repairs'",
+                    [],
+                    |row| row.get::<_, usize>(0)
+                )
+                .unwrap(),
+            1
+        );
     }
 }

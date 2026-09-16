@@ -1,5 +1,11 @@
 use crate::{
-    database::{self, market_models::*, market_repository, market_validation, DatabaseState},
+    database::{
+        self,
+        market_hold_diagnostics::{HoldDiagnosticsComparison, HoldDiagnosticsReport},
+        market_hold_repository,
+        market_models::*,
+        market_repository, market_validation, DatabaseState,
+    },
     ollama,
 };
 use tauri::State;
@@ -255,6 +261,38 @@ pub fn get_market_signal_diagnostics(
 ) -> Result<Option<MarketSignalDiagnostics>, String> {
     let connection = lock(&state)?;
     market_repository::get_signal_diagnostics(&connection, &experiment_id)
+}
+
+#[tauri::command]
+pub fn generate_market_hold_diagnostics(
+    state: State<'_, DatabaseState>,
+    experiment_id: String,
+) -> Result<HoldDiagnosticsReport, String> {
+    let mut connection = lock(&state)?;
+    market_hold_repository::generate(&mut connection, &experiment_id)
+}
+
+#[tauri::command]
+pub fn get_market_hold_diagnostics(
+    state: State<'_, DatabaseState>,
+    experiment_id: String,
+) -> Result<HoldDiagnosticsReport, String> {
+    let connection = lock(&state)?;
+    market_hold_repository::get(&connection, &experiment_id)
+}
+
+#[tauri::command]
+pub fn compare_market_hold_diagnostics(
+    state: State<'_, DatabaseState>,
+    development_experiment_id: String,
+    out_of_sample_experiment_id: String,
+) -> Result<HoldDiagnosticsComparison, String> {
+    let connection = lock(&state)?;
+    market_hold_repository::compare(
+        &connection,
+        &development_experiment_id,
+        &out_of_sample_experiment_id,
+    )
 }
 
 #[tauri::command]

@@ -534,3 +534,16 @@ Status: 🧪 Implementada em 13/09/2026; validação operacional AAPL 15M/Ollama
 - o Observatory apresenta contexto serializado, resposta bruta, validação, risco, execução, divergências e metadados de inferência por agente;
 - a rotina de repetibilidade persiste grupos de 2 a 5 execuções idênticas e agrega retorno, drawdown, chamadas e distribuição de intents;
 - testes automatizados usam provider falso e dados sintéticos; não substituem o aceite real com AAPL 15M e Ollama local.
+
+## Market Lab v0.5.2.1 — Intraday Decision Calibration & HOLD Diagnostics
+
+Status: 🧪 Implementada em 14/09/2026; validação operacional DEV/OOS AAPL 15M pendente.
+
+- `HOLD_DIAGNOSTICS_V1` analisa somente dados persistidos após cada decisão e nunca retroalimenta o agente;
+- HOLD enquanto FLAT e LONG possuem semânticas distintas, com `GOOD_HOLD`, oportunidade potencial perdida, redução potencialmente tardia e inconclusivo;
+- FWD1/5/10, MFE1/5/10 e MAE1/5/10 são persistidos junto ao contexto observado em T;
+- relatórios cobrem reason code, confiança, fase de sessão, trigger, buckets técnicos e conflitos realmente observados;
+- o Overview adiciona concentração de HOLD, Quality Matrix, inspetor pós-decisão e candidatos somente para revisão;
+- DEV × OOS exige mesmo ativo/timeframe e períodos não sobrepostos, com evidência `INSUFFICIENT`, `WEAK`, `MODERATE` ou `STRONG`;
+- AI Intraday V1, prompt/contexto, Trigger V2, Position Sizing V1, Risk Policy V2 e Execution Model V1 permanecem congelados;
+- não há nova inferência, portfólio contrafactual, otimização automática ou AI Intraday V1.1.

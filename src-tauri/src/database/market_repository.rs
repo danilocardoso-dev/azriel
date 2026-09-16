@@ -1,7 +1,7 @@
 use super::{
-    ai_repository, market_ai, market_ai_intraday, market_intraday, market_intraday_observatory,
-    market_models::*, market_observatory, market_positions, market_regimes, market_risk,
-    market_signals, market_time, market_triggers,
+    ai_repository, market_ai, market_ai_intraday, market_identity, market_intraday,
+    market_intraday_observatory, market_models::*, market_observatory, market_positions,
+    market_regimes, market_risk, market_signals, market_time, market_triggers,
 };
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde_json::json;
@@ -381,6 +381,7 @@ pub fn import_dataset(
     {
         return Err("nome, ativo e timeframe são obrigatórios".into());
     }
+    let asset = market_identity::normalize_asset_identity(&input.asset)?;
     let path = Path::new(&input.path);
     if path
         .extension()
@@ -440,7 +441,7 @@ pub fn import_dataset(
         parse_csv_with_context(&content, timeframe, &timezone, &session_type)?;
     let fp = fingerprint(
         &content,
-        input.asset.trim(),
+        &asset,
         &format!("{}|{market}|{timezone}|{session_type}", timeframe.as_str()),
     );
     if let Some(existing) = connection
@@ -464,7 +465,7 @@ pub fn import_dataset(
     let start = candles[0].timestamp.clone();
     let end = candles.last().unwrap().timestamp.clone();
     let tx = connection.transaction().map_err(|e| e.to_string())?;
-    tx.execute("INSERT INTO market_datasets(id,name,asset,timeframe,currency,start_at,end_at,candle_count,fingerprint,source_path,market,timezone,session_type,session_count,expected_gap_count,unexpected_gap_count) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",params![id,input.name.trim(),input.asset.trim().to_ascii_uppercase(),timeframe.as_str(),currency,start,end,candles.len(),fp,input.path,market,timezone,session_type,continuity.session_count,continuity.expected_gap_count,continuity.unexpected_gap_count]).map_err(|e|e.to_string())?;
+    tx.execute("INSERT INTO market_datasets(id,name,asset,timeframe,currency,start_at,end_at,candle_count,fingerprint,source_path,market,timezone,session_type,session_count,expected_gap_count,unexpected_gap_count) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",params![id,input.name.trim(),asset,timeframe.as_str(),currency,start,end,candles.len(),fp,input.path,market,timezone,session_type,continuity.session_count,continuity.expected_gap_count,continuity.unexpected_gap_count]).map_err(|e|e.to_string())?;
     {
         let mut statement=tx.prepare("INSERT INTO market_candles(dataset_id,candle_index,timestamp,open,high,low,close,volume,timestamp_utc,session_id,session_state) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)").map_err(|e|e.to_string())?;
         for (index, c) in candles.iter().enumerate() {

@@ -1,5 +1,5 @@
 import { invokeDatabase } from "./tauri";
-import type { ImportMarketDatasetInput, MarketAgentDefinition, MarketAiDecisionLog, MarketAiExperimentComparison, MarketAiRuntimeMetric, MarketAiStatus, MarketDataset, MarketExperimentInput, MarketExperimentResult, MarketExperimentSummary, MarketRepeatabilityInput, MarketRepeatabilityReport, MarketRiskProfile, MarketSignalDiagnostics, MarketValidationInput, MarketValidationResult, MarketValidationSummary, UpdateMarketAiConfigInput } from "../types";
+import type { HoldDiagnosticsComparison, HoldDiagnosticsReport, ImportMarketDatasetInput, MarketAgentDefinition, MarketAiDecisionLog, MarketAiExperimentComparison, MarketAiRuntimeMetric, MarketAiStatus, MarketDataset, MarketExperimentInput, MarketExperimentResult, MarketExperimentSummary, MarketRepeatabilityInput, MarketRepeatabilityReport, MarketRiskProfile, MarketSignalDiagnostics, MarketValidationInput, MarketValidationResult, MarketValidationSummary, UpdateMarketAiConfigInput } from "../types";
 
 export const marketLabRepository = {
   listDatasets: () => invokeDatabase<MarketDataset[]>("list_market_datasets"),
@@ -23,4 +23,7 @@ export const marketLabRepository = {
   listAiDecisions: (experimentId: string) => invokeDatabase<MarketAiDecisionLog[]>("list_market_ai_decisions", { experimentId }),
   listAiExperimentComparisons: () => invokeDatabase<MarketAiExperimentComparison[]>("list_market_ai_experiment_comparisons"),
   getSignalDiagnostics: (experimentId: string) => invokeDatabase<MarketSignalDiagnostics | null>("get_market_signal_diagnostics", { experimentId }),
+  generateHoldDiagnostics: (experimentId: string) => invokeDatabase<HoldDiagnosticsReport>("generate_market_hold_diagnostics", { experimentId }),
+  getHoldDiagnostics: (experimentId: string) => invokeDatabase<HoldDiagnosticsReport>("get_market_hold_diagnostics", { experimentId }),
+  compareHoldDiagnostics: (developmentExperimentId: string, outOfSampleExperimentId: string) => invokeDatabase<HoldDiagnosticsComparison>("compare_market_hold_diagnostics", { developmentExperimentId, outOfSampleExperimentId }),
 };
