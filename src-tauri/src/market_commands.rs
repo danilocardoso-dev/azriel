@@ -3,6 +3,9 @@ use crate::{
         self,
         market_hold_diagnostics::{HoldDiagnosticsComparison, HoldDiagnosticsReport},
         market_hold_repository,
+        market_lifecycle_repository::{
+            self, LifecycleIntelligenceComparison, LifecycleIntelligenceReport,
+        },
         market_models::*,
         market_repository, market_validation, DatabaseState,
     },
@@ -290,6 +293,38 @@ pub fn compare_market_hold_diagnostics(
     let connection = lock(&state)?;
     market_hold_repository::compare(
         &connection,
+        &development_experiment_id,
+        &out_of_sample_experiment_id,
+    )
+}
+
+#[tauri::command]
+pub fn generate_market_lifecycle_intelligence(
+    state: State<'_, DatabaseState>,
+    experiment_id: String,
+) -> Result<LifecycleIntelligenceReport, String> {
+    let mut connection = lock(&state)?;
+    market_lifecycle_repository::generate(&mut connection, &experiment_id)
+}
+
+#[tauri::command]
+pub fn get_market_lifecycle_intelligence(
+    state: State<'_, DatabaseState>,
+    experiment_id: String,
+) -> Result<LifecycleIntelligenceReport, String> {
+    let connection = lock(&state)?;
+    market_lifecycle_repository::get(&connection, &experiment_id)
+}
+
+#[tauri::command]
+pub fn compare_market_lifecycle_intelligence(
+    state: State<'_, DatabaseState>,
+    development_experiment_id: String,
+    out_of_sample_experiment_id: String,
+) -> Result<LifecycleIntelligenceComparison, String> {
+    let mut connection = lock(&state)?;
+    market_lifecycle_repository::compare(
+        &mut connection,
         &development_experiment_id,
         &out_of_sample_experiment_id,
     )

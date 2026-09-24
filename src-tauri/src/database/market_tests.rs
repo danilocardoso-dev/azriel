@@ -796,7 +796,39 @@ fn ai_intraday_runs_beside_v4_2_with_isolated_contexts_and_runtimes() {
         .iter()
         .any(|(agent, system, _)| agent == market_ai::AI_AGENT_V4_2_ID
             && !system.contains("AI Intraday V1")));
+    let calls_before_lifecycle = calls.len();
     drop(calls);
+    let lifecycle =
+        market_lifecycle_repository::generate(&mut connection, &result.experiment.id).unwrap();
+    assert_eq!(provider.calls.lock().unwrap().len(), calls_before_lifecycle);
+    assert_eq!(
+        lifecycle.lifecycle_engine_version,
+        "POSITION_LIFECYCLE_CONFIG_V1"
+    );
+    assert_eq!(
+        lifecycle.deterioration_engine_version,
+        "POSITION_DETERIORATION_CONFIG_V1"
+    );
+    assert!(!lifecycle.lifecycles.is_empty());
+    assert!(!lifecycle.events.is_empty());
+    assert!(!lifecycle.health_trace.is_empty());
+    assert!(lifecycle
+        .health_trace
+        .iter()
+        .all(|trace| trace.available_at_t));
+    assert!(lifecycle
+        .outcomes
+        .iter()
+        .all(|outcome| outcome.post_decision_only));
+    assert!(lifecycle
+        .events
+        .iter()
+        .any(|event| event.event_type == "OPEN"
+            && event.state_before == "FLAT"
+            && event.state_after == "LONG"));
+    let persisted = market_lifecycle_repository::get(&connection, &result.experiment.id).unwrap();
+    assert_eq!(persisted.run_id, lifecycle.run_id);
+    assert_eq!(persisted.health_trace.len(), lifecycle.health_trace.len());
     let repeated = market_repository::run_experiment_with_provider_configs(
         &mut connection,
         &input,

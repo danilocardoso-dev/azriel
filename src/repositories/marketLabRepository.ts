@@ -1,5 +1,5 @@
 import { invokeDatabase } from "./tauri";
-import type { HoldDiagnosticsComparison, HoldDiagnosticsReport, ImportMarketDatasetInput, MarketAgentDefinition, MarketAiDecisionLog, MarketAiExperimentComparison, MarketAiRuntimeMetric, MarketAiStatus, MarketDataset, MarketExperimentInput, MarketExperimentResult, MarketExperimentSummary, MarketRepeatabilityInput, MarketRepeatabilityReport, MarketRiskProfile, MarketSignalDiagnostics, MarketValidationInput, MarketValidationResult, MarketValidationSummary, UpdateMarketAiConfigInput } from "../types";
+import type { HoldDiagnosticsComparison, HoldDiagnosticsReport, ImportMarketDatasetInput, LifecycleIntelligenceComparison, LifecycleIntelligenceReport, MarketAgentDefinition, MarketAiDecisionLog, MarketAiExperimentComparison, MarketAiRuntimeMetric, MarketAiStatus, MarketDataset, MarketExperimentInput, MarketExperimentResult, MarketExperimentSummary, MarketRepeatabilityInput, MarketRepeatabilityReport, MarketRiskProfile, MarketSignalDiagnostics, MarketValidationInput, MarketValidationResult, MarketValidationSummary, UpdateMarketAiConfigInput } from "../types";
 
 export const marketLabRepository = {
   listDatasets: () => invokeDatabase<MarketDataset[]>("list_market_datasets"),
@@ -26,4 +26,7 @@ export const marketLabRepository = {
   generateHoldDiagnostics: (experimentId: string) => invokeDatabase<HoldDiagnosticsReport>("generate_market_hold_diagnostics", { experimentId }),
   getHoldDiagnostics: (experimentId: string) => invokeDatabase<HoldDiagnosticsReport>("get_market_hold_diagnostics", { experimentId }),
   compareHoldDiagnostics: (developmentExperimentId: string, outOfSampleExperimentId: string) => invokeDatabase<HoldDiagnosticsComparison>("compare_market_hold_diagnostics", { developmentExperimentId, outOfSampleExperimentId }),
+  generateLifecycleIntelligence: (experimentId: string) => invokeDatabase<LifecycleIntelligenceReport>("generate_market_lifecycle_intelligence", { experimentId }),
+  getLifecycleIntelligence: (experimentId: string) => invokeDatabase<LifecycleIntelligenceReport>("get_market_lifecycle_intelligence", { experimentId }),
+  compareLifecycleIntelligence: (developmentExperimentId: string, outOfSampleExperimentId: string) => invokeDatabase<LifecycleIntelligenceComparison>("compare_market_lifecycle_intelligence", { developmentExperimentId, outOfSampleExperimentId }),
 };

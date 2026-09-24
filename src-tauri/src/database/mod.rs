@@ -15,6 +15,8 @@ pub mod market_hold_repository;
 pub mod market_identity;
 pub mod market_intraday;
 pub mod market_intraday_observatory;
+pub mod market_lifecycle_intelligence;
+pub mod market_lifecycle_repository;
 pub mod market_models;
 pub mod market_observatory;
 pub mod market_positions;
@@ -199,6 +201,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         30,
         "market_dataset_identity",
         include_str!("../../migrations/0030_market_dataset_identity.sql"),
+    ),
+    (
+        31,
+        "market_position_lifecycle_intelligence",
+        include_str!("../../migrations/0031_market_position_lifecycle_intelligence.sql"),
     ),
 ];
 
@@ -1403,5 +1410,45 @@ mod tests {
                 .unwrap(),
             1
         );
+    }
+
+    #[test]
+    fn migration_thirty_one_adds_lifecycle_intelligence_without_data_loss() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 30).unwrap();
+        connection.execute("INSERT INTO market_datasets(id,name,asset,timeframe,start_at,end_at,candle_count,fingerprint,source_path) VALUES('keep-lifecycle','AAPL 15M','AAPL','15M','2026-01-01','2026-01-02',2,'keep-lifecycle-fingerprint','AAPL_15m.csv')", []).unwrap();
+
+        apply_migrations_through(&mut connection, 31).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 31);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT fingerprint FROM market_datasets WHERE id='keep-lifecycle'",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "keep-lifecycle-fingerprint"
+        );
+        for table in [
+            "market_lifecycle_analysis_runs",
+            "market_lifecycle_analyses",
+            "market_lifecycle_events",
+            "market_lifecycle_health_trace",
+            "market_lifecycle_post_decision_outcomes",
+        ] {
+            assert_eq!(
+                connection
+                    .query_row(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                        [table],
+                        |row| row.get::<_, usize>(0)
+                    )
+                    .unwrap(),
+                1
+            );
+        }
     }
 }

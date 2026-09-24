@@ -547,3 +547,16 @@ Status: 🧪 Implementada em 14/09/2026; validação operacional DEV/OOS AAPL 15
 - DEV × OOS exige mesmo ativo/timeframe e períodos não sobrepostos, com evidência `INSUFFICIENT`, `WEAK`, `MODERATE` ou `STRONG`;
 - AI Intraday V1, prompt/contexto, Trigger V2, Position Sizing V1, Risk Policy V2 e Execution Model V1 permanecem congelados;
 - não há nova inferência, portfólio contrafactual, otimização automática ou AI Intraday V1.1.
+
+## Market Lab v0.5.3 — Position Lifecycle Intelligence
+
+Status: 🧪 Implementada em 16/09/2026; aceite operacional DEV/OOS AAPL 15M pendente.
+
+- `PositionLifecycleEngine` formaliza estados e rejeita transições impossíveis sem substituir o `PositionManager` operacional;
+- lifecycles persistidos ganham baseline de entrada, idade, MFE/MAE/giveback e deltas técnicos por candle;
+- `PositionDeteriorationEngine` determinístico e versionado produz componentes explicáveis, score, nível e `PositionHealth`;
+- dados disponíveis em T e outcomes pós-decisão são persistidos em domínios separados, prevenindo look-ahead;
+- integração com `HOLD_DIAGNOSTICS_V1` mede late reduction, first deterioration, response delay e censura;
+- o Overview inclui Observatory, tabela, inspector, timeline, Late Reduction, Exit Quality e matrizes Health/Deterioration × Outcome;
+- comparação DEV × OOS valida identidade de mercado e períodos não sobrepostos sem rerodar o LLM;
+- AI Intraday V1, prompt/contexto, Trigger V2, Position Sizing V1, Risk Policy V2 e Execution Model V1 permanecem congelados.
