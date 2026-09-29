@@ -1,4 +1,4 @@
-import type { StudyAIAction, StudyAIBuiltContext, StudyAIContext } from "../../types";
+import type { RoadmapLearningMethod, StudyAIAction, StudyAIBuiltContext, StudyAIContext } from "../../types";
 
 const TRUNCATION_MARKER = "\n[CONTEXTO TRUNCADO PELO STUDY AI]";
 const DEFAULT_CONTEXT_LIMIT = 12_000;
@@ -12,7 +12,13 @@ type Payload = {
   roadmap: { id: string | null; name: string | null } | null;
   stage: { id: string | null; name: string | null } | null;
   topic: { id: string | null; name: string | null } | null;
-  activity: { id: string | null; name: string | null; description: string | null; activityType: string | null } | null;
+  activity: {
+    id: string | null; name: string | null; description: string | null; activityType: string | null;
+    learningObjective: string | null; instructions: string | null; completionCriteria: string | null;
+    deliverable: string | null; estimatedMinutes: number | null; learningMethod: RoadmapLearningMethod | null;
+    isValidation: boolean; reflectionPrompt: string | null;
+    resources: Array<{ id: string; type: string; title: string; url: string | null; provider: string | null; language: string | null; required: boolean; studyMaterialId: string | null }>;
+  } | null;
   note: { id: string; title: string; content: string | null; notebookId: string | null; notebookTitle: string | null } | null;
   studySession: { id: string; status: string; plannedFocusMinutes: number | null } | null;
   relatedCard: { id: string | null; front: string; back: string } | null;
@@ -48,6 +54,15 @@ function payloadOf(action: StudyAIAction, context: StudyAIContext, source: Conte
       name: clean(context.activity.name),
       description: source === "SELECTED_TEXT" ? null : clean(context.activity.description),
       activityType: clean(context.activity.activityType),
+      learningObjective: clean(context.activity.learningObjective),
+      instructions: clean(context.activity.instructions),
+      completionCriteria: clean(context.activity.completionCriteria),
+      deliverable: clean(context.activity.deliverable),
+      estimatedMinutes: context.activity.estimatedMinutes ?? null,
+      learningMethod: context.activity.learningMethod ?? null,
+      isValidation: context.activity.isValidation ?? false,
+      reflectionPrompt: clean(context.activity.reflectionPrompt),
+      resources: (context.activity.resources ?? []).map((resource) => ({ id: resource.id, type: resource.type, title: resource.title, url: clean(resource.url), provider: clean(resource.provider), language: clean(resource.language), required: resource.required, studyMaterialId: resource.studyMaterialId ?? null })),
     } : null,
     note: context.note ? {
       id: context.note.id,
@@ -88,6 +103,8 @@ function truncatePayload(payload: Payload, maximumCharacters: number): { seriali
     ...payload.sourceMaterials.map((material) => ({ get: () => material.selectedText, set: (value: string) => { material.selectedText = value; } })),
     { get: () => payload.note?.content ?? null, set: (value) => { if (payload.note) payload.note.content = value; } },
     { get: () => payload.activity?.description ?? null, set: (value) => { if (payload.activity) payload.activity.description = value; } },
+    { get: () => payload.activity?.instructions ?? null, set: (value) => { if (payload.activity) payload.activity.instructions = value; } },
+    { get: () => payload.activity?.completionCriteria ?? null, set: (value) => { if (payload.activity) payload.activity.completionCriteria = value; } },
     { get: () => payload.review?.userAnswer ?? null, set: (value) => { if (payload.review) payload.review.userAnswer = value; } },
     { get: () => payload.relatedCard?.back ?? null, set: (value) => { if (payload.relatedCard) payload.relatedCard.back = value; } },
     { get: () => payload.review?.expectedAnswer ?? null, set: (value) => { if (payload.review) payload.review.expectedAnswer = value; } },

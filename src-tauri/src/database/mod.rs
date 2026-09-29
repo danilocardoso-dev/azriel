@@ -259,6 +259,16 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         "ai_task_references",
         include_str!("../../migrations/0039_ai_task_references.sql"),
     ),
+    (
+        40,
+        "study_roadmap_learning_model",
+        include_str!("../../migrations/0040_study_roadmap_learning_model.sql"),
+    ),
+    (
+        41,
+        "knowledge_catalog_reset",
+        include_str!("../../migrations/0041_knowledge_catalog_reset.sql"),
+    ),
 ];
 
 pub fn open(path: &Path) -> Result<Connection, String> {
@@ -717,7 +727,7 @@ mod tests {
                 .query_row("SELECT COUNT(*) FROM research_items", [], |row| row
                     .get::<_, i64>(0))
                 .unwrap(),
-            6
+            0
         );
         stark_repository::ensure_baselines(&connection).unwrap();
         assert_eq!(
@@ -739,7 +749,7 @@ mod tests {
         stark_repository::ensure_baselines(&connection).unwrap();
         connection.execute("INSERT INTO study_roadmaps(id,name,status) VALUES ('keep-v83','Preservar roadmap','active')", []).unwrap();
         connection.execute("INSERT INTO roadmap_stages(id,roadmap_id,name,stage_order) VALUES ('keep-stage-v83','keep-v83','Etapa',1)", []).unwrap();
-        connection.execute("INSERT INTO roadmap_topics(id,stage_id,name,knowledge_node_id,topic_order) VALUES ('keep-topic-v83','keep-stage-v83','Tópico','electronics',1)", []).unwrap();
+        connection.execute("INSERT INTO roadmap_topics(id,stage_id,name,knowledge_node_id,topic_order) VALUES ('keep-topic-v83','keep-stage-v83','Tópico','software-engineering',1)", []).unwrap();
         connection.execute("INSERT INTO roadmap_activities(id,topic_id,title,activity_type,status,activity_order) VALUES ('keep-activity-v83','keep-topic-v83','Atividade legada','READING','completed',1)", []).unwrap();
         let before: i64 = connection
             .query_row("SELECT COUNT(*) FROM knowledge_areas", [], |row| row.get(0))
@@ -762,7 +772,7 @@ mod tests {
                 .unwrap(),
             1
         );
-        assert_eq!(connection.query_row("SELECT knowledge_node_id FROM activity_knowledge_nodes WHERE activity_id='keep-activity-v83' AND role='primary'", [], |row| row.get::<_,String>(0)).unwrap(), "electronics");
+        assert_eq!(connection.query_row("SELECT knowledge_node_id FROM activity_knowledge_nodes WHERE activity_id='keep-activity-v83' AND role='primary'", [], |row| row.get::<_,String>(0)).unwrap(), "software-engineering");
         assert_eq!(
             connection
                 .query_row(
@@ -784,8 +794,8 @@ mod tests {
         repository::seed(&mut connection).unwrap();
         connection.execute("INSERT INTO study_roadmaps(id,name,status) VALUES ('keep-v84','Roadmap v0.8.4','active')", []).unwrap();
         connection.execute("INSERT INTO roadmap_stages(id,roadmap_id,name,stage_order) VALUES ('stage-v84','keep-v84','Etapa',1)", []).unwrap();
-        connection.execute("INSERT INTO roadmap_topics(id,stage_id,name,description,knowledge_node_id,topic_order) VALUES ('topic-a-v84','stage-v84','Base','','electronics',1)", []).unwrap();
-        connection.execute("INSERT INTO roadmap_topics(id,stage_id,name,description,knowledge_node_id,topic_order) VALUES ('topic-b-v84','stage-v84','Avançado','Conteúdo. Pré-requisitos: topic-a-v84','electronics',2)", []).unwrap();
+        connection.execute("INSERT INTO roadmap_topics(id,stage_id,name,description,knowledge_node_id,topic_order) VALUES ('topic-a-v84','stage-v84','Base','','software-engineering',1)", []).unwrap();
+        connection.execute("INSERT INTO roadmap_topics(id,stage_id,name,description,knowledge_node_id,topic_order) VALUES ('topic-b-v84','stage-v84','Avançado','Conteúdo. Pré-requisitos: topic-a-v84','software-engineering',2)", []).unwrap();
 
         apply_migrations_through(&mut connection, 13).unwrap();
 
@@ -1784,5 +1794,53 @@ mod tests {
                 1
             );
         }
+    }
+
+    #[test]
+    fn migration_forty_preserves_legacy_roadmaps_and_adds_learning_resources() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 39).unwrap();
+        connection.execute("INSERT INTO study_roadmaps(id,name,description,status) VALUES ('legacy-roadmap','Legado','','active')", []).unwrap();
+        connection.execute("INSERT INTO roadmap_stages(id,roadmap_id,name,description,stage_order) VALUES ('legacy-stage','legacy-roadmap','Etapa','',1)", []).unwrap();
+        connection.execute("INSERT INTO roadmap_topics(id,stage_id,name,description,knowledge_node_id,topic_state,topic_order) VALUES ('legacy-topic','legacy-stage','Tópico','',NULL,'NOT_STARTED',1)", []).unwrap();
+        connection.execute("INSERT INTO roadmap_activities(id,topic_id,title,description,activity_type,status,activity_order) VALUES ('legacy-activity','legacy-topic','Atividade','','READING','pending',1)", []).unwrap();
+
+        apply_migrations_through(&mut connection, 40).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 40);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM roadmap_activities WHERE id='legacy-activity' AND is_validation=0 AND estimated_minutes IS NULL", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='roadmap_activity_resources'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+    }
+
+    #[test]
+    fn migration_forty_one_replaces_knowledge_catalog_and_preserves_azriel() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 40).unwrap();
+        connection.execute("INSERT INTO projects(id,name,category,status,progress) VALUES ('azriel','Azriel','Sistema pessoal','active',40)", []).unwrap();
+        connection.execute("INSERT INTO knowledge_areas(id,name,category,coverage,depth,priority,node_type) VALUES ('programming','Programação','Computação',80,65,'high','area')", []).unwrap();
+        connection.execute("INSERT INTO knowledge_baselines(knowledge_id,coverage,depth) VALUES ('programming',80,65)", []).unwrap();
+        connection.execute("INSERT INTO knowledge_history(knowledge_id,coverage,depth,reason) VALUES ('programming',80,65,'Legado')", []).unwrap();
+        connection.execute("INSERT INTO project_knowledge(project_id,knowledge_id) VALUES ('azriel','programming')", []).unwrap();
+        connection.execute("INSERT INTO study_roadmaps(id,name,status) VALUES ('keep-roadmap','Roadmap preservado','active')", []).unwrap();
+        connection.execute("INSERT INTO roadmap_stages(id,roadmap_id,name,stage_order) VALUES ('keep-stage','keep-roadmap','Etapa',1)", []).unwrap();
+        connection.execute("INSERT INTO roadmap_topics(id,stage_id,name,knowledge_node_id,topic_state,topic_order) VALUES ('keep-topic','keep-stage','Tópico','programming','NOT_STARTED',1)", []).unwrap();
+        connection.execute("INSERT INTO roadmap_activities(id,topic_id,title,activity_type,status,activity_order) VALUES ('keep-activity','keep-topic','Atividade','READING','pending',1)", []).unwrap();
+        connection.execute("INSERT INTO activity_knowledge_nodes(activity_id,knowledge_node_id,role) VALUES ('keep-activity','programming','primary')", []).unwrap();
+        connection.execute("INSERT INTO knowledge_events(id,knowledge_node_id,source_type,event_type,description) VALUES ('legacy-event','programming','manual','manual_adjustment','Legado')", []).unwrap();
+
+        apply_migrations_through(&mut connection, 41).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 41);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM knowledge_areas", [], |row| row.get::<_, i64>(0)).unwrap(), 10);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM knowledge_areas WHERE id IN ('software-engineering','systems-infrastructure','cybersecurity','dfir','reliability-observability','ai-engineering','automation','english','technology-business','engineering-leadership')", [], |row| row.get::<_, i64>(0)).unwrap(), 10);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM knowledge_areas WHERE id='programming'", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM projects WHERE id='azriel'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM project_knowledge WHERE project_id='azriel'", [], |row| row.get::<_, i64>(0)).unwrap(), 3);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM study_roadmaps WHERE id='keep-roadmap'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM roadmap_topics WHERE id='keep-topic' AND knowledge_node_id IS NULL", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM activity_knowledge_nodes", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM knowledge_events", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
     }
 }

@@ -1,5 +1,6 @@
 use crate::database::{stark_models::*, stark_repository, DatabaseState};
 use tauri::State;
+use tauri_plugin_opener::OpenerExt;
 
 fn lock<'a>(
     state: &'a State<'_, DatabaseState>,
@@ -43,6 +44,55 @@ pub fn save_study_roadmap(
         roadmaps: stark_repository::list_roadmaps(&connection)?,
         learning,
     })
+}
+
+#[tauri::command]
+pub fn export_study_roadmap_json(
+    state: State<'_, DatabaseState>,
+    id: String,
+) -> Result<String, String> {
+    let connection = lock(&state)?;
+    let roadmap = stark_repository::list_roadmaps(&connection)?
+        .into_iter()
+        .find(|item| item.id == id)
+        .ok_or_else(|| "Roadmap não encontrado".to_string())?;
+    serde_json::to_string_pretty(&StudyRoadmapInput {
+        id: roadmap.id,
+        name: roadmap.name,
+        description: roadmap.description,
+        status: roadmap.status,
+        stages: roadmap.stages,
+    }).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn import_study_roadmap_json(
+    state: State<'_, DatabaseState>,
+    json: String,
+) -> Result<RoadmapSaveResult, String> {
+    let input: StudyRoadmapInput = serde_json::from_str(&json)
+        .map_err(|error| format!("JSON inválido em linha {}, coluna {}: {}", error.line(), error.column(), error))?;
+    let mut connection = lock(&state)?;
+    let learning = stark_repository::save_roadmap(&mut connection, &input)?;
+    Ok(RoadmapSaveResult { roadmaps: stark_repository::list_roadmaps(&connection)?, learning })
+}
+
+#[tauri::command]
+pub fn open_roadmap_resource_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let parsed = reqwest::Url::parse(url.trim()).map_err(|_| "URL de recurso inválida".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https") || !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("Somente URLs HTTP/HTTPS sem credenciais são permitidas".into());
+    }
+    app.opener().open_url(parsed.as_str(), None::<&str>).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn add_roadmap_resource_to_library(
+    state: State<'_, DatabaseState>,
+    resource_id: String,
+) -> Result<String, String> {
+    let mut connection = lock(&state)?;
+    stark_repository::add_resource_to_library(&mut connection, &resource_id)
 }
 
 #[tauri::command]

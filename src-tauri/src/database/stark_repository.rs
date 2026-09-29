@@ -1,4 +1,8 @@
-use super::{learning_engine, stark_models::*};
+use super::{
+    learning_engine, stark_models::*,
+    study_material_models::{AddLinkStudyMaterialInput, StudyMaterialRelationInput},
+    study_material_repository,
+};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::{HashMap, HashSet};
 
@@ -12,6 +16,17 @@ fn required(value: &str, label: &str) -> Result<(), String> {
         Ok(())
     }
 }
+
+fn clean(value: &Option<String>) -> Option<String> {
+    value
+        .as_ref()
+        .map(|item| item.trim())
+        .filter(|item| !item.is_empty())
+        .map(str::to_string)
+}
+
+const LEARNING_METHOD_TYPES: &[&str] = &["ACTIVE_RECALL", "FEYNMAN", "SHADOWING", "SPACED_REVIEW", "HANDS_ON", "PROBLEM_SOLVING", "CASE_STUDY", "BUILD", "OBSERVE", "EXPERIMENT", "REFLECTION", "RESEARCH", "OTHER"];
+const RESOURCE_TYPES: &[&str] = &["VIDEO", "ARTICLE", "DOCUMENTATION", "COURSE", "BOOK", "LAB", "TOOL", "PODCAST", "DATASET", "WEBSITE", "OTHER"];
 
 pub fn ensure_baselines(connection: &Connection) -> Result<(), String> {
     connection.execute("INSERT OR IGNORE INTO knowledge_baselines(knowledge_id,coverage,depth,recorded_at) SELECT id,coverage,depth,COALESCE(created_at,CURRENT_TIMESTAMP) FROM knowledge_areas", []).map_err(err)?;
@@ -30,13 +45,6 @@ pub fn ensure_research_seed(connection: &mut Connection) -> Result<(), String> {
         return Ok(());
     }
     let transaction = connection.transaction().map_err(err)?;
-    transaction.execute_batch("INSERT OR IGNORE INTO research_items(id,title,domain,objective,kind,status,impact,project_id) VALUES
-      ('BIO-P01','Mendel Lab','Genética + Software','Simular cruzamentos e probabilidades','project','active','Genética educacional','mendel-lab'),
-      ('BIO-P02','Gene Expression Explorer','Bioinformática','Comparar expressão gênica','project','active','Transcriptômica + dados','gene-expression'),
-      ('BIO-P03','PCR Simulator','Biologia Molecular','Modelar primers, ciclos e amplicons','project','active','Molecular + software','pcr-simulator'),
-      ('BIO-P04','GeneScope','Bioinformática','Explorar variantes genéticas','project','active','Genética aplicada','genescope'),
-      ('FND-01','Matemática e Física','Fundamentos','Preparar a base para Mecatrônica','study','active','Redução de lacunas',NULL),
-      ('ENE-01','ArcCore','Energia','Investigar armazenamento e gestão','research','planned','Projeto integrador','arccore');").map_err(err)?;
     transaction
         .execute(
             "INSERT INTO _azriel_seeds(key) VALUES ('v0.8.2-research')",
@@ -69,7 +77,7 @@ fn list_activities(
     connection: &Connection,
     topic_id: &str,
 ) -> Result<Vec<RoadmapActivity>, String> {
-    let mut statement = connection.prepare("SELECT id,title,description,activity_type,status,completed_at,activity_order,project_id,research_id FROM roadmap_activities WHERE topic_id=?1 ORDER BY activity_order").map_err(err)?;
+    let mut statement = connection.prepare("SELECT id,title,description,activity_type,status,completed_at,activity_order,project_id,research_id,learning_objective,instructions,completion_criteria,deliverable,estimated_minutes,learning_method_type,learning_method_instructions,is_validation,reflection_prompt FROM roadmap_activities WHERE topic_id=?1 ORDER BY activity_order").map_err(err)?;
     let rows = statement
         .query_map([topic_id], |row| {
             Ok(RoadmapActivity {
@@ -84,11 +92,25 @@ fn list_activities(
                 research_id: row.get(8)?,
                 primary_knowledge_node_id: None,
                 secondary_knowledge_node_ids: vec![],
+                learning_objective: row.get(9)?,
+                instructions: row.get(10)?,
+                completion_criteria: row.get(11)?,
+                deliverable: row.get(12)?,
+                estimated_minutes: row.get(13)?,
+                learning_method: row.get::<_, Option<String>>(14)?.map(|r#type| RoadmapLearningMethod { r#type, instructions: row.get(15).ok().flatten() }),
+                resources: vec![],
+                is_validation: row.get(16)?,
+                reflection_prompt: row.get(17)?,
             })
         })
         .map_err(err)?;
     let mut activities = rows.collect::<Result<Vec<_>, _>>().map_err(err)?;
+    let mut resource_statement = connection.prepare("SELECT resource.id,resource.activity_id,resource.resource_type,resource.title,resource.url,resource.provider,resource.language,resource.required,resource.study_material_id FROM roadmap_activity_resources resource JOIN roadmap_activities activity ON activity.id=resource.activity_id WHERE activity.topic_id=?1 ORDER BY resource.activity_id,resource.resource_order").map_err(err)?;
+    let resources = resource_statement.query_map([topic_id], |row| Ok((row.get::<_, String>(1)?, RoadmapActivityResource { id: row.get(0)?, r#type: row.get(2)?, title: row.get(3)?, url: row.get(4)?, provider: row.get(5)?, language: row.get(6)?, required: row.get(7)?, study_material_id: row.get(8)? }))).map_err(err)?.collect::<Result<Vec<_>, _>>().map_err(err)?;
+    let mut resources_by_activity: HashMap<String, Vec<RoadmapActivityResource>> = HashMap::new();
+    for (activity_id, resource) in resources { resources_by_activity.entry(activity_id).or_default().push(resource); }
     for activity in &mut activities {
+        activity.resources = resources_by_activity.remove(&activity.id).unwrap_or_default();
         let mut relations=connection.prepare("SELECT knowledge_node_id,role FROM activity_knowledge_nodes WHERE activity_id=?1 ORDER BY role,knowledge_node_id").map_err(err)?;
         let values = relations
             .query_map([&activity.id], |row| {
@@ -209,6 +231,38 @@ pub fn list_roadmaps(connection: &Connection) -> Result<Vec<StudyRoadmap>, Strin
     Ok(result)
 }
 
+pub fn add_resource_to_library(
+    connection: &mut Connection,
+    resource_id: &str,
+) -> Result<String, String> {
+    let resource = connection.query_row(
+        "SELECT activity_id,title,url,provider,study_material_id FROM roadmap_activity_resources WHERE id=?1",
+        [resource_id],
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<String>>(2)?, row.get::<_, Option<String>>(3)?, row.get::<_, Option<String>>(4)?)),
+    ).optional().map_err(err)?.ok_or_else(|| "Recurso não encontrado".to_string())?;
+    if let Some(material_id) = resource.4 {
+        connection.execute("INSERT OR IGNORE INTO study_material_relations(id,material_id,relation_type,relation_id,created_at) VALUES (?1,?2,'ACTIVITY',?3,CURRENT_TIMESTAMP)", params![format!("material-relation-{material_id}-activity-{}", resource.0), material_id, resource.0]).map_err(err)?;
+        return Ok(material_id);
+    }
+    let url = resource.2.ok_or_else(|| "O recurso não possui URL para adicionar à Biblioteca".to_string())?;
+    let normalized_url = reqwest::Url::parse(&url).map_err(|_| "URL de recurso inválida".to_string())?.to_string();
+    let existing = connection.query_row("SELECT id FROM study_materials WHERE (external_url=?1 OR external_url=?2) AND removed_at IS NULL LIMIT 1", params![normalized_url, url], |row| row.get::<_, String>(0)).optional().map_err(err)?;
+    let material_id = if let Some(id) = existing {
+        id
+    } else {
+        let id = format!("material-resource-{resource_id}");
+        study_material_repository::add_link_material(connection, &AddLinkStudyMaterialInput {
+            id: id.clone(), title: resource.1, external_url: normalized_url, description: None,
+            source_author: resource.3, source_title: None, source_year: None,
+            relations: vec![StudyMaterialRelationInput { relation_type: "ACTIVITY".into(), relation_id: resource.0.clone() }],
+        })?;
+        id
+    };
+    connection.execute("INSERT OR IGNORE INTO study_material_relations(id,material_id,relation_type,relation_id,created_at) VALUES (?1,?2,'ACTIVITY',?3,CURRENT_TIMESTAMP)", params![format!("material-relation-{material_id}-activity-{}", resource.0), material_id, resource.0]).map_err(err)?;
+    connection.execute("UPDATE roadmap_activity_resources SET study_material_id=?2,updated_at=CURRENT_TIMESTAMP WHERE id=?1", params![resource_id, material_id]).map_err(err)?;
+    Ok(material_id)
+}
+
 pub fn save_roadmap(
     connection: &mut Connection,
     input: &StudyRoadmapInput,
@@ -219,6 +273,7 @@ pub fn save_roadmap(
         return Err("Status de roadmap inválido".into());
     }
     let mut ids = HashSet::new();
+    let mut all_resource_ids = HashSet::new();
     let topic_ids: HashSet<String> = input
         .stages
         .iter()
@@ -276,6 +331,7 @@ pub fn save_roadmap(
                 }
             }
             for (activity_index, activity) in topic.activities.iter().enumerate() {
+                let path = format!("stages[{stage_index}].topics[{topic_index}].activities[{activity_index}]");
                 required(&activity.id, "o ID da atividade")?;
                 required(&activity.title, "o título da atividade")?;
                 if activity.order != activity_index as i64 + 1 || !ids.insert(activity.id.clone()) {
@@ -298,7 +354,53 @@ pub fn save_roadmap(
                     return Err("Tipo de atividade inválido".into());
                 }
                 if !["pending", "in_progress", "completed"].contains(&activity.status.as_str()) {
-                    return Err("Status de atividade inválido".into());
+                    return Err(format!("{path}.status: status de atividade inválido"));
+                }
+                if activity.estimated_minutes.is_some_and(|minutes| !(1..=1440).contains(&minutes)) {
+                    return Err(format!("{path}.estimatedMinutes: use um inteiro entre 1 e 1440"));
+                }
+                if let Some(method) = &activity.learning_method {
+                    if !LEARNING_METHOD_TYPES.contains(&method.r#type.as_str()) {
+                        return Err(format!("{path}.learningMethod.type: tipo inválido"));
+                    }
+                }
+                if activity.resources.len() > 30 {
+                    return Err(format!("{path}.resources: limite de 30 recursos excedido"));
+                }
+                for (resource_index, resource) in activity.resources.iter().enumerate() {
+                    let resource_path = format!("{path}.resources[{resource_index}]");
+                    required(&resource.id, &format!("{resource_path}.id"))?;
+                    required(&resource.title, &format!("{resource_path}.title"))?;
+                    if resource.id.len() > 100 || !resource.id.chars().all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')) {
+                        return Err(format!("{resource_path}.id: use apenas letras, números, ponto, hífen ou sublinhado"));
+                    }
+                    if !all_resource_ids.insert(resource.id.trim().to_string()) {
+                        return Err(format!("{resource_path}.id: ID de recurso duplicado no roadmap"));
+                    }
+                    if !RESOURCE_TYPES.contains(&resource.r#type.as_str()) {
+                        return Err(format!("{resource_path}.type: tipo inválido"));
+                    }
+                    if let Some(url) = clean(&resource.url) {
+                        let parsed = reqwest::Url::parse(&url).map_err(|_| format!("{resource_path}.url: URL inválida"))?;
+                        if !matches!(parsed.scheme(), "http" | "https") || !parsed.username().is_empty() || parsed.password().is_some() {
+                            return Err(format!("{resource_path}.url: use HTTP/HTTPS sem credenciais"));
+                        }
+                    }
+                    if let Some(language) = clean(&resource.language) {
+                        let parts: Vec<&str> = language.split('-').collect();
+                        let valid = matches!(parts.len(), 1 | 2)
+                            && (2..=3).contains(&parts[0].len())
+                            && parts[0].chars().all(|c| c.is_ascii_lowercase())
+                            && (parts.len() == 1 || (parts[1].len() == 2 && parts[1].chars().all(|c| c.is_ascii_uppercase())));
+                        if !valid { return Err(format!("{resource_path}.language: use pt-BR, en ou código equivalente")); }
+                    }
+                    if clean(&resource.url).is_none() && resource.study_material_id.is_none() {
+                        return Err(format!("{resource_path}: informe url ou studyMaterialId"));
+                    }
+                    if let Some(material_id) = &resource.study_material_id {
+                        let exists = connection.query_row("SELECT EXISTS(SELECT 1 FROM study_materials WHERE id=?1 AND removed_at IS NULL)", [material_id], |row| row.get::<_, bool>(0)).map_err(err)?;
+                        if !exists { return Err(format!("{resource_path}.studyMaterialId: material não encontrado")); }
+                    }
                 }
                 let primary = activity
                     .primary_knowledge_node_id
@@ -439,7 +541,10 @@ pub fn save_roadmap(
                 } else {
                     None
                 };
-                transaction.execute("INSERT INTO roadmap_activities(id,topic_id,title,description,activity_type,status,completed_at,activity_order,project_id,research_id) VALUES (?1,?2,?3,?4,?5,?6,CASE WHEN ?7='CURRENT_TIMESTAMP' THEN CURRENT_TIMESTAMP ELSE ?7 END,?8,?9,?10)", params![activity.id,topic.id,activity.title.trim(),activity.description.trim(),activity.activity_type,activity.status,completed_at,activity.order,activity.project_id,activity.research_id]).map_err(err)?;
+                transaction.execute("INSERT INTO roadmap_activities(id,topic_id,title,description,activity_type,status,completed_at,activity_order,project_id,research_id,learning_objective,instructions,completion_criteria,deliverable,estimated_minutes,learning_method_type,learning_method_instructions,is_validation,reflection_prompt) VALUES (?1,?2,?3,?4,?5,?6,CASE WHEN ?7='CURRENT_TIMESTAMP' THEN CURRENT_TIMESTAMP ELSE ?7 END,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)", params![activity.id,topic.id,activity.title.trim(),activity.description.trim(),activity.activity_type,activity.status,completed_at,activity.order,activity.project_id,activity.research_id,clean(&activity.learning_objective),clean(&activity.instructions),clean(&activity.completion_criteria),clean(&activity.deliverable),activity.estimated_minutes,activity.learning_method.as_ref().map(|item| item.r#type.as_str()),activity.learning_method.as_ref().and_then(|item| clean(&item.instructions)),activity.is_validation,clean(&activity.reflection_prompt)]).map_err(err)?;
+                for (resource_index, resource) in activity.resources.iter().enumerate() {
+                    transaction.execute("INSERT INTO roadmap_activity_resources(id,activity_id,resource_order,resource_type,title,url,provider,language,required,study_material_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)", params![resource.id.trim(),activity.id,resource_index as i64 + 1,resource.r#type,resource.title.trim(),clean(&resource.url),clean(&resource.provider),clean(&resource.language),resource.required,resource.study_material_id]).map_err(err)?;
+                }
                 let primary = activity
                     .primary_knowledge_node_id
                     .as_ref()
@@ -655,6 +760,15 @@ mod tests {
                 secondary_knowledge_node_ids: vec![],
                 project_id: None,
                 research_id: None,
+                learning_objective: None,
+                instructions: None,
+                completion_criteria: None,
+                deliverable: None,
+                estimated_minutes: None,
+                learning_method: None,
+                resources: vec![],
+                is_validation: false,
+                reflection_prompt: None,
             };
         StudyRoadmapInput {
             id: "control-roadmap".into(),
@@ -670,7 +784,7 @@ mod tests {
                     id: "mosfet-topic".into(),
                     name: "MOSFET".into(),
                     description: "".into(),
-                    knowledge_node_id: Some("electronics".into()),
+                    knowledge_node_id: Some("software-engineering".into()),
                     state: "EXPOSED".into(),
                     order: 1,
                     prerequisite_topic_ids: vec![],
@@ -695,7 +809,7 @@ mod tests {
         database::initialize(&mut connection).unwrap();
         let before: (i64, i64) = connection
             .query_row(
-                "SELECT coverage,depth FROM knowledge_areas WHERE id='electronics'",
+                "SELECT coverage,depth FROM knowledge_areas WHERE id='software-engineering'",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
@@ -712,7 +826,7 @@ mod tests {
         );
         let after: (i64, i64) = connection
             .query_row(
-                "SELECT coverage,depth FROM knowledge_areas WHERE id='electronics'",
+                "SELECT coverage,depth FROM knowledge_areas WHERE id='software-engineering'",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
@@ -737,7 +851,7 @@ mod tests {
             .all(|event| event.event_type == "activity_reopened"));
         let restored: (i64, i64) = connection
             .query_row(
-                "SELECT coverage,depth FROM knowledge_areas WHERE id='electronics'",
+                "SELECT coverage,depth FROM knowledge_areas WHERE id='software-engineering'",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
@@ -757,17 +871,17 @@ mod tests {
         let mut input = roadmap();
         let evidence = &mut input.stages[0].topics[0].activities[0];
         evidence.activity_type = "PROJECT".into();
-        evidence.secondary_knowledge_node_ids = vec!["control".into()];
+        evidence.secondary_knowledge_node_ids = vec!["automation".into()];
         let result = save_roadmap(&mut connection, &input).unwrap();
         assert!(result.integration > 0.0);
         assert!(result
             .created_events
             .iter()
-            .any(|event| event.knowledge_node_id == "electronics"));
+            .any(|event| event.knowledge_node_id == "software-engineering"));
         assert!(result
             .created_events
             .iter()
-            .any(|event| event.knowledge_node_id == "control"));
+            .any(|event| event.knowledge_node_id == "automation"));
     }
 
     #[test]
@@ -848,6 +962,67 @@ mod tests {
     }
 
     #[test]
+    fn learning_model_round_trips_and_keeps_topic_state_explicit() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        database::initialize(&mut connection).unwrap();
+        let mut input = roadmap();
+        let activity = &mut input.stages[0].topics[0].activities[1];
+        activity.learning_objective = Some("Explicar o chaveamento".into());
+        activity.instructions = Some("Monte e observe".into());
+        activity.completion_criteria = Some("Explicar sem consultar".into());
+        activity.deliverable = Some("Relatório".into());
+        activity.estimated_minutes = Some(60);
+        activity.learning_method = Some(RoadmapLearningMethod { r#type: "HANDS_ON".into(), instructions: Some("Teste antes de ler".into()) });
+        activity.is_validation = true;
+        activity.reflection_prompt = Some("O que falhou?".into());
+        activity.resources = vec![RoadmapActivityResource { id: "resource-mosfet".into(), r#type: "VIDEO".into(), title: "MOSFET".into(), url: Some("https://example.com/mosfet".into()), provider: Some("Example".into()), language: Some("pt-BR".into()), required: true, study_material_id: None }];
+        save_roadmap(&mut connection, &input).unwrap();
+        let saved = list_roadmaps(&connection).unwrap();
+        let topic = &saved[0].stages[0].topics[0];
+        let activity = &topic.activities[1];
+        assert_eq!(topic.state, "EXPOSED");
+        assert!(activity.is_validation);
+        assert_eq!(activity.estimated_minutes, Some(60));
+        assert_eq!(activity.learning_method.as_ref().map(|method| method.r#type.as_str()), Some("HANDS_ON"));
+        assert_eq!(activity.resources[0].language.as_deref(), Some("pt-BR"));
+        let exported = serde_json::to_string(&input).unwrap();
+        let imported: StudyRoadmapInput = serde_json::from_str(&exported).unwrap();
+        assert_eq!(imported.stages[0].topics[0].activities[1].resources[0].id, "resource-mosfet");
+        assert_eq!(imported.stages[0].topics[0].activities[1].deliverable.as_deref(), Some("Relatório"));
+    }
+
+    #[test]
+    fn legacy_json_defaults_new_learning_fields_and_invalid_resources_are_rejected() {
+        let legacy = r#"{"id":"activity","title":"Legacy","description":"","activityType":"READING","status":"pending","completedAt":null,"order":1}"#;
+        let parsed: RoadmapActivity = serde_json::from_str(legacy).unwrap();
+        assert!(parsed.resources.is_empty());
+        assert!(!parsed.is_validation);
+        assert!(parsed.learning_method.is_none());
+
+        let mut connection = Connection::open_in_memory().unwrap();
+        database::initialize(&mut connection).unwrap();
+        let mut input = roadmap();
+        input.stages[0].topics[0].activities[1].resources = vec![RoadmapActivityResource { id: "bad".into(), r#type: "VIDEO".into(), title: "Inválido".into(), url: Some("file:///segredo".into()), provider: None, language: Some("PT_br".into()), required: false, study_material_id: None }];
+        let error = save_roadmap(&mut connection, &input).unwrap_err();
+        assert!(error.contains("resources[0].url"));
+    }
+
+    #[test]
+    fn resource_library_relation_is_idempotent_and_reuses_the_url() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        database::initialize(&mut connection).unwrap();
+        let mut input = roadmap();
+        input.stages[0].topics[0].activities[1].resources = vec![RoadmapActivityResource { id: "resource-library".into(), r#type: "ARTICLE".into(), title: "Artigo".into(), url: Some("https://example.com/article".into()), provider: Some("Example".into()), language: Some("pt-BR".into()), required: false, study_material_id: None }];
+        save_roadmap(&mut connection, &input).unwrap();
+        let first = add_resource_to_library(&mut connection, "resource-library").unwrap();
+        let second = add_resource_to_library(&mut connection, "resource-library").unwrap();
+        assert_eq!(first, second);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM study_materials WHERE external_url='https://example.com/article' OR external_url='https://example.com/article/'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM study_material_relations WHERE material_id=?1 AND relation_type='ACTIVITY' AND relation_id='simulate-mosfet'", [&first], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(connection.query_row("SELECT study_material_id FROM roadmap_activity_resources WHERE id='resource-library'", [], |row| row.get::<_, String>(0)).unwrap(), first);
+    }
+
+    #[test]
     fn roadmap_rejects_unknown_knowledge_before_writing() {
         let mut connection = Connection::open_in_memory().unwrap();
         database::initialize(&mut connection).unwrap();
@@ -873,10 +1048,10 @@ mod tests {
             kind: "research".into(),
             status: "completed".into(),
             impact: "".into(),
-            knowledge_node_id: Some("control".into()),
+            knowledge_node_id: Some("automation".into()),
             roadmap_id: Some("control-roadmap".into()),
             roadmap_topic_id: Some("mosfet-topic".into()),
-            project_id: Some("arccore".into()),
+            project_id: Some("azriel".into()),
             created_at: "".into(),
             updated_at: "".into(),
         };
@@ -886,9 +1061,9 @@ mod tests {
             .into_iter()
             .find(|item| item.id == input.id)
             .unwrap();
-        assert_eq!(saved.knowledge_node_id.as_deref(), Some("control"));
+        assert_eq!(saved.knowledge_node_id.as_deref(), Some("automation"));
         assert_eq!(saved.roadmap_id.as_deref(), Some("control-roadmap"));
-        assert_eq!(saved.project_id.as_deref(), Some("arccore"));
+        assert_eq!(saved.project_id.as_deref(), Some("azriel"));
         assert!(!list_events(&connection).unwrap().is_empty());
     }
 }

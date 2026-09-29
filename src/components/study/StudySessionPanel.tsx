@@ -5,6 +5,7 @@ import type { StudySession } from "../../types";
 type Props = {
   session: StudySession;
   busy: boolean;
+  compact?: boolean;
   onPause: () => Promise<void>;
   onResume: () => Promise<void>;
   onComplete: () => Promise<void>;
@@ -13,7 +14,7 @@ type Props = {
   onCreateNote: () => Promise<void>;
 };
 
-export function StudySessionPanel({ session, busy, onPause, onResume, onComplete, onCancel, onOpenNotes, onCreateNote }: Props) {
+export function StudySessionPanel({ session, busy, compact = false, onPause, onResume, onComplete, onCancel, onOpenNotes, onCreateNote }: Props) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (session.status !== "ACTIVE") return;
@@ -25,7 +26,7 @@ export function StudySessionPanel({ session, busy, onPause, onResume, onComplete
   const target = session.plannedFocusMinutes * 60;
   const remaining = Math.max(0, target - focused);
   const progress = Math.min(100, Math.round(focused / target * 100));
-  return <section className="study-session-panel" data-status={session.status}>
+  return <section className={`study-session-panel ${compact ? "compact" : ""}`} data-status={session.status}>
     <header><div><span>STUDY SESSION</span><strong>{session.status === "ACTIVE" ? "FOCO ATIVO" : "SESSÃO PAUSADA"}</strong></div><b>{session.status}</b></header>
     <div className="study-session-panel__body">
       <div className="study-session-context"><span>{session.roadmapName || "SESSÃO LIVRE"}</span><strong>{session.activityTitle || session.topicName || "Estudo sem atividade vinculada"}</strong><small>{[session.stageName, session.topicName].filter(Boolean).join(" · ") || "SEM CONTEXTO DE ROADMAP"}</small></div>

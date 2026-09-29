@@ -149,7 +149,11 @@ export type RoadmapStatus = "planned" | "active" | "paused" | "completed";
 export type RoadmapTopicState = "NOT_STARTED" | "EXPOSED" | "UNDERSTOOD" | "PRACTICED" | "APPLIED" | "MASTERED";
 export type RoadmapActivityType = "READING" | "LESSON" | "QUIZ" | "EXERCISE" | "SIMULATION" | "EXPERIMENT" | "PROJECT" | "DOCUMENTATION" | "RESEARCH" | "OTHER";
 export type RoadmapActivityStatus = "pending" | "in_progress" | "completed";
-export interface RoadmapActivity { id: string; title: string; description: string; activityType: RoadmapActivityType; status: RoadmapActivityStatus; completedAt: string | null; order: number; primaryKnowledgeNodeId?: string | null; secondaryKnowledgeNodeIds?: string[]; projectId?: string | null; researchId?: string | null }
+export type RoadmapLearningMethodType = "ACTIVE_RECALL" | "FEYNMAN" | "SHADOWING" | "SPACED_REVIEW" | "HANDS_ON" | "PROBLEM_SOLVING" | "CASE_STUDY" | "BUILD" | "OBSERVE" | "EXPERIMENT" | "REFLECTION" | "RESEARCH" | "OTHER";
+export type RoadmapResourceType = "VIDEO" | "ARTICLE" | "DOCUMENTATION" | "COURSE" | "BOOK" | "LAB" | "TOOL" | "PODCAST" | "DATASET" | "WEBSITE" | "OTHER";
+export interface RoadmapLearningMethod { type: RoadmapLearningMethodType; instructions?: string | null }
+export interface RoadmapActivityResource { id: string; type: RoadmapResourceType; title: string; url?: string | null; provider?: string | null; language?: string | null; required: boolean; studyMaterialId?: string | null }
+export interface RoadmapActivity { id: string; title: string; description: string; activityType: RoadmapActivityType; status: RoadmapActivityStatus; completedAt: string | null; order: number; primaryKnowledgeNodeId?: string | null; secondaryKnowledgeNodeIds?: string[]; projectId?: string | null; researchId?: string | null; learningObjective?: string | null; instructions?: string | null; completionCriteria?: string | null; deliverable?: string | null; estimatedMinutes?: number | null; learningMethod?: RoadmapLearningMethod | null; resources?: RoadmapActivityResource[]; isValidation?: boolean; reflectionPrompt?: string | null }
 export interface RoadmapTopic { id: string; name: string; description: string; knowledgeNodeId: string | null; state: RoadmapTopicState; order: number; prerequisiteTopicIds?: string[]; activities: RoadmapActivity[] }
 export interface RoadmapStage { id: string; name: string; description: string; order: number; topics: RoadmapTopic[] }
 export interface StudyRoadmap { id: string; name: string; description: string; status: RoadmapStatus; completedActivities: number; totalActivities: number; progress: number; stages: RoadmapStage[]; createdAt: string; updatedAt: string }
@@ -384,7 +388,7 @@ export type StudyAIAction = "EXPLAIN" | "SUMMARIZE" | "QUIZ" | "GENERATE_CARDS" 
 export type StudyAIStatus = "SUCCESS" | "INVALID_OUTPUT" | "TIMEOUT" | "PROVIDER_ERROR" | "CANCELLED";
 export type StudyAIAssessment = "CORRECT" | "PARTIALLY_CORRECT" | "INCORRECT" | "INSUFFICIENT_CONTEXT";
 export interface StudyAIEntityContext { id: string | null; name: string | null }
-export interface StudyAIActivityContext extends StudyAIEntityContext { description: string | null; activityType: string | null }
+export interface StudyAIActivityContext extends StudyAIEntityContext { description: string | null; activityType: string | null; learningObjective?: string | null; instructions?: string | null; completionCriteria?: string | null; deliverable?: string | null; estimatedMinutes?: number | null; learningMethod?: RoadmapLearningMethod | null; isValidation?: boolean; reflectionPrompt?: string | null; resources?: RoadmapActivityResource[] }
 export interface StudyAINoteContext { id: string; title: string; content: string; notebookId: string | null; notebookTitle: string | null }
 export interface StudyAISessionContext { id: string; status: string; plannedFocusMinutes: number | null }
 export interface StudyAICardContext { id: string | null; front: string; back: string }

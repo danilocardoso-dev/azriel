@@ -1,9 +1,11 @@
 import { useState, type FormEvent } from "react";
-import type { KnowledgeArea, Project, RoadmapActivity, RoadmapActivityStatus, RoadmapActivityType, RoadmapStatus, StudyRoadmap, StudyRoadmapInput } from "../../types";
+import type { KnowledgeArea, Project, RoadmapActivity, RoadmapActivityStatus, RoadmapActivityType, RoadmapLearningMethodType, RoadmapResourceType, RoadmapStatus, StudyRoadmap, StudyRoadmapInput } from "../../types";
 import { RecordEditorDialog } from "../core/RecordEditorDialog";
 
 const uid = () => crypto.randomUUID();
-const activity = (order: number): RoadmapActivity => ({ id: uid(), title: "", description: "", activityType: "READING", status: "pending", completedAt: null, order, primaryKnowledgeNodeId: null, secondaryKnowledgeNodeIds: [], projectId: null, researchId: null });
+const learningMethods: RoadmapLearningMethodType[] = ["ACTIVE_RECALL", "FEYNMAN", "SHADOWING", "SPACED_REVIEW", "HANDS_ON", "PROBLEM_SOLVING", "CASE_STUDY", "BUILD", "OBSERVE", "EXPERIMENT", "REFLECTION", "RESEARCH", "OTHER"];
+const resourceTypes: RoadmapResourceType[] = ["VIDEO", "ARTICLE", "DOCUMENTATION", "COURSE", "BOOK", "LAB", "TOOL", "PODCAST", "DATASET", "WEBSITE", "OTHER"];
+const activity = (order: number): RoadmapActivity => ({ id: uid(), title: "", description: "", activityType: "READING", status: "pending", completedAt: null, order, primaryKnowledgeNodeId: null, secondaryKnowledgeNodeIds: [], projectId: null, researchId: null, learningObjective: null, instructions: null, completionCriteria: null, deliverable: null, estimatedMinutes: null, learningMethod: null, resources: [], isValidation: false, reflectionPrompt: null });
 const inputOf = (item?: StudyRoadmap | null): StudyRoadmapInput => item ? { id: item.id, name: item.name, description: item.description, status: item.status, stages: structuredClone(item.stages) } : { id: uid(), name: "", description: "", status: "planned", stages: [] };
 type Props = { roadmap?: StudyRoadmap | null; knowledge: KnowledgeArea[]; projects: Project[]; onCancel: () => void; onSave: (input: StudyRoadmapInput) => Promise<void> };
 
@@ -38,6 +40,31 @@ export function RoadmapEditor({ roadmap, knowledge, projects, onCancel, onSave }
               <label>Secundários<select multiple value={entry.secondaryKnowledgeNodeIds ?? []} onChange={(event) => changeActivity(si, ti, ai, (item) => ({ ...item, secondaryKnowledgeNodeIds: [...event.target.selectedOptions].map((option) => option.value) }))}>{knowledge.filter((area) => area.id !== (entry.primaryKnowledgeNodeId ?? topic.knowledgeNodeId)).map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></label>
               <label>Projeto<select value={entry.projectId ?? ""} onChange={(event) => changeActivity(si, ti, ai, (item) => ({ ...item, projectId: event.target.value || null }))}><option value="">Sem projeto</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
             </div>
+            <details className="learning-activity__model">
+              <summary>MODELO DE APRENDIZAGEM (OPCIONAL)</summary>
+              <div className="learning-activity__model-grid">
+                <label>Objetivo<textarea rows={2} value={entry.learningObjective ?? ""} onChange={(event) => changeActivity(si, ti, ai, (item) => ({ ...item, learningObjective: event.target.value || null }))} /></label>
+                <label>Instruções<textarea rows={3} value={entry.instructions ?? ""} onChange={(event) => changeActivity(si, ti, ai, (item) => ({ ...item, instructions: event.target.value || null }))} /></label>
+                <label>Entrega<textarea rows={2} value={entry.deliverable ?? ""} onChange={(event) => changeActivity(si, ti, ai, (item) => ({ ...item, deliverable: event.target.value || null }))} /></label>
+                <label>Critério de conclusão<textarea rows={2} value={entry.completionCriteria ?? ""} onChange={(event) => changeActivity(si, ti, ai, (item) => ({ ...item, completionCriteria: event.target.value || null }))} /></label>
+                <label>Reflexão<textarea rows={2} value={entry.reflectionPrompt ?? ""} onChange={(event) => changeActivity(si, ti, ai, (item) => ({ ...item, reflectionPrompt: event.target.value || null }))} /></label>
+                <label>Estimativa (min)<input type="number" min={1} max={1440} value={entry.estimatedMinutes ?? ""} onChange={(event) => changeActivity(si, ti, ai, (item) => ({ ...item, estimatedMinutes: event.target.value ? Number(event.target.value) : null }))} /></label>
+                <label>Método<select value={entry.learningMethod?.type ?? ""} onChange={(event) => changeActivity(si, ti, ai, (item) => ({ ...item, learningMethod: event.target.value ? { type: event.target.value as RoadmapLearningMethodType, instructions: item.learningMethod?.instructions ?? null } : null }))}><option value="">Sem método</option>{learningMethods.map((method) => <option key={method}>{method}</option>)}</select></label>
+                <label>Orientação do método<textarea rows={2} value={entry.learningMethod?.instructions ?? ""} disabled={!entry.learningMethod} onChange={(event) => changeActivity(si, ti, ai, (item) => ({ ...item, learningMethod: item.learningMethod ? { ...item.learningMethod, instructions: event.target.value || null } : null }))} /></label>
+                <label className="learning-activity__checkpoint"><input type="checkbox" checked={entry.isValidation ?? false} onChange={(event) => changeActivity(si, ti, ai, (item) => ({ ...item, isValidation: event.target.checked }))} /> CHECKPOINT DE VALIDAÇÃO</label>
+              </div>
+              <section className="learning-resource-editor"><header><strong>RECURSOS</strong><button type="button" onClick={() => changeActivity(si, ti, ai, (item) => ({ ...item, resources: [...(item.resources ?? []), { id: uid(), type: "WEBSITE", title: "", url: null, provider: null, language: null, required: false, studyMaterialId: null }] }))}>＋ RECURSO</button></header>
+                {(entry.resources ?? []).map((resource, resourceIndex) => <div className="learning-resource-editor__row" key={resource.id}>
+                  <select value={resource.type} onChange={(event) => changeActivity(si, ti, ai, (item) => ({ ...item, resources: (item.resources ?? []).map((value, index) => index === resourceIndex ? { ...value, type: event.target.value as RoadmapResourceType } : value) }))}>{resourceTypes.map((type) => <option key={type}>{type}</option>)}</select>
+                  <input placeholder="Título" value={resource.title} onChange={(event) => changeActivity(si, ti, ai, (item) => ({ ...item, resources: (item.resources ?? []).map((value, index) => index === resourceIndex ? { ...value, title: event.target.value } : value) }))} />
+                  <input placeholder="https://..." value={resource.url ?? ""} onChange={(event) => changeActivity(si, ti, ai, (item) => ({ ...item, resources: (item.resources ?? []).map((value, index) => index === resourceIndex ? { ...value, url: event.target.value || null } : value) }))} />
+                  <input placeholder="Provedor" value={resource.provider ?? ""} onChange={(event) => changeActivity(si, ti, ai, (item) => ({ ...item, resources: (item.resources ?? []).map((value, index) => index === resourceIndex ? { ...value, provider: event.target.value || null } : value) }))} />
+                  <input placeholder="pt-BR" value={resource.language ?? ""} onChange={(event) => changeActivity(si, ti, ai, (item) => ({ ...item, resources: (item.resources ?? []).map((value, index) => index === resourceIndex ? { ...value, language: event.target.value || null } : value) }))} />
+                  <label><input type="checkbox" checked={resource.required} onChange={(event) => changeActivity(si, ti, ai, (item) => ({ ...item, resources: (item.resources ?? []).map((value, index) => index === resourceIndex ? { ...value, required: event.target.checked } : value) }))} /> obrigatório</label>
+                  <button type="button" aria-label="Remover recurso" onClick={() => changeActivity(si, ti, ai, (item) => ({ ...item, resources: (item.resources ?? []).filter((_, index) => index !== resourceIndex) }))}>×</button>
+                </div>)}
+              </section>
+            </details>
           </div>)}
           <button type="button" onClick={() => changeStage(si, (stageItem) => ({ ...stageItem, topics: stageItem.topics.map((current, index) => index === ti ? { ...current, activities: [...current.activities, activity(current.activities.length + 1)] } : current) }))}>＋ ATIVIDADE</button>
         </article>)}

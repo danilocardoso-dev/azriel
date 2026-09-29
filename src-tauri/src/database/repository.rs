@@ -3,247 +3,94 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 const KNOWLEDGE_SEED: &[(&str, &str, &str, &str, i64, i64, &str)] = &[
     (
-        "cyber",
-        "Cibersegurança",
-        "Computação",
-        "Segurança de sistemas, redes e aplicações.",
-        90,
-        80,
-        "low",
+        "software-engineering",
+        "Engenharia de Software",
+        "Tecnologia",
+        "Arquitetura de software, código, testes, concorrência, performance, APIs e sistemas distribuídos.",
+        0,
+        0,
+        "high",
     ),
     (
-        "programming",
-        "Programação",
-        "Computação",
-        "Desenvolvimento de software e arquitetura de aplicações.",
-        80,
-        65,
-        "low",
+        "systems-infrastructure",
+        "Sistemas e Infraestrutura",
+        "Tecnologia",
+        "Linux, servidores, containers, redes, cloud, platform engineering e deploy.",
+        0,
+        0,
+        "high",
     ),
     (
-        "ai",
+        "cybersecurity",
+        "Cybersecurity",
+        "Segurança",
+        "Security engineering, AppSec, hardening, threat modeling e segurança ofensiva e defensiva.",
+        0,
+        0,
+        "high",
+    ),
+    (
+        "dfir",
+        "Forense Digital & Incident Response",
+        "Segurança",
+        "Evidências, investigação, memória, logs, timelines e resposta a incidentes.",
+        0,
+        0,
+        "high",
+    ),
+    (
+        "reliability-observability",
+        "Reliability & Observabilidade",
+        "Operação",
+        "SRE, métricas, logs, traces, SLO/SLI, incidentes e performance operacional.",
+        0,
+        0,
+        "high",
+    ),
+    (
+        "ai-engineering",
+        "Engenharia de IA",
         "Inteligência Artificial",
-        "Computação",
-        "Modelos, agentes e aplicações de inteligência artificial.",
-        60,
-        40,
-        "medium",
-    ),
-    (
-        "biology",
-        "Biologia",
-        "Biociências",
-        "Fundamentos de sistemas biológicos.",
-        45,
-        30,
-        "medium",
-    ),
-    (
-        "genetics",
-        "Genética",
-        "Biociências",
-        "Herança, variação e organização genética.",
-        45,
-        30,
-        "medium",
-    ),
-    (
-        "biomedicine",
-        "Biomedicina",
-        "Biociências",
-        "Base biomédica aplicada à investigação e diagnóstico.",
-        35,
-        20,
-        "medium",
-    ),
-    (
-        "biotechnology",
-        "Biotecnologia",
-        "Biociências",
-        "Aplicação tecnológica de processos biológicos.",
-        35,
-        20,
-        "medium",
-    ),
-    (
-        "molecular-biology",
-        "Biologia Molecular",
-        "Biociências",
-        "Processos moleculares, DNA, RNA e proteínas.",
-        35,
-        20,
-        "medium",
-    ),
-    (
-        "bioinformatics",
-        "Bioinformática",
-        "Biociências",
-        "Computação aplicada a dados biológicos.",
-        35,
-        20,
-        "medium",
-    ),
-    (
-        "physics",
-        "Física Aplicada",
-        "Fundamentos",
-        "Fundamentos físicos voltados a problemas de engenharia.",
-        30,
-        20,
-        "high",
-    ),
-    (
-        "mathematics",
-        "Matemática",
-        "Fundamentos",
-        "Base quantitativa para ciência e engenharia.",
-        30,
-        20,
-        "high",
-    ),
-    (
-        "statistics",
-        "Estatística",
-        "Fundamentos",
-        "Análise estatística e inferência.",
+        "LLMs, inferência, contexto, tools, agents, RAG, avaliação, deployment e AI security.",
         0,
         0,
         "high",
-    ),
-    (
-        "probability",
-        "Probabilidade",
-        "Fundamentos",
-        "Modelagem de incerteza e eventos.",
-        0,
-        0,
-        "high",
-    ),
-    (
-        "energy",
-        "Energia",
-        "Engenharia",
-        "Captura, armazenamento e gestão de energia.",
-        25,
-        15,
-        "medium",
-    ),
-    (
-        "robotics",
-        "Robótica",
-        "Engenharia",
-        "Integração de percepção, controle e atuação.",
-        20,
-        10,
-        "medium",
-    ),
-    (
-        "electronics",
-        "Eletrônica",
-        "Engenharia",
-        "Circuitos e sistemas eletrônicos.",
-        20,
-        10,
-        "high",
-    ),
-    (
-        "control",
-        "Controle",
-        "Engenharia",
-        "Modelagem e controle de sistemas dinâmicos.",
-        20,
-        10,
-        "medium",
     ),
     (
         "automation",
         "Automação",
-        "Engenharia",
-        "Automação de processos e sistemas.",
-        20,
-        10,
-        "medium",
-    ),
-    (
-        "iot",
-        "Internet das Coisas",
-        "Engenharia",
-        "Sensores, conectividade e sistemas físicos conectados.",
-        20,
-        10,
-        "medium",
-    ),
-    (
-        "materials",
-        "Materiais",
-        "Engenharia",
-        "Propriedades e seleção de materiais.",
-        15,
-        8,
-        "medium",
-    ),
-    (
-        "electrical",
-        "Engenharia Elétrica",
-        "Engenharia",
-        "Sistemas elétricos e eletromagnetismo aplicado.",
-        15,
-        5,
-        "critical",
-    ),
-    (
-        "mechanical",
-        "Engenharia Mecânica",
-        "Engenharia",
-        "Mecânica, projeto e sistemas térmicos.",
-        15,
-        5,
-        "critical",
-    ),
-    (
-        "big-data",
-        "Big Data",
-        "Dados",
-        "Processamento e análise de grandes volumes de dados.",
+        "Operação",
+        "Integrações, workflows, scripting, IoT, tarefas, orquestração e automação operacional.",
         0,
         0,
         "high",
     ),
     (
-        "transcriptomics",
-        "Transcriptômica",
-        "Biociências",
-        "Análise do conjunto de transcritos e expressão gênica.",
+        "english",
+        "Inglês",
+        "Idiomas",
+        "Compreensão, listening, speaking, writing, pronúncia e inglês técnico.",
         0,
         0,
         "high",
     ),
     (
-        "data-analysis",
-        "Análise de Dados",
-        "Dados",
-        "Preparação, exploração e interpretação de dados.",
+        "technology-business",
+        "Empreendedorismo Tecnológico",
+        "Negócios",
+        "Produto, problema, cliente, vendas B2B, validação, operação, métricas e estratégia.",
         0,
         0,
         "high",
     ),
     (
-        "computer-graphics",
-        "Computação Gráfica",
-        "Computação",
-        "Renderização e visualização tridimensional.",
+        "engineering-leadership",
+        "Liderança e Decisão Técnica",
+        "Liderança",
+        "Trade-offs, ADRs, comunicação técnica, priorização, mentoring e decisões de engenharia.",
         0,
         0,
-        "medium",
-    ),
-    (
-        "3d-modeling",
-        "Modelagem 3D",
-        "Computação",
-        "Criação e manipulação de modelos tridimensionais.",
-        0,
-        0,
-        "medium",
+        "high",
     ),
 ];
 
@@ -258,129 +105,12 @@ const PROJECT_SEED: &[(&str, &str, &str, &str, &str, &str, i64, &str)] = &[
         40,
         "Consolidar a persistência local da v0.5.",
     ),
-    (
-        "arccore",
-        "ArcCore",
-        "Energia",
-        "Pesquisa experimental sobre captura, armazenamento e gestão inteligente de energia.",
-        "Transformar fundamentos de energia em um sistema experimental realista.",
-        "research",
-        18,
-        "Aprofundar circuitos e armazenamento.",
-    ),
-    (
-        "mendel-lab",
-        "Mendel Lab",
-        "Genética educacional",
-        "Laboratório virtual para simular herança genética e cruzamentos mendelianos.",
-        "Visualizar gametas, genótipos, fenótipos e probabilidades.",
-        "planned",
-        12,
-        "Definir o primeiro modelo de cruzamento.",
-    ),
-    (
-        "gene-expression",
-        "Gene Expression Explorer",
-        "Bioinformática",
-        "Visualização e comparação de dados de expressão gênica.",
-        "Tornar dados de expressão gênica visualmente compreensíveis.",
-        "research",
-        16,
-        "Selecionar um conjunto de dados educacional.",
-    ),
-    (
-        "pcr-simulator",
-        "PCR Simulator",
-        "Biologia molecular",
-        "Simulador educacional das etapas e variáveis conceituais da PCR.",
-        "Explicar primers, ciclos, orientação das fitas e amplicons.",
-        "planned",
-        8,
-        "Modelar as etapas do ciclo térmico.",
-    ),
-    (
-        "genescope",
-        "GeneScope",
-        "Variantes genéticas",
-        "Explorador educacional para comparar sequências e classificar alterações.",
-        "Investigar substituições, inserções, deleções, códons e aminoácidos.",
-        "planned",
-        10,
-        "Definir o formato das sequências de entrada.",
-    ),
-    (
-        "atlas3d",
-        "Atlas3D",
-        "Visualização científica",
-        "Projeto exploratório de visualização tridimensional.",
-        "Avaliar aplicações futuras em visualização científica ou biomédica.",
-        "paused",
-        28,
-        "Aguardar um problema científico que justifique a retomada.",
-    ),
 ];
 
 const RELATION_SEED: &[(&str, &[&str])] = &[
-    ("azriel", &["ai", "programming", "automation", "big-data"]),
     (
-        "arccore",
-        &[
-            "energy",
-            "electronics",
-            "control",
-            "automation",
-            "materials",
-            "electrical",
-            "physics",
-        ],
-    ),
-    (
-        "mendel-lab",
-        &[
-            "genetics",
-            "biology",
-            "biomedicine",
-            "biotechnology",
-            "probability",
-            "statistics",
-            "programming",
-        ],
-    ),
-    (
-        "gene-expression",
-        &[
-            "genetics",
-            "molecular-biology",
-            "biotechnology",
-            "bioinformatics",
-            "transcriptomics",
-            "data-analysis",
-            "programming",
-        ],
-    ),
-    (
-        "pcr-simulator",
-        &[
-            "molecular-biology",
-            "genetics",
-            "biotechnology",
-            "bioinformatics",
-            "programming",
-        ],
-    ),
-    (
-        "genescope",
-        &[
-            "genetics",
-            "molecular-biology",
-            "biotechnology",
-            "bioinformatics",
-            "programming",
-        ],
-    ),
-    (
-        "atlas3d",
-        &["programming", "computer-graphics", "3d-modeling"],
+        "azriel",
+        &["software-engineering", "ai-engineering", "automation"],
     ),
 ];
 
@@ -611,6 +341,25 @@ pub fn save_knowledge(connection: &mut Connection, input: &KnowledgeInput) -> Re
 }
 
 pub fn delete_knowledge(connection: &Connection, id: &str) -> Result<(), String> {
+    let activity_links = connection
+        .query_row(
+            "SELECT COUNT(*) FROM activity_knowledge_nodes WHERE knowledge_node_id=?1",
+            [id],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(err)?;
+    let evidence_events = connection
+        .query_row(
+            "SELECT COUNT(*) FROM knowledge_events WHERE knowledge_node_id=?1",
+            [id],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(err)?;
+    if activity_links > 0 || evidence_events > 0 {
+        return Err(format!(
+            "O conhecimento possui {activity_links} vínculo(s) com atividades e {evidence_events} evento(s) de aprendizagem. Remova ou migre essas referências antes de excluir."
+        ));
+    }
     connection
         .execute("DELETE FROM knowledge_areas WHERE id=?1", [id])
         .map_err(err)?;
@@ -866,13 +615,13 @@ mod tests {
     fn seed_is_idempotent() {
         let mut connection = database();
         seed(&mut connection).unwrap();
-        assert_eq!(database::schema_version(&connection).unwrap(), 39);
+        assert_eq!(database::schema_version(&connection).unwrap(), 41);
         assert_eq!(
             connection
                 .query_row("SELECT COUNT(*) FROM projects", [], |row| row
                     .get::<_, i64>(0))
                 .unwrap(),
-            7
+            1
         );
         assert_eq!(
             connection
@@ -906,19 +655,19 @@ mod tests {
                 .unwrap(),
             "masters"
         );
-        delete_project(&connection, "atlas3d").unwrap();
+        delete_project(&connection, "azriel").unwrap();
         seed(&mut connection).unwrap();
-        assert!(get_project(&connection, "atlas3d").unwrap().is_none());
+        assert!(get_project(&connection, "azriel").unwrap().is_none());
     }
 
     #[test]
     fn metric_update_writes_current_value_and_history() {
         let mut connection = database();
-        let before = list_history(&connection, "ai").unwrap().len();
+        let before = list_history(&connection, "ai-engineering").unwrap().len();
         let area = update_metrics(
             &mut connection,
             &MetricsInput {
-                knowledge_id: "ai".into(),
+                knowledge_id: "ai-engineering".into(),
                 coverage: 67,
                 depth: 44,
                 reason: "Estudo validado".into(),
@@ -926,7 +675,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!((area.coverage, area.depth), (67, 44));
-        let history = list_history(&connection, "ai").unwrap();
+        let history = list_history(&connection, "ai-engineering").unwrap();
         assert_eq!(history.len(), before + 1);
         assert_eq!(history[0].reason, "Estudo validado");
     }
@@ -939,8 +688,10 @@ mod tests {
             .into_iter()
             .find(|item| item.id == "azriel")
             .unwrap();
-        assert!(project.knowledge_area_ids.contains(&"ai".to_string()));
-        project.knowledge_area_ids = vec!["cyber".into(), "programming".into()];
+        assert!(project
+            .knowledge_area_ids
+            .contains(&"ai-engineering".to_string()));
+        project.knowledge_area_ids = vec!["cybersecurity".into(), "software-engineering".into()];
         save_project(
             &mut connection,
             &ProjectInput {
@@ -961,6 +712,45 @@ mod tests {
             .into_iter()
             .find(|item| item.id == project.id)
             .unwrap();
-        assert_eq!(saved.knowledge_area_ids, vec!["cyber", "programming"]);
+        assert_eq!(
+            saved.knowledge_area_ids,
+            vec!["cybersecurity", "software-engineering"]
+        );
+    }
+
+    #[test]
+    fn custom_knowledge_can_be_created_and_deleted_but_evidence_is_protected() {
+        let mut connection = database();
+        let input = KnowledgeInput {
+            id: "embedded-systems".into(),
+            name: "Sistemas Embarcados".into(),
+            category: "Tecnologia".into(),
+            description: "Firmware, dispositivos e integração com hardware.".into(),
+            coverage: 0,
+            depth: 0,
+            priority: "high".into(),
+            node_type: "area".into(),
+            parent_id: None,
+        };
+
+        save_knowledge(&mut connection, &input).unwrap();
+        assert!(list_knowledge(&connection)
+            .unwrap()
+            .iter()
+            .any(|area| area.id == input.id));
+
+        connection.execute("INSERT INTO knowledge_events(id,knowledge_node_id,source_type,event_type,description) VALUES ('protected-event','embedded-systems','manual','manual_adjustment','Evidência')", []).unwrap();
+        assert!(delete_knowledge(&connection, &input.id)
+            .unwrap_err()
+            .contains("evento(s) de aprendizagem"));
+
+        connection
+            .execute("DELETE FROM knowledge_events WHERE id='protected-event'", [])
+            .unwrap();
+        delete_knowledge(&connection, &input.id).unwrap();
+        assert!(!list_knowledge(&connection)
+            .unwrap()
+            .iter()
+            .any(|area| area.id == input.id));
     }
 }

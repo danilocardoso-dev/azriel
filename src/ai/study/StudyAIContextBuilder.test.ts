@@ -64,4 +64,19 @@ describe("StudyAIContextBuilder", () => {
     expect(result.serialized).toContain('"from": 2');
     expect(() => new StudyAIContextBuilder().build("EXPLAIN", { materials: [{ id: "material-2", title: "Não selecionado", materialType: "TEXT", selectedText: "", pageRange: null }] })).toThrow("selecionado explicitamente");
   });
+
+  it("inclui o modelo de aprendizagem e somente recursos escolhidos pela interface", () => {
+    const result = new StudyAIContextBuilder().build("EXPLAIN", {
+      activity: {
+        id: "activity-1", name: "Handshake", description: "Captura TCP", activityType: "EXPERIMENT",
+        learningObjective: "Compreender a conexão", instructions: "Capture no Wireshark", completionCriteria: "Explique sem roteiro",
+        deliverable: "PCAP", estimatedMinutes: 60, learningMethod: { type: "HANDS_ON", instructions: "Faça primeiro" },
+        isValidation: true, reflectionPrompt: "O que não viu?",
+        resources: [{ id: "selected", type: "VIDEO", title: "TCP", url: "https://example.com", provider: "Example", language: "en", required: true, studyMaterialId: null }],
+      },
+    });
+    expect(result.serialized).toContain("Compreender a conexão");
+    expect(result.serialized).toContain('"id": "selected"');
+    expect(result.serialized).not.toContain("conteúdo da página");
+  });
 });

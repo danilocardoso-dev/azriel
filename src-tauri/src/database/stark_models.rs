@@ -52,6 +52,50 @@ pub struct RoadmapActivity {
     pub project_id: Option<String>,
     #[serde(default)]
     pub research_id: Option<String>,
+    #[serde(default)]
+    pub learning_objective: Option<String>,
+    #[serde(default)]
+    pub instructions: Option<String>,
+    #[serde(default)]
+    pub completion_criteria: Option<String>,
+    #[serde(default)]
+    pub deliverable: Option<String>,
+    #[serde(default)]
+    pub estimated_minutes: Option<i64>,
+    #[serde(default)]
+    pub learning_method: Option<RoadmapLearningMethod>,
+    #[serde(default)]
+    pub resources: Vec<RoadmapActivityResource>,
+    #[serde(default)]
+    pub is_validation: bool,
+    #[serde(default)]
+    pub reflection_prompt: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoadmapLearningMethod {
+    pub r#type: String,
+    #[serde(default)]
+    pub instructions: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoadmapActivityResource {
+    pub id: String,
+    pub r#type: String,
+    pub title: String,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub language: Option<String>,
+    #[serde(default)]
+    pub required: bool,
+    #[serde(default)]
+    pub study_material_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -69,7 +113,7 @@ pub struct RoadmapSaveResult {
     pub learning: LearningMutation,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RoadmapActivityStatusInput {
     pub activity_id: String,
@@ -129,7 +173,7 @@ pub struct StudyRoadmap {
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StudyRoadmapInput {
     pub id: String,

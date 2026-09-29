@@ -3,6 +3,7 @@ import { DeleteConfirmationDialog } from "../components/daily/DeleteConfirmation
 import { RoadmapEditor } from "../components/stark/RoadmapEditor";
 import { RoadmapWorkspace } from "../components/stark/roadmap/RoadmapWorkspace";
 import { StudyHistory } from "../components/study/StudyHistory";
+import { StudyKnowledgeCatalog } from "../components/study/StudyKnowledgeCatalog";
 import { StudyLibrary, type StudyLibraryLaunch } from "../components/study/StudyLibrary";
 import { StudyNotebooks, type StudyNoteLaunch, type StudyNotebooksHandle } from "../components/study/StudyNotebooks";
 import { StudyReview, type StudyCardLaunch } from "../components/study/StudyReview";
@@ -11,14 +12,15 @@ import { StudyToday } from "../components/study/StudyToday";
 import { useAzrielData } from "../contexts/useAzrielData";
 import { starkService } from "../services/starkService";
 import { studyLabService } from "../services/studyLabService";
-import type { RoadmapActivity, RoadmapActivityStatus, RoadmapStage, RoadmapTopic, StudyMaterialRelationInput, StudyNote, StudyNoteContext, StudyNoteSummary, StudyReviewDashboardSummary, StudyReviewSession, StudySession, StudySettings, StudySettingsInput, StudyTodaySummary, StudyRoadmap, StudyRoadmapInput } from "../types";
+import type { KnowledgeInput, RoadmapActivity, RoadmapActivityResource, RoadmapActivityStatus, RoadmapStage, RoadmapTopic, StudyMaterialRelationInput, StudyNote, StudyNoteContext, StudyNoteSummary, StudyReviewDashboardSummary, StudyReviewSession, StudySession, StudySettings, StudySettingsInput, StudyTodaySummary, StudyRoadmap, StudyRoadmapInput } from "../types";
 
-type StudyTab = "today" | "roadmaps" | "notebooks" | "library" | "review" | "history";
+type StudyTab = "today" | "roadmaps" | "knowledge" | "notebooks" | "library" | "review" | "history";
 const HISTORY_PAGE_SIZE = 30;
 
 export function StudiesPage() {
-  const { knowledgeAreas, projects } = useAzrielData();
+  const { knowledgeAreas, projects, saveKnowledge, deleteKnowledge } = useAzrielData();
   const [tab, setTab] = useState<StudyTab>("today");
+  const [roadmapFocusActive, setRoadmapFocusActive] = useState(false);
   const [roadmaps, setRoadmaps] = useState<StudyRoadmap[]>([]);
   const [summary, setSummary] = useState<StudyTodaySummary | null>(null);
   const [settings, setSettings] = useState<StudySettings | null>(null);
@@ -44,6 +46,7 @@ export function StudiesPage() {
   const [error, setError] = useState<string | null>(null);
   const notebooksRef = useRef<StudyNotebooksHandle>(null);
   const noteLaunchToken = useRef(0);
+  const roadmapImportRef = useRef<HTMLInputElement>(null);
 
   const refreshStudyState = useCallback(async () => {
     const [nextSummary, nextSettings, nextRecent, nextNotes, nextReview] = await Promise.all([
@@ -164,6 +167,16 @@ export function StudiesPage() {
     await refreshStudyState();
   }
 
+  async function saveKnowledgeEntry(input: KnowledgeInput) {
+    setError(null);
+    await saveKnowledge(input);
+  }
+
+  async function deleteKnowledgeEntry(id: string) {
+    setError(null);
+    await deleteKnowledge(id);
+  }
+
   async function updateRoadmapActivity(activity: RoadmapActivity, status: RoadmapActivityStatus) {
     setBusyActivityId(activity.id);
     setError(null);
@@ -233,16 +246,55 @@ export function StudiesPage() {
     }
   }
 
+  async function importRoadmap(file?: File) {
+    if (!file) return;
+    setError(null);
+    try {
+      const result = await starkService.importRoadmapJson(await file.text());
+      setRoadmaps(result.roadmaps);
+      await refreshStudyState();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      if (roadmapImportRef.current) roadmapImportRef.current.value = "";
+    }
+  }
+
+  async function exportRoadmap(roadmapId?: string) {
+    const roadmap = roadmaps.find((item) => item.id === roadmapId) ?? roadmaps.find((item) => item.status === "active") ?? roadmaps[0];
+    if (!roadmap) return;
+    setError(null);
+    try {
+      const json = await starkService.exportRoadmapJson(roadmap.id);
+      const url = URL.createObjectURL(new Blob([json], { type: "application/json;charset=utf-8" }));
+      const anchor = document.createElement("a");
+      anchor.href = url; anchor.download = `${roadmap.id}.json`; anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+  }
+
+  async function addResourceToLibrary(resource: RoadmapActivityResource) {
+    setError(null);
+    try {
+      const materialId = await starkService.addResourceToLibrary(resource.id);
+      setRoadmaps(await starkService.roadmaps());
+      await openLibrary(undefined, materialId);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+  }
+
   if (loading || !summary || !settings || !reviewDashboard) return <div className="core-empty">INICIALIZANDO STUDY LAB...</div>;
 
-  return <section className="study-lab">
-    <header className="study-lab__header"><div><span>STUDY LAB v0.5</span><h1>Estudos</h1><p>Roadmaps, foco, conhecimento, biblioteca local, revisão ativa e ferramentas locais de IA.</p></div><button onClick={() => setEditingRoadmap("new")}>＋ NOVO ROADMAP</button></header>
-    <nav className="study-lab__tabs" aria-label="Seções de Estudos">{(["today", "roadmaps", "notebooks", "library", "review", "history"] as const).map((item) => <button key={item} className={tab === item ? "active" : ""} onClick={() => void selectTab(item)}>{item === "today" ? "HOJE" : item === "roadmaps" ? "ROADMAPS" : item === "notebooks" ? "CADERNOS" : item === "library" ? "BIBLIOTECA" : item === "review" ? "REVISÃO" : "HISTÓRICO"}</button>)}</nav>
+  const focusChromeHidden = tab === "roadmaps" && roadmapFocusActive;
+  return <section className={`study-lab ${focusChromeHidden ? "study-lab--focus" : ""}`}>
+    <input ref={roadmapImportRef} hidden type="file" accept="application/json,.json" onChange={(event) => void importRoadmap(event.target.files?.[0])} />
+    {!focusChromeHidden && <header className="study-lab__header"><div><span>STUDY LAB v0.5.2</span><h1>Estudos</h1><p>Roadmaps, foco, conhecimento, biblioteca local, revisão ativa e ferramentas locais de IA.</p></div></header>}
+    {!focusChromeHidden && <nav className="study-lab__tabs" aria-label="Seções de Estudos">{(["today", "roadmaps", "knowledge", "notebooks", "library", "review", "history"] as const).map((item) => <button key={item} className={tab === item ? "active" : ""} onClick={() => void selectTab(item)}>{item === "today" ? "HOJE" : item === "roadmaps" ? "ROADMAPS" : item === "knowledge" ? "CONHECIMENTOS" : item === "notebooks" ? "CADERNOS" : item === "library" ? "BIBLIOTECA" : item === "review" ? "REVISÃO" : "HISTÓRICO"}</button>)}</nav>}
     {error && <div className="form-error stark-error">{error}<button onClick={() => void load()}>TENTAR NOVAMENTE</button></div>}
     {completion && <div className="study-completion"><strong>SESSÃO CONCLUÍDA</strong><span>{Math.floor(completion.currentFocusSeconds / 60)} min de foco · {completion.activityTitle || completion.roadmapName || "Sessão livre"}{completion.linkedNoteCount ? ` · ${completion.linkedNoteCount} nota(s) vinculada(s)` : ""}</span><button onClick={() => setCompletion(null)}>×</button></div>}
-    {summary.activeSession && <StudySessionPanel key={`${summary.activeSession.id}-${summary.activeSession.observedAt}`} session={summary.activeSession} busy={sessionBusy} onPause={() => operateSession(studyLabService.pauseSession)} onResume={() => operateSession(studyLabService.resumeSession)} onComplete={() => operateSession(studyLabService.completeSession, true)} onCancel={() => operateSession(studyLabService.cancelSession)} onOpenNotes={() => openSessionNotes(summary.activeSession!, "open")} onCreateNote={() => openSessionNotes(summary.activeSession!, "create")} />}
+    {summary.activeSession && tab !== "roadmaps" && <StudySessionPanel key={`${summary.activeSession.id}-${summary.activeSession.observedAt}`} session={summary.activeSession} busy={sessionBusy} onPause={() => operateSession(studyLabService.pauseSession)} onResume={() => operateSession(studyLabService.resumeSession)} onComplete={() => operateSession(studyLabService.completeSession, true)} onCancel={() => operateSession(studyLabService.cancelSession)} onOpenNotes={() => openSessionNotes(summary.activeSession!, "open")} onCreateNote={() => openSessionNotes(summary.activeSession!, "create")} />}
     {tab === "today" && <StudyToday roadmaps={roadmaps} summary={summary} recentSessions={recentSessions} recentNotes={recentNotes} reviewSummary={reviewDashboard} settings={settings} busy={sessionBusy} onNewRoadmap={() => setEditingRoadmap("new")} onOpenRoadmaps={() => setTab("roadmaps")} onStartSession={startSession} onSaveSettings={saveSettings} onOpenNote={(note) => void openNotes("open", { roadmapId: note.roadmapId, stageId: null, topicId: null, activityId: note.activityId, studySessionId: note.studySessionId }, note.id)} onOpenReview={() => setTab("review")} />}
-    {tab === "roadmaps" && <RoadmapWorkspace roadmaps={roadmaps} busyActivityId={busyActivityId} activeSessionActivityId={summary.activeSession?.activityId ?? null} sessionBusy={sessionBusy} onNew={() => setEditingRoadmap("new")} onEdit={setEditingRoadmap} onDelete={setDeleteTarget} onActivityStatus={updateRoadmapActivity} onStartSession={startSession} onNotes={openActivityNotes} onCards={openActivityCards} onMaterials={(activity) => void openLibrary({ relationType: "ACTIVITY", relationId: activity.id })} />}
+    {tab === "roadmaps" && <RoadmapWorkspace roadmaps={roadmaps} busyActivityId={busyActivityId} activeSession={summary.activeSession} sessionBusy={sessionBusy} onNew={() => setEditingRoadmap("new")} onImport={() => roadmapImportRef.current?.click()} onExport={(roadmap) => void exportRoadmap(roadmap.id)} onEdit={setEditingRoadmap} onDelete={setDeleteTarget} onActivityStatus={updateRoadmapActivity} onStartSession={startSession} onPauseSession={() => operateSession(studyLabService.pauseSession)} onResumeSession={() => operateSession(studyLabService.resumeSession)} onCompleteSession={() => operateSession(studyLabService.completeSession, true)} onCancelSession={() => operateSession(studyLabService.cancelSession)} onOpenSessionNotes={() => summary.activeSession ? openSessionNotes(summary.activeSession, "open") : Promise.resolve()} onCreateSessionNote={() => summary.activeSession ? openSessionNotes(summary.activeSession, "create") : Promise.resolve()} onNotes={openActivityNotes} onCards={openActivityCards} onMaterials={(activity, materialId) => void openLibrary({ relationType: "ACTIVITY", relationId: activity.id }, materialId)} onOpenResource={async (resource) => { if (resource.url) await starkService.openResourceUrl(resource.url); }} onAddResourceToLibrary={addResourceToLibrary} onFocusChange={setRoadmapFocusActive} />}
+    {tab === "knowledge" && <StudyKnowledgeCatalog areas={knowledgeAreas} roadmaps={roadmaps} onSave={saveKnowledgeEntry} onDelete={deleteKnowledgeEntry} onError={setError} />}
     {tab === "notebooks" && <StudyNotebooks key={noteLaunch?.token ?? 0} ref={notebooksRef} launch={noteLaunch} onChanged={refreshStudyState} onError={reportStudyError} onCreateCard={openNoteCard} onOpenLibrary={(note) => void openLibrary({ relationType: "NOTE", relationId: note.id })} />}
     {tab === "library" && <StudyLibrary key={libraryLaunch?.token ?? 0} roadmaps={roadmaps} launch={libraryLaunch} onChanged={refreshStudyState} />}
     {tab === "review" && <StudyReview key={cardLaunch?.token ?? 0} launch={cardLaunch} activeStudySessionId={summary.activeSession?.id ?? null} onChanged={refreshStudyState} onError={reportStudyError} />}

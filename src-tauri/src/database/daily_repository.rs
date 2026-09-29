@@ -258,8 +258,8 @@ mod tests {
             status: "inbox".into(),
             priority: "high".into(),
             due_date: Some("2026-08-31".into()),
-            project_id: Some("genescope".into()),
-            knowledge_area_id: Some("genetics".into()),
+            project_id: Some("azriel".into()),
+            knowledge_area_id: Some("software-engineering".into()),
         }
     }
 
@@ -267,8 +267,11 @@ mod tests {
     fn task_crud_completion_relations_and_filters() {
         let connection = database();
         let created = save_task(&connection, &task("task-1")).unwrap();
-        assert_eq!(created.project_id.as_deref(), Some("genescope"));
-        assert_eq!(created.knowledge_area_id.as_deref(), Some("genetics"));
+        assert_eq!(created.project_id.as_deref(), Some("azriel"));
+        assert_eq!(
+            created.knowledge_area_id.as_deref(),
+            Some("software-engineering")
+        );
         assert_eq!(list_inbox_tasks(&connection).unwrap().len(), 1);
         assert_eq!(
             list_today_tasks(&connection, "2026-08-31").unwrap().len(),
@@ -340,11 +343,11 @@ mod tests {
             title: Some("MQTT".into()),
             content: "Investigar sensores".into(),
             status: "active".into(),
-            project_id: Some("arccore".into()),
-            knowledge_area_id: Some("iot".into()),
+            project_id: Some("azriel".into()),
+            knowledge_area_id: Some("automation".into()),
         };
         let note = save_note(&connection, &input).unwrap();
-        assert_eq!(note.project_id.as_deref(), Some("arccore"));
+        assert_eq!(note.project_id.as_deref(), Some("azriel"));
         assert_eq!(list_notes(&connection, false).unwrap().len(), 1);
         assert_eq!(
             archive_note(&connection, "note-1").unwrap().status,
