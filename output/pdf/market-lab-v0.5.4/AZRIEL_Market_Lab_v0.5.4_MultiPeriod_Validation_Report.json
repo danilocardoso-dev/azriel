@@ -1,0 +1,1031 @@
+{
+  "batch": {
+    "batchId": "lifecycle-validation-1790281887271788400",
+    "name": "AAPL_15M_MULTIPERIOD_V054_VALIDATION_01",
+    "status": "COMPLETED",
+    "asset": "AAPL",
+    "timeframe": "15M",
+    "agentId": "ai-intraday-v1",
+    "agentVersion": "AI_INTRADAY_V1",
+    "lifecycleConfigVersion": "POSITION_LIFECYCLE_CONFIG_V1",
+    "deteriorationConfigVersion": "POSITION_DETERIORATION_CONFIG_V1",
+    "holdDiagnosticsVersion": "HOLD_DIAGNOSTICS_V1",
+    "executionModelVersion": "EXECUTION_MODEL_V1",
+    "validationEngineVersion": "MULTI_PERIOD_LIFECYCLE_VALIDATION_V1",
+    "datasetCount": 2,
+    "experimentCount": 2,
+    "lifecycleCount": 4,
+    "createdAt": "2026-09-24 20:31:27",
+    "startedAt": "2026-09-24 20:31:27",
+    "completedAt": "2026-09-24 20:31:27"
+  },
+  "sample": {
+    "datasets": 2,
+    "periods": 2,
+    "experiments": 2,
+    "lifecycles": 4,
+    "closed": 2,
+    "open": 2,
+    "censored": 2,
+    "dateCoverageStart": "2026-03-12T13:30:00+00:00",
+    "dateCoverageEnd": "2026-05-07T19:45:00+00:00",
+    "lifecycleLateReductionRatePct": 100.0,
+    "eventLateReductionRatePct": 72.394366,
+    "medianResponseDelayMinutes": 1620.0,
+    "scoreStability": "SHIFTED",
+    "sampleStatus": "INSUFFICIENT"
+  },
+  "periods": [
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-01",
+      "experimentId": "experiment-1790256677468863400",
+      "experimentName": "Experimento determinístico",
+      "datasetId": "dataset-1789263885968772900",
+      "datasetName": "AAPL_real_15m_20sessions_2026-03-12_to_2026-04-09_treated",
+      "sourceRole": "DEVELOPMENT",
+      "startAt": "2026-03-12T13:30:00+00:00",
+      "endAt": "2026-04-09T19:45:00+00:00",
+      "candleCount": 520,
+      "sessionCount": 20,
+      "lifecycleCount": 2,
+      "lifecycleRunId": "lifecycle-intelligence-1790257474827524800",
+      "closedCount": 1,
+      "openCount": 1,
+      "duration": {
+        "average": 3525.0,
+        "median": 3525.0,
+        "p25": null,
+        "p75": null,
+        "p90": null,
+        "minimum": 2700.0,
+        "maximum": 4350.0
+      },
+      "pnl": {
+        "average": -2.489727,
+        "median": -2.489727,
+        "p25": null,
+        "p75": null,
+        "p90": null,
+        "minimum": -2.489727,
+        "maximum": -2.489727
+      },
+      "mfe": {
+        "average": 2.768145,
+        "median": 2.768145,
+        "p25": null,
+        "p75": null,
+        "p90": null,
+        "minimum": 0.334998,
+        "maximum": 5.201292
+      },
+      "mae": {
+        "average": -2.672291,
+        "median": -2.672291,
+        "p25": null,
+        "p75": null,
+        "p90": null,
+        "minimum": -3.958035,
+        "maximum": -1.386546
+      },
+      "giveback": {
+        "average": 1.762567,
+        "median": 1.762567,
+        "p25": null,
+        "p75": null,
+        "p90": null,
+        "minimum": 0.700408,
+        "maximum": 2.824725
+      },
+      "lateReductionEvents": 200,
+      "lateReductionLifecycles": 2,
+      "eligibleLifecycles": 2,
+      "eventLateReductionRatePct": 111.731844,
+      "lifecycleLateReductionRatePct": 100.0,
+      "averageForward5": -0.225942,
+      "averageMae5": -0.595394,
+      "responseDelay": {
+        "average": 4005.0,
+        "median": 4005.0,
+        "p25": null,
+        "p75": null,
+        "p90": null,
+        "minimum": 4005.0,
+        "maximum": 4005.0
+      },
+      "unresolvedResponseCount": 1,
+      "overlapStatus": "NON_OVERLAPPING",
+      "context": {
+        "periodReturnPct": 1.781468,
+        "realizedVolatilityPct": 6.990853,
+        "averageAtrPct": 0.374169,
+        "trendProxy": "UP",
+        "averageRelativeVolume": 1.01094
+      }
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-02",
+      "experimentId": "experiment-1790255634428168200",
+      "experimentName": "Experimento determinístico",
+      "datasetId": "dataset-1789397830614545700",
+      "datasetName": "AAPL_real_15m_OOS_20sessions_2026-04-10_to_2026-05-07_treated",
+      "sourceRole": "OOS",
+      "startAt": "2026-04-10T13:30:00+00:00",
+      "endAt": "2026-05-07T19:45:00+00:00",
+      "candleCount": 520,
+      "sessionCount": 20,
+      "lifecycleCount": 2,
+      "lifecycleRunId": "lifecycle-intelligence-1790256451779518900",
+      "closedCount": 1,
+      "openCount": 1,
+      "duration": {
+        "average": 2932.5,
+        "median": 2932.5,
+        "p25": null,
+        "p75": null,
+        "p90": null,
+        "minimum": 2910.0,
+        "maximum": 2955.0
+      },
+      "pnl": {
+        "average": 4.779021,
+        "median": 4.779021,
+        "p25": null,
+        "p75": null,
+        "p90": null,
+        "minimum": 4.779021,
+        "maximum": 4.779021
+      },
+      "mfe": {
+        "average": 7.120055,
+        "median": 7.120055,
+        "p25": null,
+        "p75": null,
+        "p90": null,
+        "minimum": 6.222119,
+        "maximum": 8.017992
+      },
+      "mae": {
+        "average": -1.077968,
+        "median": -1.077968,
+        "p25": null,
+        "p75": null,
+        "p90": null,
+        "minimum": -1.230263,
+        "maximum": -0.925674
+      },
+      "giveback": {
+        "average": 1.567831,
+        "median": 1.567831,
+        "p25": null,
+        "p75": null,
+        "p90": null,
+        "minimum": 1.443099,
+        "maximum": 1.692563
+      },
+      "lateReductionEvents": 57,
+      "lateReductionLifecycles": 2,
+      "eligibleLifecycles": 2,
+      "eventLateReductionRatePct": 32.386364,
+      "lifecycleLateReductionRatePct": 100.0,
+      "averageForward5": -0.267797,
+      "averageMae5": -0.534626,
+      "responseDelay": {
+        "average": 1020.0,
+        "median": 1020.0,
+        "p25": null,
+        "p75": null,
+        "p90": null,
+        "minimum": 420.0,
+        "maximum": 1620.0
+      },
+      "unresolvedResponseCount": 0,
+      "overlapStatus": "NON_OVERLAPPING",
+      "context": {
+        "periodReturnPct": 10.725395,
+        "realizedVolatilityPct": 7.216966,
+        "averageAtrPct": 0.349107,
+        "trendProxy": "UP",
+        "averageRelativeVolume": 1.042221
+      }
+    }
+  ],
+  "lifecycles": [
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-01",
+      "sourceRole": "DEVELOPMENT",
+      "experimentId": "experiment-1790256677468863400",
+      "lifecycleId": "experiment-1790256677468863400:ai-intraday-v1:1",
+      "entryAt": "2026-03-13T14:00:00+00:00",
+      "exitAt": "2026-03-30T15:00:00+00:00",
+      "status": "CLOSED",
+      "durationMinutes": 4350,
+      "pnlPct": -2.4897272016630523,
+      "mfePct": 0.3349981571625582,
+      "maePct": -3.958035432447171,
+      "givebackPct": 2.8247253588256105,
+      "worstHealth": "CRITICAL",
+      "dominantHealth": "DETERIORATING",
+      "healthDistribution": {
+        "strongPct": 0.0,
+        "healthyPct": 11.99187,
+        "weakeningPct": 15.853659,
+        "deterioratingPct": 39.634146,
+        "criticalPct": 32.520325
+      },
+      "maxDeteriorationScore": 1.0,
+      "maxDeteriorationLevel": "CRITICAL",
+      "firstTimestampAtMaxLevel": "2026-03-18T17:00:00Z",
+      "lateReductionEvents": 193,
+      "hasLateReduction": true,
+      "responseDelayMinutes": 4005,
+      "responseStatus": "RESOLVED",
+      "responseFromFirstDeteriorationMinutes": 4005,
+      "responseFromHighMinutes": 3975,
+      "responseFromCriticalMinutes": 3930,
+      "overnight": true,
+      "censoredAtDatasetEnd": false,
+      "averageComponents": {
+        "trend": 0.288744,
+        "momentum": 0.487677,
+        "giveback": 0.890775,
+        "vwap": 0.783155,
+        "volatility": 0.998694,
+        "time": 0.93409
+      },
+      "maximumComponents": {
+        "trend": 1.0,
+        "momentum": 1.0,
+        "giveback": 1.0,
+        "vwap": 1.0,
+        "volatility": 1.0,
+        "time": 1.0
+      },
+      "componentAtFirstHigh": {
+        "trend": 0.166543,
+        "momentum": 0.830737,
+        "giveback": 1.0,
+        "vwap": 0.770645,
+        "volatility": 1.0,
+        "time": 0.0
+      },
+      "componentAtFirstCritical": {
+        "trend": 0.751793,
+        "momentum": 1.0,
+        "giveback": 1.0,
+        "vwap": 1.0,
+        "volatility": 1.0,
+        "time": 0.0
+      },
+      "dominantDeteriorationComponent": "VOLATILITY"
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-01",
+      "sourceRole": "DEVELOPMENT",
+      "experimentId": "experiment-1790256677468863400",
+      "lifecycleId": "experiment-1790256677468863400:ai-intraday-v1:2",
+      "entryAt": "2026-03-31T14:00:00+00:00",
+      "exitAt": null,
+      "status": "OPEN",
+      "durationMinutes": 2700,
+      "pnlPct": null,
+      "mfePct": 5.201292376964672,
+      "maePct": -1.3865458293310873,
+      "givebackPct": 0.7004080717507577,
+      "worstHealth": "CRITICAL",
+      "dominantHealth": "HEALTHY",
+      "healthDistribution": {
+        "strongPct": 28.333333,
+        "healthyPct": 48.333333,
+        "weakeningPct": 13.888889,
+        "deterioratingPct": 2.222222,
+        "criticalPct": 7.222222
+      },
+      "maxDeteriorationScore": 0.855871,
+      "maxDeteriorationLevel": "CRITICAL",
+      "firstTimestampAtMaxLevel": "2026-04-07T15:45:00Z",
+      "lateReductionEvents": 7,
+      "hasLateReduction": true,
+      "responseDelayMinutes": null,
+      "responseStatus": "UNRESOLVED",
+      "responseFromFirstDeteriorationMinutes": null,
+      "responseFromHighMinutes": null,
+      "responseFromCriticalMinutes": null,
+      "overnight": false,
+      "censoredAtDatasetEnd": true,
+      "averageComponents": {
+        "trend": 0.116969,
+        "momentum": 0.347115,
+        "giveback": 0.3467,
+        "vwap": 0.003855,
+        "volatility": 0.662363,
+        "time": 0.819847
+      },
+      "maximumComponents": {
+        "trend": 1.0,
+        "momentum": 1.0,
+        "giveback": 1.0,
+        "vwap": 0.358971,
+        "volatility": 1.0,
+        "time": 1.0
+      },
+      "componentAtFirstHigh": {
+        "trend": 0.688923,
+        "momentum": 1.0,
+        "giveback": 0.562696,
+        "vwap": 0.0,
+        "volatility": 0.647842,
+        "time": 1.0
+      },
+      "componentAtFirstCritical": {
+        "trend": 1.0,
+        "momentum": 1.0,
+        "giveback": 0.973178,
+        "vwap": 0.0,
+        "volatility": 0.811997,
+        "time": 1.0
+      },
+      "dominantDeteriorationComponent": "TIME"
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-02",
+      "sourceRole": "OOS",
+      "experimentId": "experiment-1790255634428168200",
+      "lifecycleId": "experiment-1790255634428168200:ai-intraday-v1:1",
+      "entryAt": "2026-04-14T13:30:00+00:00",
+      "exitAt": "2026-04-23T17:15:00+00:00",
+      "status": "CLOSED",
+      "durationMinutes": 2955,
+      "pnlPct": 4.779020501602779,
+      "mfePct": 6.222119262251735,
+      "maePct": -0.9256737644712464,
+      "givebackPct": 1.4430987606489565,
+      "worstHealth": "DETERIORATING",
+      "dominantHealth": "HEALTHY",
+      "healthDistribution": {
+        "strongPct": 2.564103,
+        "healthyPct": 52.777778,
+        "weakeningPct": 26.068376,
+        "deterioratingPct": 18.589744,
+        "criticalPct": 0.0
+      },
+      "maxDeteriorationScore": 0.747925,
+      "maxDeteriorationLevel": "HIGH",
+      "firstTimestampAtMaxLevel": "2026-04-21T16:30:00Z",
+      "lateReductionEvents": 44,
+      "hasLateReduction": true,
+      "responseDelayMinutes": 1620,
+      "responseStatus": "RESOLVED",
+      "responseFromFirstDeteriorationMinutes": 1620,
+      "responseFromHighMinutes": 780,
+      "responseFromCriticalMinutes": null,
+      "overnight": true,
+      "censoredAtDatasetEnd": false,
+      "averageComponents": {
+        "trend": 0.207897,
+        "momentum": 0.609383,
+        "giveback": 0.286506,
+        "vwap": 0.0,
+        "volatility": 0.900828,
+        "time": 0.930556
+      },
+      "maximumComponents": {
+        "trend": 1.0,
+        "momentum": 1.0,
+        "giveback": 1.0,
+        "vwap": 0.0,
+        "volatility": 1.0,
+        "time": 1.0
+      },
+      "componentAtFirstHigh": {
+        "trend": 0.302366,
+        "momentum": 1.0,
+        "giveback": 0.673601,
+        "vwap": 0.0,
+        "volatility": 1.0,
+        "time": 1.0
+      },
+      "componentAtFirstCritical": null,
+      "dominantDeteriorationComponent": "TIME"
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-02",
+      "sourceRole": "OOS",
+      "experimentId": "experiment-1790255634428168200",
+      "lifecycleId": "experiment-1790255634428168200:ai-intraday-v1:2",
+      "entryAt": "2026-04-28T17:00:00+00:00",
+      "exitAt": null,
+      "status": "OPEN",
+      "durationMinutes": 2910,
+      "pnlPct": null,
+      "mfePct": 8.017991542751401,
+      "maePct": -1.2302630842659923,
+      "givebackPct": 1.6925633468106271,
+      "worstHealth": "CRITICAL",
+      "dominantHealth": "HEALTHY",
+      "healthDistribution": {
+        "strongPct": 17.525773,
+        "healthyPct": 40.721649,
+        "weakeningPct": 20.103093,
+        "deterioratingPct": 16.494845,
+        "criticalPct": 5.154639
+      },
+      "maxDeteriorationScore": 0.899409,
+      "maxDeteriorationLevel": "CRITICAL",
+      "firstTimestampAtMaxLevel": "2026-04-29T16:00:00Z",
+      "lateReductionEvents": 13,
+      "hasLateReduction": true,
+      "responseDelayMinutes": 420,
+      "responseStatus": "RESOLVED",
+      "responseFromFirstDeteriorationMinutes": 420,
+      "responseFromHighMinutes": 240,
+      "responseFromCriticalMinutes": 195,
+      "overnight": false,
+      "censoredAtDatasetEnd": true,
+      "averageComponents": {
+        "trend": 0.232556,
+        "momentum": 0.480077,
+        "giveback": 0.37652,
+        "vwap": 0.121739,
+        "volatility": 0.63178,
+        "time": 0.837165
+      },
+      "maximumComponents": {
+        "trend": 1.0,
+        "momentum": 1.0,
+        "giveback": 1.0,
+        "vwap": 1.0,
+        "volatility": 1.0,
+        "time": 1.0
+      },
+      "componentAtFirstHigh": {
+        "trend": 0.194595,
+        "momentum": 1.0,
+        "giveback": 1.0,
+        "vwap": 1.0,
+        "volatility": 1.0,
+        "time": 0.0
+      },
+      "componentAtFirstCritical": {
+        "trend": 0.696247,
+        "momentum": 1.0,
+        "giveback": 1.0,
+        "vwap": 0.761393,
+        "volatility": 0.877866,
+        "time": 0.0
+      },
+      "dominantDeteriorationComponent": "TIME"
+    }
+  ],
+  "deteriorationByPeriod": [
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-01",
+      "level": "NONE",
+      "eventCount": 54,
+      "eventPct": 8.035714,
+      "lifecycleCount": 2,
+      "lifecycleReachPct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-01",
+      "level": "LOW",
+      "eventCount": 143,
+      "eventPct": 21.279762,
+      "lifecycleCount": 2,
+      "lifecycleReachPct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-01",
+      "level": "MODERATE",
+      "eventCount": 103,
+      "eventPct": 15.327381,
+      "lifecycleCount": 2,
+      "lifecycleReachPct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-01",
+      "level": "HIGH",
+      "eventCount": 199,
+      "eventPct": 29.613095,
+      "lifecycleCount": 2,
+      "lifecycleReachPct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-01",
+      "level": "CRITICAL",
+      "eventCount": 173,
+      "eventPct": 25.744048,
+      "lifecycleCount": 2,
+      "lifecycleReachPct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-02",
+      "level": "NONE",
+      "eventCount": 48,
+      "eventPct": 7.250755,
+      "lifecycleCount": 2,
+      "lifecycleReachPct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-02",
+      "level": "LOW",
+      "eventCount": 324,
+      "eventPct": 48.942598,
+      "lifecycleCount": 2,
+      "lifecycleReachPct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-02",
+      "level": "MODERATE",
+      "eventCount": 161,
+      "eventPct": 24.320242,
+      "lifecycleCount": 2,
+      "lifecycleReachPct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-02",
+      "level": "HIGH",
+      "eventCount": 119,
+      "eventPct": 17.975831,
+      "lifecycleCount": 2,
+      "lifecycleReachPct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-02",
+      "level": "CRITICAL",
+      "eventCount": 10,
+      "eventPct": 1.510574,
+      "lifecycleCount": 1,
+      "lifecycleReachPct": 50.0
+    }
+  ],
+  "deteriorationOutcomes": [
+    {
+      "label": "HIGH",
+      "lifecycleCount": 1,
+      "averagePnlPct": 4.779021,
+      "medianPnlPct": 4.779021,
+      "averageMfePct": 6.222119,
+      "averageMaePct": -0.925674,
+      "averageGivebackPct": 1.443099,
+      "lateReductionRatePct": 100.0
+    },
+    {
+      "label": "CRITICAL",
+      "lifecycleCount": 3,
+      "averagePnlPct": -2.489727,
+      "medianPnlPct": -2.489727,
+      "averageMfePct": 4.518094,
+      "averageMaePct": -2.191615,
+      "averageGivebackPct": 1.739232,
+      "lateReductionRatePct": 100.0
+    }
+  ],
+  "healthOutcomes": [
+    {
+      "label": "DETERIORATING",
+      "lifecycleCount": 1,
+      "averagePnlPct": 4.779021,
+      "medianPnlPct": 4.779021,
+      "averageMfePct": 6.222119,
+      "averageMaePct": -0.925674,
+      "averageGivebackPct": 1.443099,
+      "lateReductionRatePct": 100.0
+    },
+    {
+      "label": "CRITICAL",
+      "lifecycleCount": 3,
+      "averagePnlPct": -2.489727,
+      "medianPnlPct": -2.489727,
+      "averageMfePct": 4.518094,
+      "averageMaePct": -2.191615,
+      "averageGivebackPct": 1.739232,
+      "lateReductionRatePct": 100.0
+    }
+  ],
+  "components": [
+    {
+      "periodId": null,
+      "component": "TREND",
+      "lifecycleCount": 4,
+      "averageValue": 0.211542,
+      "maximumValue": 1.0,
+      "averagePnlPct": 1.144647,
+      "averageMaePct": -1.87513,
+      "averageGivebackPct": 1.665199,
+      "lateReductionRatePct": 100.0
+    },
+    {
+      "periodId": null,
+      "component": "MOMENTUM",
+      "lifecycleCount": 4,
+      "averageValue": 0.481063,
+      "maximumValue": 1.0,
+      "averagePnlPct": 1.144647,
+      "averageMaePct": -1.87513,
+      "averageGivebackPct": 1.665199,
+      "lateReductionRatePct": 100.0
+    },
+    {
+      "periodId": null,
+      "component": "GIVEBACK",
+      "lifecycleCount": 4,
+      "averageValue": 0.475125,
+      "maximumValue": 1.0,
+      "averagePnlPct": 1.144647,
+      "averageMaePct": -1.87513,
+      "averageGivebackPct": 1.665199,
+      "lateReductionRatePct": 100.0
+    },
+    {
+      "periodId": null,
+      "component": "VWAP",
+      "lifecycleCount": 4,
+      "averageValue": 0.227187,
+      "maximumValue": 1.0,
+      "averagePnlPct": 1.144647,
+      "averageMaePct": -1.87513,
+      "averageGivebackPct": 1.665199,
+      "lateReductionRatePct": 100.0
+    },
+    {
+      "periodId": null,
+      "component": "VOLATILITY",
+      "lifecycleCount": 4,
+      "averageValue": 0.798416,
+      "maximumValue": 1.0,
+      "averagePnlPct": 1.144647,
+      "averageMaePct": -1.87513,
+      "averageGivebackPct": 1.665199,
+      "lateReductionRatePct": 100.0
+    },
+    {
+      "periodId": null,
+      "component": "TIME",
+      "lifecycleCount": 4,
+      "averageValue": 0.880415,
+      "maximumValue": 1.0,
+      "averagePnlPct": 1.144647,
+      "averageMaePct": -1.87513,
+      "averageGivebackPct": 1.665199,
+      "lateReductionRatePct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-01",
+      "component": "TREND",
+      "lifecycleCount": 2,
+      "averageValue": 0.202857,
+      "maximumValue": 1.0,
+      "averagePnlPct": -2.489727,
+      "averageMaePct": -2.672291,
+      "averageGivebackPct": 1.762567,
+      "lateReductionRatePct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-01",
+      "component": "MOMENTUM",
+      "lifecycleCount": 2,
+      "averageValue": 0.417396,
+      "maximumValue": 1.0,
+      "averagePnlPct": -2.489727,
+      "averageMaePct": -2.672291,
+      "averageGivebackPct": 1.762567,
+      "lateReductionRatePct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-01",
+      "component": "GIVEBACK",
+      "lifecycleCount": 2,
+      "averageValue": 0.618737,
+      "maximumValue": 1.0,
+      "averagePnlPct": -2.489727,
+      "averageMaePct": -2.672291,
+      "averageGivebackPct": 1.762567,
+      "lateReductionRatePct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-01",
+      "component": "VWAP",
+      "lifecycleCount": 2,
+      "averageValue": 0.393505,
+      "maximumValue": 1.0,
+      "averagePnlPct": -2.489727,
+      "averageMaePct": -2.672291,
+      "averageGivebackPct": 1.762567,
+      "lateReductionRatePct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-01",
+      "component": "VOLATILITY",
+      "lifecycleCount": 2,
+      "averageValue": 0.830529,
+      "maximumValue": 1.0,
+      "averagePnlPct": -2.489727,
+      "averageMaePct": -2.672291,
+      "averageGivebackPct": 1.762567,
+      "lateReductionRatePct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-01",
+      "component": "TIME",
+      "lifecycleCount": 2,
+      "averageValue": 0.876969,
+      "maximumValue": 1.0,
+      "averagePnlPct": -2.489727,
+      "averageMaePct": -2.672291,
+      "averageGivebackPct": 1.762567,
+      "lateReductionRatePct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-02",
+      "component": "TREND",
+      "lifecycleCount": 2,
+      "averageValue": 0.220227,
+      "maximumValue": 1.0,
+      "averagePnlPct": 4.779021,
+      "averageMaePct": -1.077968,
+      "averageGivebackPct": 1.567831,
+      "lateReductionRatePct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-02",
+      "component": "MOMENTUM",
+      "lifecycleCount": 2,
+      "averageValue": 0.54473,
+      "maximumValue": 1.0,
+      "averagePnlPct": 4.779021,
+      "averageMaePct": -1.077968,
+      "averageGivebackPct": 1.567831,
+      "lateReductionRatePct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-02",
+      "component": "GIVEBACK",
+      "lifecycleCount": 2,
+      "averageValue": 0.331513,
+      "maximumValue": 1.0,
+      "averagePnlPct": 4.779021,
+      "averageMaePct": -1.077968,
+      "averageGivebackPct": 1.567831,
+      "lateReductionRatePct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-02",
+      "component": "VWAP",
+      "lifecycleCount": 2,
+      "averageValue": 0.06087,
+      "maximumValue": 1.0,
+      "averagePnlPct": 4.779021,
+      "averageMaePct": -1.077968,
+      "averageGivebackPct": 1.567831,
+      "lateReductionRatePct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-02",
+      "component": "VOLATILITY",
+      "lifecycleCount": 2,
+      "averageValue": 0.766304,
+      "maximumValue": 1.0,
+      "averagePnlPct": 4.779021,
+      "averageMaePct": -1.077968,
+      "averageGivebackPct": 1.567831,
+      "lateReductionRatePct": 100.0
+    },
+    {
+      "periodId": "lifecycle-validation-1790281887271788400-period-02",
+      "component": "TIME",
+      "lifecycleCount": 2,
+      "averageValue": 0.883861,
+      "maximumValue": 1.0,
+      "averagePnlPct": 4.779021,
+      "averageMaePct": -1.077968,
+      "averageGivebackPct": 1.567831,
+      "lateReductionRatePct": 100.0
+    }
+  ],
+  "consistency": [
+    {
+      "label": "LIFECYCLE LATE REDUCTION RATE",
+      "values": [
+        100.0,
+        100.0
+      ],
+      "median": 100.0,
+      "minimum": 100.0,
+      "maximum": 100.0,
+      "dispersion": 0.0
+    },
+    {
+      "label": "EVENT LATE REDUCTION RATE",
+      "values": [
+        111.731844,
+        32.386364
+      ],
+      "median": 72.059104,
+      "minimum": 32.386364,
+      "maximum": 111.731844,
+      "dispersion": 79.34548
+    },
+    {
+      "label": "MEDIAN RESPONSE DELAY",
+      "values": [
+        4005.0,
+        1020.0
+      ],
+      "median": 2512.5,
+      "minimum": 1020.0,
+      "maximum": 4005.0,
+      "dispersion": 2985.0
+    },
+    {
+      "label": "MFE",
+      "values": [
+        2.768145,
+        7.120055
+      ],
+      "median": 4.9441,
+      "minimum": 2.768145,
+      "maximum": 7.120055,
+      "dispersion": 4.35191
+    },
+    {
+      "label": "MAE",
+      "values": [
+        -2.672291,
+        -1.077968
+      ],
+      "median": -1.87513,
+      "minimum": -2.672291,
+      "maximum": -1.077968,
+      "dispersion": 1.594323
+    },
+    {
+      "label": "GIVEBACK",
+      "values": [
+        1.762567,
+        1.567831
+      ],
+      "median": 1.665199,
+      "minimum": 1.567831,
+      "maximum": 1.762567,
+      "dispersion": 0.194736
+    },
+    {
+      "label": "MAX DETERIORATION SCORE",
+      "values": [
+        0.927936,
+        0.823667
+      ],
+      "median": 0.875802,
+      "minimum": 0.823667,
+      "maximum": 0.927936,
+      "dispersion": 0.104269
+    },
+    {
+      "label": "HIGH LIFECYCLE REACH RATE",
+      "values": [
+        100.0,
+        100.0
+      ],
+      "median": 100.0,
+      "minimum": 100.0,
+      "maximum": 100.0,
+      "dispersion": 0.0
+    },
+    {
+      "label": "CRITICAL LIFECYCLE REACH RATE",
+      "values": [
+        100.0,
+        50.0
+      ],
+      "median": 75.0,
+      "minimum": 50.0,
+      "maximum": 100.0,
+      "dispersion": 50.0
+    }
+  ],
+  "evidence": {
+    "sampleSize": "INSUFFICIENT",
+    "periodCoverage": "PARTIAL",
+    "lateReduction": "CONSISTENT",
+    "deteriorationStability": "SHIFTED",
+    "healthOutcomeRelation": "NO_SIGNAL",
+    "componentConsistency": "MIXED",
+    "givebackConsistency": "CONSISTENT"
+  },
+  "outlierSensitivity": [
+    {
+      "metric": "DURATION",
+      "lifecycleId": "experiment-1790256677468863400:ai-intraday-v1:1",
+      "fullAverage": 3228.75,
+      "withoutLargestOutlierAverage": 2855.0,
+      "delta": 373.75
+    },
+    {
+      "metric": "PNL",
+      "lifecycleId": "experiment-1790255634428168200:ai-intraday-v1:1",
+      "fullAverage": 1.144647,
+      "withoutLargestOutlierAverage": -2.489727,
+      "delta": 3.634374
+    },
+    {
+      "metric": "MFE",
+      "lifecycleId": "experiment-1790255634428168200:ai-intraday-v1:2",
+      "fullAverage": 4.9441,
+      "withoutLargestOutlierAverage": 3.91947,
+      "delta": 1.02463
+    },
+    {
+      "metric": "MAE",
+      "lifecycleId": "experiment-1790256677468863400:ai-intraday-v1:1",
+      "fullAverage": -1.87513,
+      "withoutLargestOutlierAverage": -1.180828,
+      "delta": -0.694302
+    },
+    {
+      "metric": "GIVEBACK",
+      "lifecycleId": "experiment-1790256677468863400:ai-intraday-v1:1",
+      "fullAverage": 1.665199,
+      "withoutLargestOutlierAverage": 1.27869,
+      "delta": 0.386509
+    }
+  ],
+  "quality": [
+    {
+      "datasetId": "dataset-1789263885968772900",
+      "datasetName": "AAPL_real_15m_20sessions_2026-03-12_to_2026-04-09_treated",
+      "status": "PASS_WITH_WARNINGS",
+      "candleCount": 520,
+      "sessionCount": 20,
+      "firstAt": "2026-03-12T13:30:00+00:00",
+      "lastAt": "2026-04-09T19:45:00+00:00",
+      "nullValueCount": 0,
+      "duplicateTimestampCount": 0,
+      "outOfOrderCount": 0,
+      "nonpositivePriceCount": 0,
+      "negativeVolumeCount": 0,
+      "invalidHighCount": 0,
+      "invalidLowCount": 0,
+      "expectedGapCount": 19,
+      "unexpectedGapCount": 0,
+      "market": "US_EQUITIES",
+      "timezone": "America/New_York",
+      "sessionType": "REGULAR",
+      "sourceFileAvailable": false,
+      "warnings": [
+        "SOURCE_FILE_UNAVAILABLE: quality gate executado sobre candles canônicos persistidos"
+      ],
+      "errors": []
+    },
+    {
+      "datasetId": "dataset-1789397830614545700",
+      "datasetName": "AAPL_real_15m_OOS_20sessions_2026-04-10_to_2026-05-07_treated",
+      "status": "PASS_WITH_WARNINGS",
+      "candleCount": 520,
+      "sessionCount": 20,
+      "firstAt": "2026-04-10T13:30:00+00:00",
+      "lastAt": "2026-05-07T19:45:00+00:00",
+      "nullValueCount": 0,
+      "duplicateTimestampCount": 0,
+      "outOfOrderCount": 0,
+      "nonpositivePriceCount": 0,
+      "negativeVolumeCount": 0,
+      "invalidHighCount": 0,
+      "invalidLowCount": 0,
+      "expectedGapCount": 19,
+      "unexpectedGapCount": 0,
+      "market": "US_EQUITIES",
+      "timezone": "America/New_York",
+      "sessionType": "REGULAR",
+      "sourceFileAvailable": false,
+      "warnings": [
+        "SOURCE_FILE_UNAVAILABLE: quality gate executado sobre candles canônicos persistidos"
+      ],
+      "errors": []
+    }
+  ],
+  "audit": {
+    "reusedExperiments": 2,
+    "rebuiltArtifacts": 0,
+    "newLlmRuns": 0,
+    "failedPeriods": 0,
+    "skippedPeriods": 0,
+    "durationMs": 235,
+    "model": "qwen2.5:3b",
+    "promptVersion": "MARKET_AI_INTRADAY_V1",
+    "contextVersion": "MARKET_AI_INTRADAY_CONTEXT_V1",
+    "triggerVersion": "MARKET_DECISION_TRIGGER_V2",
+    "positionSizingVersion": "POSITION_SIZING_V1",
+    "riskPolicyVersion": "RISK_POLICY_V2",
+    "executionModelVersion": "EXECUTION_MODEL_V1",
+    "feePct": 0.1,
+    "slippagePct": 0.05
+  },
+  "warnings": [
+    "AAPL_real_15m_20sessions_2026-03-12_to_2026-04-09_treated: SOURCE_FILE_UNAVAILABLE: quality gate executado sobre candles canônicos persistidos",
+    "AAPL_real_15m_OOS_20sessions_2026-04-10_to_2026-05-07_treated: SOURCE_FILE_UNAVAILABLE: quality gate executado sobre candles canônicos persistidos",
+    "OPEN_AT_END / CENSORED_AT_DATASET_END presente; PnL realizado usa somente CLOSED",
+    "INSUFFICIENT SAMPLE: menos de 20 lifecycles independentes",
+    "INSUFFICIENT_PERIOD_COVERAGE: 2 de 6 períodos desejados"
+  ],
+  "postDecisionOnly": true
+}

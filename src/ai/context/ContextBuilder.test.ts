@@ -2,15 +2,14 @@ import { describe, expect, it } from "vitest";
 import { ContextBuilder } from "./ContextBuilder";
 import type { ToolDependencies } from "../tools/toolRegistry";
 import { ToolRegistry } from "../tools/toolRegistry";
-import { FakeEngineeringService } from "../../engineering/fakeEngineeringService";
 
 const settings = { provider: "ollama" as const, endpoint: "http://localhost:11434", model: "qwen", contextMessageLimit: 6, timeoutSeconds: 30, updatedAt: "" };
 
 const emptyDependencies: ToolDependencies = {
-  tasks: { list: async () => [], today: async () => [], upcoming: async () => [], counters: async () => ({ pending: 0, today: 0, overdue: 0, priority: 0, notes: 0, completed: 0 }) },
+  tasks: { list: async () => [], today: async () => [], upcoming: async () => [], counters: async () => ({ pending: 0, today: 0, overdue: 0, priority: 0, notes: 0, completed: 0 }), completeReferenced: async () => { throw new Error("referência ausente"); } },
   notes: { list: async () => [] }, projects: { list: async () => [], get: async () => null },
   knowledge: { list: async () => [], get: async () => null, history: async () => [] },
-  education: { list: async () => [] }, databaseInfo: async () => ({ schemaVersion: 5, integrationValue: 0 }),
+  databaseInfo: async () => ({ schemaVersion: 5, integrationValue: 0 }),
   system: {
     snapshot: async () => ({ collectedAt: 0, details: { osName: "Windows", osVersion: "11", kernelVersion: "", architecture: "x86_64", hostname: "azriel", logicalCores: 8, physicalCores: 4, uptimeSeconds: 100 }, cpu: { usagePercent: 10, cores: [10] }, memory: { totalBytes: 1000, usedBytes: 500, availableBytes: 500, swapTotalBytes: 0, swapUsedBytes: 0 }, storage: [], network: [], errors: [] }),
     processes: async () => [], listWorkspaces: async () => [], workspaceStatus: async () => { throw new Error("workspace ausente"); },
@@ -27,14 +26,12 @@ describe("Context Builder", () => {
     expect(context.empty).toBe(true);
     expect(context.text.length).toBeLessThanOrEqual(440);
   });
-  it("classifica ações do Engineering como visuais e mantém o payload compacto", async () => {
+  it("classifica a execução de rotina como confirmação controlada", async () => {
     const permissions: string[] = [];
-    const engineering = new FakeEngineeringService();
-    const context = await new ContextBuilder(new ToolRegistry({ ...emptyDependencies, engineering }), 600)
-      .build("Abra em 50%", { intent: "explosion_adjust", scope: "azriel", tools: ["set_explosion_factor"], factor: 0.5 }, (_domain, permission) => permissions.push(permission));
-    expect(permissions).toEqual(["visual_action"]);
-    expect(engineering.calls).toEqual([{ command: "set_explosion_factor", value: 0.5 }]);
-    expect(context.text).toContain("set_explosion_factor");
+    const context = await new ContextBuilder(new ToolRegistry(emptyDependencies), 600)
+      .build("Execute a rotina", { intent: "run_routine", scope: "azriel", tools: ["run_routine"] }, (_domain, permission) => permissions.push(permission));
+    expect(permissions).toEqual(["confirm_write"]);
+    expect(context.text).toContain("run_routine");
     expect(context.text.length).toBeLessThanOrEqual(640);
   });
 });

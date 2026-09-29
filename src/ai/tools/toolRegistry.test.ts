@@ -1,18 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { ToolDependencies } from "./toolRegistry";
 import { ToolRegistry } from "./toolRegistry";
-import { FakeEngineeringService } from "../../engineering/fakeEngineeringService";
 
 const dependencies: ToolDependencies = {
   tasks: {
     list: async () => [{ id: "late", title: "Atrasada", description: "", status: "pending", priority: "high", dueDate: "2026-08-30", projectId: "p1", knowledgeAreaId: "k1", createdAt: "", updatedAt: "", completedAt: null }],
     today: async () => [], upcoming: async () => [],
     counters: async () => ({ pending: 1, today: 0, overdue: 1, priority: 1, notes: 0, completed: 0 }),
+    completeReferenced: async () => { throw new Error("referência ausente"); },
   },
   notes: { list: async () => [] },
   projects: { list: async () => [{ id: "p1", name: "GeneScope", category: "bio", description: "", status: "active", knowledgeAreaIds: ["k1"], objective: "", progress: 20, nextStep: "", createdAt: "", updatedAt: "" }], get: async () => null },
   knowledge: { list: async () => [{ id: "k1", name: "Genética", category: "bio", description: "", coverage: 60, depth: 20, priority: "high", nodeType: "area", parentId: null, projectIds: ["p1"], createdAt: "", updatedAt: "" }], get: async () => null, history: async () => [] },
-  education: { list: async () => [] },
   databaseInfo: async () => ({ schemaVersion: 5, integrationValue: 1 }),
   system: {
     snapshot: async () => ({ collectedAt: 0, details: { osName: "Windows", osVersion: "11", kernelVersion: "", architecture: "x86_64", hostname: "azriel", logicalCores: 8, physicalCores: 4, uptimeSeconds: 100 }, cpu: { usagePercent: 10, cores: [10] }, memory: { totalBytes: 1000, usedBytes: 500, availableBytes: 500, swapTotalBytes: 0, swapUsedBytes: 0 }, storage: [], network: [], errors: [] }),
@@ -33,14 +32,11 @@ const dependencies: ToolDependencies = {
 describe("Tool Registry", () => {
   it("expõe consultas, cinco safe actions e execução controlada de rotina", () => {
     const tools = new ToolRegistry(dependencies).list();
-    expect(tools).toHaveLength(73);
-    expect(tools.filter((tool) => tool.permission === "visual_action")).toHaveLength(11);
-    expect(tools.filter((tool) => tool.domain === "Engineering Core" && tool.readonly)).toHaveLength(7);
-    expect(tools.filter((tool) => tool.domain === "Assembly Intelligence" && tool.readonly)).toHaveLength(7);
+    expect(tools).toHaveLength(40);
+    expect(tools.filter((tool) => tool.permission === "visual_action")).toHaveLength(0);
+    expect(tools.some((tool) => tool.domain === "Engineering Core" || tool.domain === "Assembly Intelligence" || tool.domain === "Formação")).toBe(false);
     expect(tools.filter((tool) => !tool.readonly).map((tool) => tool.name)).toEqual([
-      "select_component", "focus_component", "isolate_component", "show_all_components", "hide_component", "show_component",
-      "set_explosion_factor", "explode_all", "explode_component", "reassemble", "reset_model_view",
-      "run_routine", "open_application", "open_workspace", "open_project", "reveal_workspace", "open_registered_url",
+      "complete_task", "run_routine", "open_application", "open_workspace", "open_project", "reveal_workspace", "open_registered_url",
     ]);
     expect(tools.find((tool) => tool.name === "run_routine")?.permission).toBe("confirm_write");
   });
@@ -76,27 +72,48 @@ describe("Tool Registry", () => {
     expect(result.empty).toBe(false);
     expect(result.data).toHaveLength(1);
   });
+  it("conclui somente a posição vinculada à conversa", async () => {
+    const calls: Array<{ conversationId: string; position: number }> = [];
+    const registry = new ToolRegistry({ ...dependencies, tasks: { ...dependencies.tasks, completeReferenced: async (conversationId, position) => {
+      calls.push({ conversationId, position });
+      return { id: "task-1", title: "Demanda", description: "", status: "completed", priority: "critical", dueDate: null, projectId: null, knowledgeAreaId: null, createdAt: "", updatedAt: "", completedAt: "" };
+    } } });
+    const result = await registry.execute("complete_task", { query: "Finalize a 1", conversationId: "conversation-1", referencePosition: 1 });
+    expect(calls).toEqual([{ conversationId: "conversation-1", position: 1 }]);
+    expect(result.data).toMatchObject({ success: true, task: { id: "task-1" } });
+  });
+  it("consulta demandas críticas e prioritárias diretamente dos registros ativos", async () => {
+    const tasks = [
+      { id: "critical", title: "Crítica", description: "", status: "pending" as const, priority: "critical" as const, dueDate: null, projectId: null, knowledgeAreaId: null, createdAt: "", updatedAt: "", completedAt: null },
+      { id: "high", title: "Alta", description: "", status: "in_progress" as const, priority: "high" as const, dueDate: null, projectId: null, knowledgeAreaId: null, createdAt: "", updatedAt: "", completedAt: null },
+      { id: "medium", title: "Média", description: "", status: "pending" as const, priority: "medium" as const, dueDate: null, projectId: null, knowledgeAreaId: null, createdAt: "", updatedAt: "", completedAt: null },
+      { id: "completed", title: "Concluída", description: "", status: "completed" as const, priority: "critical" as const, dueDate: null, projectId: null, knowledgeAreaId: null, createdAt: "", updatedAt: "", completedAt: "" },
+    ];
+    const registry = new ToolRegistry({ ...dependencies, tasks: { ...dependencies.tasks, list: async () => tasks } });
+    expect((await registry.execute("get_critical_tasks", { query: "demandas críticas" })).data).toEqual([expect.objectContaining({ id: "critical" })]);
+    expect((await registry.execute("get_priority_tasks", { query: "demandas prioritárias" })).data).toEqual([
+      expect.objectContaining({ id: "critical" }), expect.objectContaining({ id: "high" }),
+    ]);
+  });
   it("recupera conhecimentos por relação persistida", async () => {
     const result = await new ToolRegistry(dependencies).execute("get_project_knowledge", { query: "GeneScope", term: "GeneScope" });
     expect(result.data).toEqual([expect.objectContaining({ name: "Genética" })]);
   });
-  it("consulta roadmaps, pesquisas e origem sem criar evolução", async () => {
+  it("consulta somente os roadmaps ativos do módulo Estudos", async () => {
     const registry = new ToolRegistry({ ...dependencies, stark: {
       roadmaps: async () => [
         { id: "control", name: "Controle e Automação", description: "", status: "active", completedActivities: 1, totalActivities: 2, progress: 50, stages: [], createdAt: "", updatedAt: "" },
         { id: "future", name: "Futuro", description: "", status: "planned", completedActivities: 0, totalActivities: 0, progress: 0, stages: [], createdAt: "", updatedAt: "" },
       ],
-      research: async () => [{ id: "pid", title: "Controle PID", domain: "Controle", objective: "", description: "", kind: "research", status: "active", impact: "", knowledgeNodeId: "k1", roadmapId: "control", roadmapTopicId: null, projectId: "p1", createdAt: "", updatedAt: "" }],
-      baselines: async () => [{ knowledgeAreaId: "k1", coverage: 60, depth: 20, recordedAt: "" }], events: async () => [],
     } });
     expect((await registry.execute("list_study_roadmaps", { query: "ativos" })).data).toEqual([expect.objectContaining({ id: "control" })]);
-    expect((await registry.execute("list_research_items", { query: "pesquisas" })).empty).toBe(false);
-    expect(await registry.execute("get_knowledge_origin", { query: "Genética", term: "genética" })).toMatchObject({ data: { baseline: { coverage: 60, depth: 20 }, automaticLearningEnabled: true } });
+    const names = registry.list().map((tool) => tool.name);
+    expect(names).not.toContain("list_research_items");
+    expect(names).not.toContain("get_stark_map");
   });
   it("expõe a posição atual de estudo sem permitir escrita pela IA", async () => {
     const registry = new ToolRegistry({ ...dependencies, stark: {
       roadmaps: async () => [{ id: "esp32", name: "Eletrônica com ESP32", description: "", status: "active", completedActivities: 0, totalActivities: 1, progress: 0, stages: [{ id: "s1", name: "Fundamentos", description: "", order: 1, topics: [{ id: "t1", name: "Circuitos", description: "", knowledgeNodeId: "k1", state: "EXPOSED", order: 1, activities: [{ id: "a1", title: "Lei de Ohm", description: "", activityType: "EXERCISE", status: "in_progress", completedAt: null, order: 1 }] }] }], createdAt: "", updatedAt: "" }],
-      research: async () => [], baselines: async () => [], events: async () => [],
     } });
     const tool = registry.list().find((item) => item.name === "get_current_study_position");
     expect(tool?.readonly).toBe(true);
@@ -106,19 +123,9 @@ describe("Tool Registry", () => {
     const result = await new ToolRegistry(dependencies).execute("list_workspaces", { query: "workspaces" });
     expect(result.data).toEqual([{ id: "w1", name: "Azriel", projectId: "p1", enabled: true }]);
   });
-  it("executa visual actions somente pelo gateway controlado do Engineering Core", async () => {
-    const engineering = new FakeEngineeringService();
-    const registry = new ToolRegistry({ ...dependencies, engineering });
-    await registry.execute("select_component", { query: "Selecione o rotor", term: "rotor" });
-    await registry.execute("set_explosion_factor", { query: "Abra em 50%", factor: 0.5 });
-    expect(engineering.calls).toEqual([
-      { command: "select_component", value: "component-rotor" },
-      { command: "set_explosion_factor", value: 0.5 },
-    ]);
-  });
-  it("expõe Assembly Intelligence somente por tools de leitura", () => {
-    const tools = new ToolRegistry({ ...dependencies, engineering: new FakeEngineeringService() }).list().filter((tool) => tool.domain === "Assembly Intelligence");
-    expect(tools).toHaveLength(7);
-    expect(tools.every((tool) => tool.readonly && tool.permission === "read")).toBe(true);
+  it("mantém o Engineering Core congelado e fora do registro ativo", () => {
+    const names = new ToolRegistry(dependencies).list().map((tool) => tool.name);
+    expect(names).not.toContain("select_component");
+    expect(names).not.toContain("get_loaded_model");
   });
 });

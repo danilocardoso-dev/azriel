@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { WorkspaceRegistryPanel } from "../components/automation/WorkspaceRegistryPanel";
 import { RecordEditorDialog } from "../components/core/RecordEditorDialog";
 import { DeleteConfirmationDialog } from "../components/daily/DeleteConfirmationDialog";
 import { HudPanel } from "../components/hud/HudPanel";
@@ -8,7 +9,7 @@ import { useSystem } from "../contexts/useSystem";
 import { useAzrielData } from "../contexts/useAzrielData";
 import type { Application, ApplicationInput, AutomationActionId, RegisteredAction, RegisteredUrl, RegisteredUrlInput, Routine, RoutineInput, RoutineStep } from "../types";
 
-type Tab = "applications" | "urls" | "routines" | "history";
+type Tab = "applications" | "workspaces" | "urls" | "routines" | "history";
 type DeleteTarget = { kind: "application"; value: Application } | { kind: "url"; value: RegisteredUrl } | { kind: "routine"; value: Routine };
 const newApplication = (): ApplicationInput => ({ id: crypto.randomUUID(), name: "", path: "", enabled: true });
 const newUrl = (): RegisteredUrlInput => ({ id: crypto.randomUUID(), name: "", url: "https://", enabled: true });
@@ -85,7 +86,7 @@ export function AutomationPage() {
   });
 
   return <>
-    <ModuleIntro code="AUT-10" title="Automation Core" description="Ações autorizadas organizadas em rotinas explícitas, persistentes e auditadas." metric="V0.8.1 // ROTINAS" />
+    <ModuleIntro code="AUT-10" title="Automação" description="Aplicativos, workspaces, URLs e rotinas explicitamente autorizados." metric="SAFE ACTIONS // AUDITADO" />
     {automation.error && <div className="system-warning"><strong>AUTOMATION CORE</strong>{automation.error}</div>}
     <div className="automation-summary">
       <article><span>STATUS</span><strong>{automation.state.toUpperCase()}</strong><small>POLICY ENGINE</small></article>
@@ -96,6 +97,7 @@ export function AutomationPage() {
     <HudPanel title="Registros autorizados" code="CAPACIDADE SEM ACESSO IRRESTRITO">
       <nav className="automation-tabs" aria-label="Seções do Automation Core">
         <button className={tab === "applications" ? "active" : ""} onClick={() => setTab("applications")}>APLICATIVOS</button>
+        <button className={tab === "workspaces" ? "active" : ""} onClick={() => setTab("workspaces")}>WORKSPACES</button>
         <button className={tab === "urls" ? "active" : ""} onClick={() => setTab("urls")}>URLs</button>
         <button className={tab === "routines" ? "active" : ""} onClick={() => setTab("routines")}>ROTINAS</button>
         <button className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>HISTÓRICO</button>
@@ -110,6 +112,7 @@ export function AutomationPage() {
         </article>)}</div>
         {!automation.applications.length && <p className="system-empty">Nenhum aplicativo autorizado.</p>}
       </section>}
+      {tab === "workspaces" && <WorkspaceRegistryPanel />}
       {tab === "urls" && <section className="automation-section">
         <header><p>São aceitas apenas URLs HTTP/HTTPS cadastradas, sem credenciais embutidas.</p><button onClick={() => { setFormError(null); setUrlDraft(newUrl()); }}>+ CADASTRAR URL</button></header>
         <div className="automation-records">{automation.urls.map((url) => <article key={url.id} data-disabled={!url.enabled}>

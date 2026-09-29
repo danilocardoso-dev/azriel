@@ -6,11 +6,17 @@ use crate::{
         market_lifecycle_repository::{
             self, LifecycleIntelligenceComparison, LifecycleIntelligenceReport,
         },
+        market_lifecycle_validation::{
+            LifecycleValidationBatch, LifecycleValidationBatchInput,
+            MultiPeriodLifecycleValidationReport,
+        },
+        market_lifecycle_validation_repository,
         market_models::*,
         market_repository, market_validation, DatabaseState,
     },
     ollama,
 };
+use std::path::PathBuf;
 use tauri::State;
 
 fn lock<'a>(
@@ -328,6 +334,61 @@ pub fn compare_market_lifecycle_intelligence(
         &development_experiment_id,
         &out_of_sample_experiment_id,
     )
+}
+
+#[tauri::command]
+pub fn run_market_multi_period_lifecycle_validation(
+    state: State<'_, DatabaseState>,
+    input: LifecycleValidationBatchInput,
+) -> Result<MultiPeriodLifecycleValidationReport, String> {
+    let mut connection = lock(&state)?;
+    market_lifecycle_validation_repository::create(&mut connection, &input)
+}
+
+#[tauri::command]
+pub fn list_market_multi_period_lifecycle_validations(
+    state: State<'_, DatabaseState>,
+) -> Result<Vec<LifecycleValidationBatch>, String> {
+    let connection = lock(&state)?;
+    market_lifecycle_validation_repository::list(&connection)
+}
+
+#[tauri::command]
+pub fn get_market_multi_period_lifecycle_validation(
+    state: State<'_, DatabaseState>,
+    batch_id: String,
+) -> Result<MultiPeriodLifecycleValidationReport, String> {
+    let connection = lock(&state)?;
+    market_lifecycle_validation_repository::get(&connection, &batch_id)
+}
+
+#[tauri::command]
+pub fn resume_market_multi_period_lifecycle_validation(
+    state: State<'_, DatabaseState>,
+    batch_id: String,
+) -> Result<MultiPeriodLifecycleValidationReport, String> {
+    let mut connection = lock(&state)?;
+    market_lifecycle_validation_repository::resume(&mut connection, &batch_id)
+}
+
+#[tauri::command]
+pub fn export_market_multi_period_lifecycle_validation(
+    state: State<'_, DatabaseState>,
+    batch_id: String,
+    path: String,
+) -> Result<(), String> {
+    let target = PathBuf::from(path);
+    if target.extension().and_then(|value| value.to_str()) != Some("json") {
+        return Err("a exportação deve usar a extensão .json".into());
+    }
+    let content = {
+        let connection = lock(&state)?;
+        market_lifecycle_validation_repository::export_json(&connection, &batch_id)?
+    };
+    if content.len() > 10 * 1024 * 1024 {
+        return Err("a exportação excede o limite de 10 MB".into());
+    }
+    std::fs::write(target, content).map_err(|error| format!("falha ao exportar validação: {error}"))
 }
 
 #[tauri::command]

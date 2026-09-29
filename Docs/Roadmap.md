@@ -560,3 +560,81 @@ Status: 🧪 Implementada em 16/09/2026; aceite operacional DEV/OOS AAPL 15M pen
 - o Overview inclui Observatory, tabela, inspector, timeline, Late Reduction, Exit Quality e matrizes Health/Deterioration × Outcome;
 - comparação DEV × OOS valida identidade de mercado e períodos não sobrepostos sem rerodar o LLM;
 - AI Intraday V1, prompt/contexto, Trigger V2, Position Sizing V1, Risk Policy V2 e Execution Model V1 permanecem congelados.
+
+## Market Lab v0.5.4 — Multi-Period Lifecycle Validation
+
+Status: 🧪 Implementada; validation runbook executado em 24/09/2026 com 2 períodos reais, amostra e cobertura ainda insuficientes.
+
+- batches persistidos combinam de 2 a 12 experimentos compatíveis sem executar novos experimentos ou chamar o Ollama;
+- compatibilidade valida metadata estruturada, agente/configuração, risco, custos, execução e períodos estritamente não sobrepostos;
+- lifecycle é a unidade amostral primária; contagens por candle permanecem descritivas e separadas;
+- Late Reduction possui taxas independentes por evento e por lifecycle, com response delay `UNRESOLVED` explícito;
+- estabilidade de saúde, deterioração e componentes é comparada por período sem modificar pesos ou thresholds;
+- concentração, outliers, posições abertas/censuradas e no-look-ahead são tratados explicitamente;
+- Overview inclui seleção de períodos, tabelas, filtros, visualizações, Evidence Matrix e exportação auditável;
+- AI Intraday V1, prompt, Trigger V2, Position Sizing V1, Risk Policy V2, Execution Model V1 e configs da v0.5.3 permanecem congelados.
+
+# Trilha ativa — Study Lab
+
+## Study Lab v0.1 — Study Foundation
+
+Status: ✅ Concluída e validada automaticamente em 25/09/2026.
+
+- Estudos passa a operar com as áreas `HOJE`, `ROADMAPS` e `HISTÓRICO`;
+- Roadmaps existentes permanecem como eixo estrutural e conservam seus dados e operações;
+- sessões de foco persistentes suportam início, pausa, retomada, conclusão, cancelamento e recuperação;
+- o cronômetro utiliza timestamps do backend e exclui o período pausado;
+- somente uma sessão pode permanecer `ACTIVE` ou `PAUSED` por vez;
+- o resumo diário mostra foco, sessões, atividades concluídas e roadmap mais estudado;
+- concluir uma sessão não altera automaticamente o estado acadêmico da atividade;
+- a implementação permanece local, sem Ollama, AI Core, mastery, RAG ou serviços externos.
+
+## Study Lab v0.2 — Knowledge Workspace
+
+Status: ✅ Concluída e validada automaticamente em 25/09/2026.
+
+- a navegação passa a oferecer `HOJE`, `ROADMAPS`, `CADERNOS` e `HISTÓRICO`;
+- cadernos ativos ou arquivados organizam notas persistentes sem substituir Roadmaps e podem ser excluídos com suas notas após confirmação destrutiva;
+- notas Markdown possuem preview seguro, autosave serializado e estado confiável de persistência;
+- vínculos opcionais usam IDs reais de Roadmap, etapa, tópico, atividade e Study Session;
+- atividades e sessões permitem abrir ou criar notas sem interromper o Pomodoro;
+- Hoje mostra notas recentes e o Histórico indica notas vinculadas às sessões;
+- busca local consulta título, conteúdo e caderno sem embeddings, RAG ou serviços externos;
+- listagens usam summaries e somente a nota aberta carrega conteúdo integral.
+
+## Study Lab v0.3 — Review / Active Recall
+
+Status: ✅ Concluída e validada automaticamente em 25/09/2026.
+
+- adiciona Study Cards manuais com Markdown e contexto opcional de Roadmap, Atividade, Caderno e Nota;
+- cria sessões e eventos de revisão auditáveis, com fila determinística persistida;
+- aplica `STUDY_REVIEW_SCHEDULER_V1` para ERREI, DIFÍCIL, BOM e FÁCIL;
+- protege cada avaliação com transação SQLite e unicidade contra duplo envio;
+- integra criação por Nota/Atividade, resumo em Hoje e sessões no Histórico;
+- preserva fatos mensuráveis sem mastery, XP, gamificação ou IA.
+
+## Study Lab v0.4 — AI Study Tools
+
+Status: 🧪 Implementada em 25/09/2026; validação operacional com o Ollama local pendente.
+
+- reutiliza o AI Core, `OllamaProvider`, modelo e timeout configurados, sem segundo cliente ou API cloud;
+- adiciona ações contextuais para explicar, resumir, testar, gerar drafts de cards e avaliar respostas;
+- limita e serializa deterministicamente apenas o contexto necessário, com truncamento explícito;
+- valida Quiz, Generated Cards e Evaluation com JSON Schema e contratos tipados;
+- mantém resultados temporários até cópia, inserção em Note ou salvamento explícito de cards;
+- salva cards aprovados em lote atômico, preservando relações reais e idempotência;
+- mantém Pomodoro, Review Scheduler e histórico determinísticos, sem mutações por IA;
+- registra somente metadata técnica, sem conteúdo integral ou histórico genérico de chat.
+
+## Study Lab v0.5 — Study Library
+
+Status: 🧪 Implementada e validada automaticamente em 26/09/2026; validação operacional no aplicativo Tauri pendente. **Versão atual.**
+
+- adiciona Biblioteca local para PDF, imagem, TXT, Markdown e links HTTP/HTTPS;
+- diferencia cópia gerenciada no app-data, arquivo local vinculado e URL externa;
+- valida assinatura, extensão, tamanho e checksum, com deduplicação e limpeza de temporários;
+- extrai localmente somente a camada textual de PDF e diferencia ausência de texto de falha;
+- relaciona materiais a roadmaps, etapas, tópicos, atividades, cadernos, notas e cards;
+- oferece busca literal, preview, abertura, reprocessamento, arquivamento e remoção segura;
+- integra materiais à IA somente por seleção explícita, com fonte rastreável e limites de contexto;
+- mantém OCR, RAG, embeddings, vector DB, scraping, cloud e ingestão autônoma fora do escopo.

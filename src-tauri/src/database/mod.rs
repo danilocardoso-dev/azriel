@@ -17,6 +17,9 @@ pub mod market_intraday;
 pub mod market_intraday_observatory;
 pub mod market_lifecycle_intelligence;
 pub mod market_lifecycle_repository;
+pub mod market_lifecycle_validation;
+pub mod market_lifecycle_validation_report;
+pub mod market_lifecycle_validation_repository;
 pub mod market_models;
 pub mod market_observatory;
 pub mod market_positions;
@@ -36,6 +39,15 @@ pub mod routine_models;
 pub mod routine_repository;
 pub mod stark_models;
 pub mod stark_repository;
+pub mod study_models;
+pub mod study_material_models;
+pub mod study_material_repository;
+pub mod study_repository;
+pub mod study_review_models;
+pub mod study_review_repository;
+pub mod study_review_scheduler;
+pub mod study_workspace_models;
+pub mod study_workspace_repository;
 pub mod system_models;
 pub mod system_repository;
 
@@ -206,6 +218,46 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         31,
         "market_position_lifecycle_intelligence",
         include_str!("../../migrations/0031_market_position_lifecycle_intelligence.sql"),
+    ),
+    (
+        32,
+        "market_multi_period_lifecycle_validation",
+        include_str!("../../migrations/0032_market_multi_period_lifecycle_validation.sql"),
+    ),
+    (
+        33,
+        "market_validation_runbook",
+        include_str!("../../migrations/0033_market_validation_runbook.sql"),
+    ),
+    (
+        34,
+        "study_lab_foundation",
+        include_str!("../../migrations/0034_study_lab_foundation.sql"),
+    ),
+    (
+        35,
+        "study_knowledge_workspace",
+        include_str!("../../migrations/0035_study_knowledge_workspace.sql"),
+    ),
+    (
+        36,
+        "study_review_active_recall",
+        include_str!("../../migrations/0036_study_review_active_recall.sql"),
+    ),
+    (
+        37,
+        "study_library",
+        include_str!("../../migrations/0037_study_library.sql"),
+    ),
+    (
+        38,
+        "ai_response_timeout",
+        include_str!("../../migrations/0038_ai_response_timeout.sql"),
+    ),
+    (
+        39,
+        "ai_task_references",
+        include_str!("../../migrations/0039_ai_task_references.sql"),
     ),
 ];
 
@@ -1447,6 +1499,288 @@ mod tests {
                         |row| row.get::<_, usize>(0)
                     )
                     .unwrap(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn migration_thirty_two_adds_multi_period_validation_without_data_loss() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 31).unwrap();
+        connection.execute("INSERT INTO market_datasets(id,name,asset,timeframe,start_at,end_at,candle_count,fingerprint,source_path) VALUES('keep-multi-period','AAPL 15M','AAPL','15M','2026-01-01','2026-01-02',2,'keep-multi-period-fingerprint','AAPL_15m.csv')", []).unwrap();
+
+        apply_migrations_through(&mut connection, 32).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 32);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT fingerprint FROM market_datasets WHERE id='keep-multi-period'",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "keep-multi-period-fingerprint"
+        );
+        for table in [
+            "market_lifecycle_validation_batches",
+            "market_lifecycle_validation_periods",
+            "market_lifecycle_validation_lifecycles",
+        ] {
+            assert_eq!(
+                connection
+                    .query_row(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                        [table],
+                        |row| row.get::<_, usize>(0)
+                    )
+                    .unwrap(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn migration_thirty_three_adds_runbook_checkpoints_without_data_loss() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 32).unwrap();
+        connection.execute(
+            "INSERT INTO market_lifecycle_validation_batches(id,name,asset,timeframe,agent_id,agent_version,lifecycle_config_version,deterioration_config_version,hold_diagnostics_version,execution_model_version,status,config_json) VALUES('keep-runbook','Keep','AAPL','15M','ai-intraday-v1','AI_INTRADAY_V1','POSITION_LIFECYCLE_CONFIG_V1','POSITION_DETERIORATION_CONFIG_V1','HOLD_DIAGNOSTICS_V1','EXECUTION_MODEL_V1','CREATED','{}')",
+            [],
+        ).unwrap();
+
+        apply_migrations_through(&mut connection, 33).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 33);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT name FROM market_lifecycle_validation_batches WHERE id='keep-runbook'",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "Keep"
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='market_lifecycle_validation_artifacts'",
+                    [],
+                    |row| row.get::<_, usize>(0)
+                )
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn migration_thirty_four_preserves_roadmaps_and_adds_study_sessions() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 33).unwrap();
+        connection.execute("INSERT INTO study_roadmaps(id,name,status) VALUES ('keep-study-lab','Roadmap preservado','active')", []).unwrap();
+        connection.execute("INSERT INTO roadmap_stages(id,roadmap_id,name,stage_order) VALUES ('keep-study-stage','keep-study-lab','Etapa',1)", []).unwrap();
+        connection.execute("INSERT INTO roadmap_topics(id,stage_id,name,topic_order) VALUES ('keep-study-topic','keep-study-stage','Tópico',1)", []).unwrap();
+        connection.execute("INSERT INTO roadmap_activities(id,topic_id,title,activity_type,status,activity_order) VALUES ('keep-study-activity','keep-study-topic','Atividade','EXERCISE','pending',1)", []).unwrap();
+
+        apply_migrations_through(&mut connection, 34).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 34);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT name FROM study_roadmaps WHERE id='keep-study-lab'",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "Roadmap preservado"
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT focus_minutes FROM study_settings WHERE id=1",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            25
+        );
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='study_sessions'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+    }
+
+    #[test]
+    fn migration_thirty_five_preserves_study_sessions_and_adds_knowledge_workspace() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 34).unwrap();
+        connection.execute("INSERT INTO study_roadmaps(id,name,status) VALUES ('keep-workspace-roadmap','Roadmap v0.1','active')", []).unwrap();
+        connection.execute("INSERT INTO roadmap_stages(id,roadmap_id,name,stage_order) VALUES ('keep-workspace-stage','keep-workspace-roadmap','Etapa',1)", []).unwrap();
+        connection.execute("INSERT INTO roadmap_topics(id,stage_id,name,topic_order) VALUES ('keep-workspace-topic','keep-workspace-stage','Tópico',1)", []).unwrap();
+        connection.execute("INSERT INTO roadmap_activities(id,topic_id,title,activity_type,status,activity_order) VALUES ('keep-workspace-activity','keep-workspace-topic','Atividade','EXERCISE','pending',1)", []).unwrap();
+        connection.execute("INSERT INTO study_sessions(id,roadmap_id,stage_id,topic_id,activity_id,roadmap_name,stage_name,topic_name,activity_title,planned_focus_minutes,status,started_at,running_since,open_slot,created_at,updated_at) VALUES ('keep-workspace-session','keep-workspace-roadmap','keep-workspace-stage','keep-workspace-topic','keep-workspace-activity','Roadmap v0.1','Etapa','Tópico','Atividade',25,'ACTIVE','2026-09-25T10:00:00Z','2026-09-25T10:00:00Z',1,'2026-09-25T10:00:00Z','2026-09-25T10:00:00Z')", []).unwrap();
+
+        apply_migrations_through(&mut connection, 35).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 35);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT status FROM study_sessions WHERE id='keep-workspace-session'",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "ACTIVE"
+        );
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='study_notebooks'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='study_notes'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn migration_thirty_six_preserves_study_workspace_and_adds_active_recall() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 35).unwrap();
+        connection.execute("INSERT INTO study_notebooks(id,title,status,created_at,updated_at) VALUES ('keep-review-notebook','Caderno v0.2','ACTIVE','2026-09-25T10:00:00Z','2026-09-25T10:00:00Z')", []).unwrap();
+        connection.execute("INSERT INTO study_notes(id,notebook_id,title,content,created_at,updated_at) VALUES ('keep-review-note','keep-review-notebook','Nota v0.2','Conteúdo preservado','2026-09-25T10:00:00Z','2026-09-25T10:00:00Z')", []).unwrap();
+
+        apply_migrations_through(&mut connection, 36).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 36);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT content FROM study_notes WHERE id='keep-review-note'",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "Conteúdo preservado"
+        );
+        for table in [
+            "study_cards",
+            "study_review_states",
+            "study_review_sessions",
+            "study_review_session_items",
+            "study_review_events",
+        ] {
+            assert_eq!(
+                connection
+                    .query_row(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                        [table],
+                        |row| row.get::<_, i64>(0)
+                    )
+                    .unwrap(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn migration_thirty_seven_preserves_review_data_and_adds_study_library() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 36).unwrap();
+        connection.execute("INSERT INTO study_cards(id,front,back,status,created_at,updated_at) VALUES ('keep-library-card','Pergunta','Resposta','ACTIVE','2026-09-25T10:00:00Z','2026-09-25T10:00:00Z')", []).unwrap();
+
+        apply_migrations_through(&mut connection, 37).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 37);
+        assert_eq!(connection.query_row("SELECT front FROM study_cards WHERE id='keep-library-card'", [], |row| row.get::<_, String>(0)).unwrap(), "Pergunta");
+        for table in ["study_materials", "study_material_relations", "material_text_content"] {
+            assert_eq!(connection.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1", [table], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        }
+    }
+
+    #[test]
+    fn migration_thirty_eight_updates_only_the_previous_default_ai_timeout() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 37).unwrap();
+        connection
+            .execute(
+                "UPDATE ai_settings SET endpoint='http://azriel-ai.ts.net:11434',model='qwen3.5:4b',timeout_seconds=45 WHERE id=1",
+                [],
+            )
+            .unwrap();
+
+        apply_migrations_through(&mut connection, 38).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 38);
+        let migrated = connection
+            .query_row(
+                "SELECT endpoint,model,timeout_seconds FROM ai_settings WHERE id=1",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            migrated,
+            (
+                "http://azriel-ai.ts.net:11434".into(),
+                "qwen3.5:4b".into(),
+                90
+            )
+        );
+
+        let mut customized = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&customized).unwrap();
+        apply_migrations_through(&mut customized, 37).unwrap();
+        customized
+            .execute(
+                "UPDATE ai_settings SET timeout_seconds=120 WHERE id=1",
+                [],
+            )
+            .unwrap();
+        apply_migrations_through(&mut customized, 38).unwrap();
+        assert_eq!(
+            customized
+                .query_row(
+                    "SELECT timeout_seconds FROM ai_settings WHERE id=1",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            120
+        );
+    }
+
+    #[test]
+    fn migration_thirty_nine_adds_ai_references_and_task_audit() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 38).unwrap();
+        apply_migrations_through(&mut connection, 39).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 39);
+        for table in ["ai_entity_references", "task_action_history"] {
+            assert_eq!(
+                connection.query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                    [table],
+                    |row| row.get::<_, i64>(0),
+                ).unwrap(),
                 1
             );
         }

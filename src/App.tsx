@@ -2,11 +2,8 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react
 import { getCurrentWindow, Window } from "@tauri-apps/api/window";
 import { modules } from "./data/system";
 import { CommandCenter } from "./pages/CommandCenter";
-import { EducationPage } from "./pages/EducationPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import { StarkMapPage } from "./pages/StarkMapPage";
-import { SystemPage } from "./pages/SystemPage";
 import { DailyOperationsPage } from "./pages/DailyOperationsPage";
 import { AICorePage } from "./pages/AICorePage";
 import { AutomationPage } from "./pages/AutomationPage";
@@ -17,11 +14,11 @@ import { useAI } from "./contexts/useAI";
 import { useAutomation } from "./contexts/useAutomation";
 import { RoutineConfirmationDialog } from "./components/automation/RoutineConfirmationDialog";
 
-const EngineeringViewPage = lazy(() => import("./pages/EngineeringViewPage").then((module) => ({ default: module.EngineeringViewPage })));
 const MarketLabPage = lazy(() => import("./pages/MarketLabPage").then((module) => ({ default: module.MarketLabPage })));
+const StudiesPage = lazy(() => import("./pages/StudiesPage").then((module) => ({ default: module.StudiesPage })));
 
 function App() {
-  const { loading, error, reload, databaseInfo, knowledgeAreas } = useAzrielData();
+  const { loading, error, reload, databaseInfo } = useAzrielData();
   const { coreState, status: aiStatus } = useAI();
   const { state: automationState, pendingRoutine } = useAutomation();
   const displayState = automationState === "executing" ? (pendingRoutine ? "routine" : "executing") : coreState;
@@ -78,22 +75,18 @@ function App() {
   const currentModule = useMemo(() => modules.find((module) => module.id === activeModule)!, [activeModule]);
 
   const renderModule = () => {
-    const empty = activeModule === "stark" && knowledgeAreas.length === 0;
-    if (["command", "projects", "stark", "education"].includes(activeModule) && (loading || error || empty)) {
-      return <DataState loading={loading} error={error} empty={empty} onRetry={() => void reload()} />;
+    if (["command", "projects", "studies"].includes(activeModule) && (loading || error)) {
+      return <DataState loading={loading} error={error} empty={false} onRetry={() => void reload()} />;
     }
     switch (activeModule) {
-      case "engineering": return <Suspense fallback={<div className="data-state"><span className="live-dot" /><strong>INICIALIZANDO ENGINEERING CORE</strong><p>Carregando o renderer local.</p></div>}><EngineeringViewPage /></Suspense>;
       case "projects": return <ProjectsPage openCreate={moduleAction === "new-project"} />;
       case "ai": return <AICorePage />;
       case "daily": return <DailyOperationsPage initialCapture={moduleAction === "new-task" ? "task" : moduleAction === "new-note" ? "note" : undefined} />;
-      case "stark": return <StarkMapPage />;
-      case "education": return <EducationPage />;
+      case "studies": return <Suspense fallback={<div className="data-state"><span className="live-dot" /><strong>INICIALIZANDO STUDY LAB</strong></div>}><StudiesPage /></Suspense>;
       case "market": return <Suspense fallback={<div className="data-state"><span className="live-dot" /><strong>INICIALIZANDO MARKET LAB</strong></div>}><MarketLabPage /></Suspense>;
-      case "system": return <SystemPage coreState={coreState} onOpenAI={() => setActiveModule("ai")} />;
       case "automation": return <AutomationPage />;
       case "settings": return <SettingsPage />;
-      default: return <CommandCenter coreState={displayState} onOpenAI={() => { setModuleAction(null); setActiveModule("ai"); }} onOpenStark={() => { setModuleAction(null); setActiveModule("stark"); }} onOpenDaily={() => { setModuleAction(null); setActiveModule("daily"); }} onNewProject={() => { setModuleAction("new-project"); setActiveModule("projects"); }} onNewTask={() => { setModuleAction("new-task"); setActiveModule("daily"); }} onNewNote={() => { setModuleAction("new-note"); setActiveModule("daily"); }} />;
+      default: return <CommandCenter coreState={displayState} onOpenAI={() => { setModuleAction(null); setActiveModule("ai"); }} onOpenStudies={() => { setModuleAction(null); setActiveModule("studies"); }} onOpenDaily={() => { setModuleAction(null); setActiveModule("daily"); }} onOpenMarket={() => { setModuleAction(null); setActiveModule("market"); }} onOpenAutomation={() => { setModuleAction(null); setActiveModule("automation"); }} onNewProject={() => { setModuleAction("new-project"); setActiveModule("projects"); }} onNewTask={() => { setModuleAction("new-task"); setActiveModule("daily"); }} onNewNote={() => { setModuleAction("new-note"); setActiveModule("daily"); }} />;
     }
   };
 
@@ -144,7 +137,7 @@ function App() {
       <main className="workspace" key={activeModule}>{renderModule()}</main>
 
       <footer className="statusbar">
-        <span>AZRIEL // KNOWLEDGE · ENGINEERING · INTELLIGENCE · IMPACT</span>
+        <span>AZRIEL // STUDIES · PROJECTS · INTELLIGENCE · AUTOMATION</span>
         <span>{now.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }).toUpperCase()}</span>
         <strong>{now.toLocaleTimeString("pt-BR", { hour12: false })}</strong>
       </footer>

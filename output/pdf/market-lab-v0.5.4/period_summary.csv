@@ -1,0 +1,3 @@
+period_id,source_role,dataset_id,dataset_name,start_at,end_at,candles,sessions,lifecycles,closed,open,late_event_rate_pct,late_lifecycle_rate_pct,median_response_delay,quality_status
+"lifecycle-validation-1790281887271788400-period-01","DEVELOPMENT","dataset-1789263885968772900","AAPL_real_15m_20sessions_2026-03-12_to_2026-04-09_treated","2026-03-12T13:30:00+00:00","2026-04-09T19:45:00+00:00",520,20,2,1,1,111.731844,100,4005,"PASS_WITH_WARNINGS"
+"lifecycle-validation-1790281887271788400-period-02","OOS","dataset-1789397830614545700","AAPL_real_15m_OOS_20sessions_2026-04-10_to_2026-05-07_treated","2026-04-10T13:30:00+00:00","2026-05-07T19:45:00+00:00",520,20,2,1,1,32.386364,100,1020,"PASS_WITH_WARNINGS"

@@ -1,0 +1,8 @@
+dimension,classification
+"sample_size","INSUFFICIENT"
+"period_coverage","PARTIAL"
+"late_reduction","CONSISTENT"
+"deterioration_stability","SHIFTED"
+"health_outcome_relation","NO_SIGNAL"
+"component_consistency","MIXED"
+"giveback_consistency","CONSISTENT"

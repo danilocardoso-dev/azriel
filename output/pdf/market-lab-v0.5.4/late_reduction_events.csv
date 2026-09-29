@@ -1,0 +1,5 @@
+period_id,lifecycle_id,event_count,has_late_reduction,response_status,response_delay_minutes
+"lifecycle-validation-1790281887271788400-period-01","experiment-1790256677468863400:ai-intraday-v1:1",193,true,"RESOLVED",4005
+"lifecycle-validation-1790281887271788400-period-01","experiment-1790256677468863400:ai-intraday-v1:2",7,true,"UNRESOLVED",
+"lifecycle-validation-1790281887271788400-period-02","experiment-1790255634428168200:ai-intraday-v1:1",44,true,"RESOLVED",1620
+"lifecycle-validation-1790281887271788400-period-02","experiment-1790255634428168200:ai-intraday-v1:2",13,true,"RESOLVED",420

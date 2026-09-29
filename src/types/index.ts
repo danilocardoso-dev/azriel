@@ -1,4 +1,4 @@
-export type ModuleId = "command" | "engineering" | "ai" | "daily" | "projects" | "stark" | "education" | "market" | "system" | "automation" | "settings";
+export type ModuleId = "command" | "ai" | "daily" | "projects" | "studies" | "market" | "automation" | "settings";
 export type AzrielState = "idle" | "processing" | "tool" | "executing" | "engineering" | "routine" | "alert" | "offline";
 export type AIToolPermission = "read" | "visual_action" | "safe_write" | "confirm_write";
 export type ProjectStatus = "active" | "research" | "paused" | "planned" | "completed";
@@ -58,10 +58,36 @@ export type ConversationRole = "user" | "assistant" | "system";
 export interface ConversationMessage { id: string; conversationId: string; role: ConversationRole; content: string; createdAt: string }
 export interface ConversationMessageInput { id: string; conversationId: string; role: ConversationRole; content: string }
 export interface ProviderMessage { role: ConversationRole; content: string }
-export type AIGenerationProfile = "standard" | "repetition-retry";
-export interface AIRequest { model: string; messages: ProviderMessage[]; timeoutSeconds: number; generationProfile?: AIGenerationProfile }
+export type AIGenerationProfile = "standard" | "repetition-retry" | "study" | "study-structured";
+export interface AIRequestMetadata {
+  domain: "study";
+  action: string;
+  promptVersion: string;
+  contextTruncated: boolean;
+  sourceMaterialCount?: number;
+}
+export interface AIRequest {
+  model: string;
+  messages: ProviderMessage[];
+  timeoutSeconds: number;
+  generationProfile?: AIGenerationProfile;
+  structuredOutputSchema?: Record<string, unknown> | null;
+  requestMetadata?: AIRequestMetadata | null;
+}
 export interface AIResponse { content: string; model: string; truncated: boolean }
 export interface OllamaStatus { available: boolean; models: string[]; error: string | null }
+export type LocalAiServerStatus = "ONLINE" | "OFFLINE" | "UNKNOWN";
+export type LocalAiModelState = "UNLOADED" | "LOADING" | "LOADED" | "UNLOADING" | "NOT_AVAILABLE" | "ERROR" | "UNKNOWN";
+export interface LocalAiModelStatus {
+  provider: "OLLAMA";
+  model: string;
+  serverStatus: LocalAiServerStatus;
+  modelStatus: LocalAiModelState;
+  loaded: boolean;
+  expiresAt: string | null;
+  lastCheckedAt: string;
+  error: string | null;
+}
 export interface SystemDetails { osName: string | null; osVersion: string | null; kernelVersion: string | null; architecture: string; hostname: string | null; logicalCores: number; physicalCores: number | null; uptimeSeconds: number }
 export interface CpuSnapshot { usagePercent: number; cores: number[] }
 export interface MemorySnapshot { totalBytes: number; usedBytes: number; availableBytes: number; swapTotalBytes: number; swapUsedBytes: number }
@@ -97,12 +123,11 @@ export interface RoutineConfirmation { historyId: number; routineId: string; rou
 export interface RoutineExecutionResult { success: boolean; status: RoutineStatus; routineId: string; routineName: string; historyId: number; completedSteps: number; failedStep: number | null; error: string | null; confirmation: RoutineConfirmation | null }
 export interface RunRoutineRequest { routineId: string; source: ActionSource }
 export type AIToolName =
-  | "get_today_tasks" | "get_overdue_tasks" | "get_upcoming_tasks" | "get_recent_notes" | "get_daily_operations_summary"
+  | "get_today_tasks" | "get_overdue_tasks" | "get_upcoming_tasks" | "get_critical_tasks" | "get_priority_tasks" | "complete_task" | "get_recent_notes" | "get_daily_operations_summary"
   | "list_projects" | "get_project" | "get_project_tasks" | "get_project_knowledge"
   | "list_knowledge_areas" | "get_knowledge_area" | "get_knowledge_gaps" | "get_stark_map" | "get_knowledge_history"
   | "list_study_roadmaps" | "get_study_roadmap" | "list_research_items" | "get_knowledge_origin"
   | "get_learning_progress" | "get_topic_mastery" | "get_knowledge_evidence" | "get_recent_knowledge_events" | "explain_knowledge_level" | "get_roadmap_learning_status" | "get_current_study_position"
-  | "get_education" | "get_current_education" | "get_planned_education"
   | "get_system_status" | "get_cpu_status" | "get_memory_status" | "get_storage_status" | "get_network_status" | "get_process_summary"
   | "list_workspaces" | "get_workspace_status" | "get_git_status" | "get_recent_commits" | "get_ollama_status"
   | "get_azriel_status" | "get_azriel_version"
@@ -111,9 +136,9 @@ export type AIToolName =
   | "select_component" | "focus_component" | "isolate_component" | "show_all_components" | "hide_component" | "show_component"
   | "set_explosion_factor" | "explode_all" | "explode_component" | "reassemble" | "reset_model_view"
   | "list_routines" | "run_routine" | AutomationActionId;
-export interface AIToolInput { query: string; term?: string; entityId?: string; workspaceId?: string; factor?: number; delta?: number }
+export interface AIToolInput { query: string; term?: string; entityId?: string; workspaceId?: string; conversationId?: string; referencePosition?: number; factor?: number; delta?: number }
 export interface AIToolResult { name: AIToolName; domain: string; data: unknown; empty: boolean }
-export interface RoutedIntent { intent: string; scope: "azriel" | "general"; tools: AIToolName[]; term?: string; factor?: number; delta?: number }
+export interface RoutedIntent { intent: string; scope: "azriel" | "general"; tools: AIToolName[]; term?: string; referencePosition?: number; factor?: number; delta?: number }
 
 export type KnowledgeNodeType = "area" | "discipline" | "topic" | "competency";
 export interface KnowledgeBaseline { knowledgeAreaId: string; coverage: number; depth: number; recordedAt: string }
@@ -138,6 +163,274 @@ export interface StarkSummary { roadmapCount: number; activeRoadmapCount: number
 export interface LearningMutation { createdEvents: KnowledgeEvent[]; affectedKnowledgeIds: string[]; integration: number }
 export interface RoadmapSaveResult { roadmaps: StudyRoadmap[]; learning: LearningMutation }
 export interface RoadmapActivityStatusInput { activityId: string; status: RoadmapActivityStatus }
+
+export type StudySessionStatus = "ACTIVE" | "PAUSED" | "COMPLETED" | "CANCELLED";
+export interface StudySession {
+  id: string;
+  roadmapId: string | null;
+  stageId: string | null;
+  topicId: string | null;
+  activityId: string | null;
+  roadmapName: string;
+  stageName: string;
+  topicName: string;
+  activityTitle: string;
+  plannedFocusMinutes: number;
+  actualFocusSeconds: number;
+  currentFocusSeconds: number;
+  linkedNoteCount: number;
+  observedAt: string;
+  breakSeconds: number;
+  status: StudySessionStatus;
+  startedAt: string;
+  runningSince: string | null;
+  pausedAt: string | null;
+  endedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface StartStudySessionInput { id: string; roadmapId: string | null; activityId: string | null; plannedFocusMinutes: number }
+export interface StudySessionListInput { roadmapId?: string | null; dateFrom?: string | null; dateTo?: string | null; limit?: number; offset?: number }
+export interface StudyRoadmapFocus { roadmapId: string | null; roadmapName: string; focusSeconds: number }
+export interface StudyTodaySummary {
+  focusSeconds: number;
+  completedSessions: number;
+  completedActivities: number;
+  mostStudiedRoadmap: StudyRoadmapFocus | null;
+  activeSession: StudySession | null;
+  lastSession: StudySession | null;
+}
+export interface StudySettings { focusMinutes: number; shortBreakMinutes: number; updatedAt: string }
+export interface StudySettingsInput { focusMinutes: number; shortBreakMinutes: number }
+export type StudyNotebookStatus = "ACTIVE" | "ARCHIVED";
+export interface StudyNotebook {
+  id: string;
+  title: string;
+  description: string | null;
+  status: StudyNotebookStatus;
+  noteCount: number;
+  lastNoteUpdatedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface StudyNotebookInput { id: string; title: string; description: string | null }
+export interface StudyNoteContext {
+  roadmapId: string | null;
+  stageId: string | null;
+  topicId: string | null;
+  activityId: string | null;
+  studySessionId: string | null;
+}
+export interface StudyNote extends StudyNoteContext {
+  id: string;
+  notebookId: string;
+  notebookTitle: string;
+  title: string;
+  content: string;
+  contentFormat: "MARKDOWN";
+  roadmapName: string | null;
+  stageName: string | null;
+  topicName: string | null;
+  activityTitle: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface StudyNoteSummary {
+  id: string;
+  notebookId: string;
+  notebookTitle: string;
+  title: string;
+  preview: string;
+  roadmapId: string | null;
+  roadmapName: string | null;
+  activityId: string | null;
+  activityTitle: string | null;
+  studySessionId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface StudyNoteInput extends StudyNoteContext { id: string; notebookId: string; title: string; content: string }
+export interface StudyNoteListInput { notebookId?: string | null; activityId?: string | null; studySessionId?: string | null; limit?: number; offset?: number }
+export interface StudyNoteSearchInput { query: string; limit?: number }
+export type StudyCardStatus = "ACTIVE" | "SUSPENDED" | "ARCHIVED";
+export type StudyCardFilter = "ALL" | "DUE" | "NEW" | "SUSPENDED" | "ARCHIVED";
+export type StudyReviewResultValue = "AGAIN" | "HARD" | "GOOD" | "EASY";
+export type StudyReviewQueueMode = "TEN" | "TWENTY" | "ALL_OVERDUE";
+export interface StudyCard {
+  id: string;
+  front: string;
+  back: string;
+  status: StudyCardStatus;
+  roadmapId: string | null;
+  roadmapName: string | null;
+  stageId: string | null;
+  stageName: string | null;
+  topicId: string | null;
+  topicName: string | null;
+  activityId: string | null;
+  activityTitle: string | null;
+  notebookId: string | null;
+  notebookTitle: string | null;
+  noteId: string | null;
+  noteTitle: string | null;
+  dueAt: string;
+  lastReviewedAt: string | null;
+  reviewCount: number;
+  correctCount: number;
+  incorrectCount: number;
+  currentIntervalSeconds: number;
+  schedulerVersion: string;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface StudyCardContext {
+  roadmapId: string | null;
+  stageId: string | null;
+  topicId: string | null;
+  activityId: string | null;
+  notebookId: string | null;
+  noteId: string | null;
+}
+export interface StudyCardInput extends StudyCardContext { id: string; front: string; back: string; sourceMaterialIds?: string[] }
+export interface StudyCardListInput {
+  query?: string | null;
+  status?: StudyCardStatus | null;
+  filter?: StudyCardFilter | null;
+  roadmapId?: string | null;
+  activityId?: string | null;
+  noteId?: string | null;
+  limit?: number;
+  offset?: number;
+}
+export interface StudyReviewDashboardSummary {
+  overdue: number;
+  dueToday: number;
+  newCards: number;
+  reviewedToday: number;
+  lastReviewedAt: string | null;
+}
+export interface StudyReviewQueueItem { itemId: string | null; order: number; category: "OVERDUE" | "TODAY" | "NEW"; card: StudyCard }
+export interface StartStudyReviewSessionInput { id: string; mode: StudyReviewQueueMode; studySessionId: string | null }
+export interface StudyReviewSession {
+  id: string;
+  startedAt: string;
+  endedAt: string | null;
+  status: "ACTIVE" | "COMPLETED" | "CANCELLED";
+  plannedCards: number;
+  reviewedCards: number;
+  studySessionId: string | null;
+  contextLabel: string;
+  currentItem: StudyReviewQueueItem | null;
+  createdAt: string;
+}
+export interface SubmitStudyReviewResultInput {
+  id: string;
+  reviewSessionId: string;
+  sessionItemId: string;
+  result: StudyReviewResultValue;
+  responseTimeMs: number | null;
+}
+export interface StudyReviewResult { session: StudyReviewSession; nextDueAt: string; nextIntervalSeconds: number }
+export interface StudyReviewSummary {
+  sessionId: string;
+  status: "ACTIVE" | "COMPLETED" | "CANCELLED";
+  reviewedCards: number;
+  again: number;
+  hard: number;
+  good: number;
+  easy: number;
+  durationSeconds: number;
+  nextReviewAt: string | null;
+}
+export interface StudyReviewSessionListInput { limit?: number; offset?: number }
+export type StudyMaterialType = "PDF" | "IMAGE" | "TEXT" | "MARKDOWN" | "LINK" | "OTHER";
+export type StudyMaterialStorageKind = "MANAGED_COPY" | "LINKED_LOCAL_FILE" | "EXTERNAL_URL";
+export type StudyMaterialStatus = "ACTIVE" | "ARCHIVED" | "MISSING" | "ERROR";
+export type MaterialTextStatus = "NOT_ATTEMPTED" | "AVAILABLE" | "TEXT_UNAVAILABLE" | "FAILED";
+export type StudyMaterialRelationType = "ROADMAP" | "STAGE" | "TOPIC" | "ACTIVITY" | "NOTEBOOK" | "NOTE" | "CARD";
+export interface StudyMaterialRelation { id: string; relationType: StudyMaterialRelationType; relationId: string; label: string; createdAt: string }
+export interface StudyMaterialRelationInput { relationType: StudyMaterialRelationType; relationId: string }
+export interface MaterialTextContent { materialId: string; status: MaterialTextStatus; text: string | null; pages: string[]; extractedAt: string | null; extractorVersion: string | null; charCount: number; isStale: boolean; errorCode: string | null }
+export interface StudyMaterial {
+  id: string;
+  title: string;
+  materialType: StudyMaterialType;
+  storageKind: StudyMaterialStorageKind;
+  externalUrl: string | null;
+  originalFilename: string | null;
+  mimeType: string | null;
+  fileSize: number | null;
+  checksumSha256: string | null;
+  sourceAuthor: string | null;
+  sourceTitle: string | null;
+  sourceYear: number | null;
+  description: string | null;
+  pageCount: number | null;
+  status: StudyMaterialStatus;
+  removed: boolean;
+  managedFileAvailable: boolean;
+  relations: StudyMaterialRelation[];
+  textContent: MaterialTextContent;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface StudyMaterialSummary { id: string; title: string; materialType: StudyMaterialType; storageKind: StudyMaterialStorageKind; originalFilename: string | null; sourceAuthor: string | null; status: StudyMaterialStatus; extractionStatus: MaterialTextStatus; extractionStale: boolean; relationLabels: string[]; updatedAt: string }
+export interface ImportStudyMaterialInput { id: string; title: string; sourcePath: string; storageKind: Exclude<StudyMaterialStorageKind, "EXTERNAL_URL">; sourceAuthor: string | null; sourceTitle: string | null; sourceYear: number | null; description: string | null; relations: StudyMaterialRelationInput[] }
+export interface AddLinkStudyMaterialInput { id: string; title: string; externalUrl: string; description: string | null; sourceAuthor: string | null; sourceTitle: string | null; sourceYear: number | null; relations: StudyMaterialRelationInput[] }
+export interface UpdateStudyMaterialInput { id: string; title: string; description: string | null; sourceAuthor: string | null; sourceTitle: string | null; sourceYear: number | null }
+export interface StudyMaterialListInput { query?: string | null; materialType?: StudyMaterialType | null; status?: StudyMaterialStatus | null; relationType?: StudyMaterialRelationType | null; relationId?: string | null; limit?: number; offset?: number }
+export interface ImportStudyMaterialResult { material: StudyMaterial; duplicate: boolean }
+export type StudyAIAction = "EXPLAIN" | "SUMMARIZE" | "QUIZ" | "GENERATE_CARDS" | "EVALUATE_ANSWER";
+export type StudyAIStatus = "SUCCESS" | "INVALID_OUTPUT" | "TIMEOUT" | "PROVIDER_ERROR" | "CANCELLED";
+export type StudyAIAssessment = "CORRECT" | "PARTIALLY_CORRECT" | "INCORRECT" | "INSUFFICIENT_CONTEXT";
+export interface StudyAIEntityContext { id: string | null; name: string | null }
+export interface StudyAIActivityContext extends StudyAIEntityContext { description: string | null; activityType: string | null }
+export interface StudyAINoteContext { id: string; title: string; content: string; notebookId: string | null; notebookTitle: string | null }
+export interface StudyAISessionContext { id: string; status: string; plannedFocusMinutes: number | null }
+export interface StudyAICardContext { id: string | null; front: string; back: string }
+export interface StudyAIReviewContext { question: string; expectedAnswer: string; userAnswer: string | null }
+export interface StudyAIMaterialContext { id: string; title: string; materialType: StudyMaterialType; selectedText: string; pageRange: { from: number; to: number } | null }
+export interface StudyAIContext {
+  selectedText?: string | null;
+  roadmap?: StudyAIEntityContext | null;
+  stage?: StudyAIEntityContext | null;
+  topic?: StudyAIEntityContext | null;
+  activity?: StudyAIActivityContext | null;
+  note?: StudyAINoteContext | null;
+  studySession?: StudyAISessionContext | null;
+  relatedCard?: StudyAICardContext | null;
+  review?: StudyAIReviewContext | null;
+  materials?: StudyAIMaterialContext[];
+}
+export interface StudyAIBuiltContext {
+  serialized: string;
+  contextTruncated: boolean;
+  source: "SELECTED_TEXT" | "MATERIAL" | "NOTE" | "ACTIVITY" | "TOPIC" | "REVIEW" | "CARD";
+  materialIds: string[];
+}
+export interface StudyAIQuizQuestion { question: string; expectedAnswer: string }
+export interface StudyAIGeneratedCard { front: string; back: string }
+export interface StudyAIEvaluation {
+  assessment: StudyAIAssessment;
+  explanation: string;
+  missingPoints: string[];
+  strengths: string[];
+  suggestedAnswer: string;
+}
+export interface StudyAIResult {
+  action: StudyAIAction;
+  status: StudyAIStatus;
+  content: string | null;
+  quiz: StudyAIQuizQuestion[] | null;
+  cards: StudyAIGeneratedCard[] | null;
+  evaluation: StudyAIEvaluation | null;
+  model: string;
+  promptVersion: string;
+  latencyMs: number;
+  contextTruncated: boolean;
+  materialIds: string[];
+  error: string | null;
+}
 export interface CurrentStudyPosition { roadmapId: string; stageId: string | null; topicId: string | null; activityId: string | null }
 export interface LearningEngineStatus { formulaVersion: string; integrationBaseline: number; currentIntegration: number; eventCount: number; lastRecalculatedAt: string | null; status: "ready" | "recalculating" | "error"; lastError: string | null }
 
@@ -176,6 +469,17 @@ export interface ExitReasonAggregate { reasonCode: string; count: number; averag
 export interface PositionDeteriorationConfig { trendWeight: number; momentumWeight: number; givebackWeight: number; vwapWeight: number; volatilityWeight: number; timeWeight: number; lowThreshold: number; moderateThreshold: number; highThreshold: number; criticalThreshold: number }
 export interface LifecycleIntelligenceReport { runId: string; experimentId: string; experimentName: string; datasetId: string; datasetName: string; asset: string; timeframe: string; agentId: string; lifecycleEngineVersion: string; deteriorationEngineVersion: string; status: string; createdAt: string; completedAt: string | null; summary: { totalLifecycles: number; openLifecycles: number; closedLifecycles: number; averageDurationMinutes: number; averagePnlPct: number; averageMfePct: number; averageMaePct: number; averageGivebackPct: number; lateReductionEvents: number; averageResponseDelayMinutes: number }; lateReduction: { totalHoldWhileLong: number; potentialLateReductions: number; ratePct: number; averageForward5: number; averageMae5: number; averageResponseDelayMinutes: number; topPositionHealth: string | null; topReasonCode: string | null }; config: PositionDeteriorationConfig; lifecycles: LifecycleSummary[]; events: LifecycleEventView[]; healthTrace: LifecycleHealthTrace[]; outcomes: LifecycleOutcome[]; healthOutcomes: LifecycleOutcomeAggregate[]; deteriorationOutcomes: LifecycleOutcomeAggregate[]; exitReasons: ExitReasonAggregate[] }
 export interface LifecycleIntelligenceComparison { developmentExperimentId: string; outOfSampleExperimentId: string; asset: string; timeframe: string; metrics: { label: string; developmentValue: number; outOfSampleValue: number }[]; deteriorationDistribution: { level: DeteriorationLevel; developmentCount: number; outOfSampleCount: number }[] }
+export type LifecycleValidationSourceRole = "DEVELOPMENT" | "OOS" | "HOLDOUT" | "ADDITIONAL_VALIDATION";
+export interface LifecycleValidationPeriodInput { experimentId: string; sourceRole: LifecycleValidationSourceRole }
+export interface LifecycleValidationBatchInput { name: string; periods: LifecycleValidationPeriodInput[] }
+export interface LifecycleValidationBatch { batchId: string; name: string; status: "CREATED" | "VALIDATING" | "COMPLETED" | "FAILED" | "PARTIAL"; asset: string; timeframe: string; agentId: string; agentVersion: string; lifecycleConfigVersion: string; deteriorationConfigVersion: string; holdDiagnosticsVersion: string; executionModelVersion: string; validationEngineVersion: string; datasetCount: number; experimentCount: number; lifecycleCount: number; createdAt: string; startedAt: string | null; completedAt: string | null }
+export interface ValidationDistribution { average: number; median: number; p25: number | null; p75: number | null; p90: number | null; minimum: number; maximum: number }
+export interface LifecycleValidationPeriod { periodId: string; experimentId: string; experimentName: string; datasetId: string; datasetName: string; sourceRole: LifecycleValidationSourceRole; startAt: string; endAt: string; candleCount: number; sessionCount: number; lifecycleCount: number; lifecycleRunId: string; closedCount: number; openCount: number; duration: ValidationDistribution; pnl: ValidationDistribution; mfe: ValidationDistribution; mae: ValidationDistribution; giveback: ValidationDistribution; lateReductionEvents: number; lateReductionLifecycles: number; eligibleLifecycles: number; eventLateReductionRatePct: number; lifecycleLateReductionRatePct: number; averageForward5: number | null; averageMae5: number | null; responseDelay: ValidationDistribution; unresolvedResponseCount: number; overlapStatus: "NON_OVERLAPPING" | "TOUCHING_BOUNDARY" | "OVERLAPPING" | "DUPLICATE_RANGE"; context: { periodReturnPct: number; realizedVolatilityPct: number; averageAtrPct: number | null; trendProxy: string; averageRelativeVolume: number | null } }
+export interface LifecycleComponentSnapshot { trend: number; momentum: number; giveback: number; vwap: number; volatility: number; time: number }
+export interface LifecycleValidationLifecycle { periodId: string; sourceRole: LifecycleValidationSourceRole; experimentId: string; lifecycleId: string; entryAt: string; exitAt: string | null; status: "OPEN" | "CLOSED"; durationMinutes: number; pnlPct: number | null; mfePct: number; maePct: number; givebackPct: number; worstHealth: PositionHealth; dominantHealth: PositionHealth; healthDistribution: { strongPct: number; healthyPct: number; weakeningPct: number; deterioratingPct: number; criticalPct: number }; maxDeteriorationScore: number; maxDeteriorationLevel: DeteriorationLevel; firstTimestampAtMaxLevel: string | null; lateReductionEvents: number; hasLateReduction: boolean; responseDelayMinutes: number | null; responseStatus: "RESOLVED" | "UNRESOLVED" | "NOT_APPLICABLE"; responseFromFirstDeteriorationMinutes: number | null; responseFromHighMinutes: number | null; responseFromCriticalMinutes: number | null; overnight: boolean; censoredAtDatasetEnd: boolean; averageComponents: LifecycleComponentSnapshot; maximumComponents: LifecycleComponentSnapshot; componentAtFirstHigh: LifecycleComponentSnapshot | null; componentAtFirstCritical: LifecycleComponentSnapshot | null; dominantDeteriorationComponent: string }
+export interface LifecycleDatasetQuality { datasetId: string; datasetName: string; status: "PASS" | "PASS_WITH_WARNINGS" | "FAIL"; candleCount: number; sessionCount: number; firstAt: string; lastAt: string; nullValueCount: number; duplicateTimestampCount: number; outOfOrderCount: number; nonpositivePriceCount: number; negativeVolumeCount: number; invalidHighCount: number; invalidLowCount: number; expectedGapCount: number; unexpectedGapCount: number; market: string; timezone: string; sessionType: string; sourceFileAvailable: boolean; warnings: string[]; errors: string[] }
+export interface LifecycleValidationAudit { reusedExperiments: number; rebuiltArtifacts: number; newLlmRuns: number; failedPeriods: number; skippedPeriods: number; durationMs: number; model: string; promptVersion: string; contextVersion: string; triggerVersion: string; positionSizingVersion: string; riskPolicyVersion: string; executionModelVersion: string; feePct: number; slippagePct: number }
+export interface MultiPeriodLifecycleValidationReport { batch: LifecycleValidationBatch; sample: { datasets: number; periods: number; experiments: number; lifecycles: number; closed: number; open: number; censored: number; dateCoverageStart: string; dateCoverageEnd: string; lifecycleLateReductionRatePct: number; eventLateReductionRatePct: number; medianResponseDelayMinutes: number | null; scoreStability: string; sampleStatus: string }; periods: LifecycleValidationPeriod[]; lifecycles: LifecycleValidationLifecycle[]; deteriorationByPeriod: { periodId: string; level: DeteriorationLevel; eventCount: number; eventPct: number; lifecycleCount: number; lifecycleReachPct: number }[]; deteriorationOutcomes: { label: string; lifecycleCount: number; averagePnlPct: number | null; medianPnlPct: number | null; averageMfePct: number; averageMaePct: number; averageGivebackPct: number; lateReductionRatePct: number }[]; healthOutcomes: { label: string; lifecycleCount: number; averagePnlPct: number | null; medianPnlPct: number | null; averageMfePct: number; averageMaePct: number; averageGivebackPct: number; lateReductionRatePct: number }[]; components: { periodId: string | null; component: string; lifecycleCount: number; averageValue: number; maximumValue: number; averagePnlPct: number | null; averageMaePct: number; averageGivebackPct: number; lateReductionRatePct: number }[]; consistency: { label: string; values: number[]; median: number; minimum: number; maximum: number; dispersion: number }[]; evidence: { sampleSize: string; periodCoverage: string; lateReduction: string; deteriorationStability: string; healthOutcomeRelation: string; componentConsistency: string; givebackConsistency: string }; outlierSensitivity: { metric: string; lifecycleId: string | null; fullAverage: number; withoutLargestOutlierAverage: number; delta: number }[]; quality: LifecycleDatasetQuality[]; audit: LifecycleValidationAudit; warnings: string[]; postDecisionOnly: true }
 export interface MarketRiskProfile { id: string; name: string; maxPositionPct: number; maxTotalExposurePct: number; maxDailyLossPct: number; maxDrawdownPct: number; maxTradesPerDay: number | null; allowLeverage: boolean; allowShort: boolean; allowedAssets: string[] }
 export interface ImportMarketDatasetInput { path: string; name: string; asset: string; timeframe: MarketTimeframe; currency?: string; market?: string; timezone?: string; sessionType?: string }
 export interface MarketExperimentInput { name: string; datasetId: string; riskProfileId: string; agentIds: string[]; initialCapital: number; randomSeed: number; feePct: number; slippagePct: number }

@@ -1,5 +1,6 @@
-use super::ai_models::*;
+use super::{ai_models::*, daily_models::Task, daily_repository};
 use rusqlite::{params, Connection, OptionalExtension};
+use std::collections::HashSet;
 
 pub fn get_settings(connection: &Connection) -> Result<AiSettings, String> {
     connection.query_row(
@@ -71,6 +72,40 @@ pub fn delete_conversation(connection: &Connection, id: &str) -> Result<(), Stri
     Ok(())
 }
 
+pub fn clear_conversation_messages(
+    connection: &mut Connection,
+    conversation_id: &str,
+) -> Result<usize, String> {
+    validate_id(conversation_id)?;
+    let transaction = connection.transaction().map_err(err)?;
+    let exists = transaction
+        .query_row(
+            "SELECT 1 FROM conversations WHERE id=?1",
+            [conversation_id],
+            |_| Ok(()),
+        )
+        .optional()
+        .map_err(err)?
+        .is_some();
+    if !exists {
+        return Err("Conversa não encontrada".into());
+    }
+    let removed = transaction
+        .execute(
+            "DELETE FROM messages WHERE conversation_id=?1",
+            [conversation_id],
+        )
+        .map_err(err)?;
+    transaction
+        .execute(
+            "UPDATE conversations SET updated_at=CURRENT_TIMESTAMP WHERE id=?1",
+            [conversation_id],
+        )
+        .map_err(err)?;
+    transaction.commit().map_err(err)?;
+    Ok(removed)
+}
+
 pub fn list_messages(
     connection: &Connection,
     conversation_id: &str,
@@ -118,6 +153,110 @@ pub fn add_message(connection: &mut Connection, input: &MessageInput) -> Result<
             map_message,
         )
         .map_err(err)
+}
+
+pub fn save_task_references(
+    connection: &mut Connection,
+    input: &SaveTaskReferencesInput,
+) -> Result<usize, String> {
+    validate_id(&input.conversation_id)?;
+    validate_id(&input.source_message_id)?;
+    if input.task_ids.is_empty() || input.task_ids.len() > 50 {
+        return Err("A lista de referências deve possuir entre 1 e 50 tarefas".into());
+    }
+    let unique = input.task_ids.iter().collect::<HashSet<_>>();
+    if unique.len() != input.task_ids.len() {
+        return Err("A lista de referências contém tarefas duplicadas".into());
+    }
+    let transaction = connection.transaction().map_err(err)?;
+    let message = transaction
+        .query_row(
+            "SELECT conversation_id,role FROM messages WHERE id=?1",
+            [&input.source_message_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()
+        .map_err(err)?
+        .ok_or_else(|| "Mensagem de referência não encontrada".to_string())?;
+    if message.0 != input.conversation_id || message.1 != "assistant" {
+        return Err("A mensagem não pode registrar referências desta conversa".into());
+    }
+    transaction
+        .execute(
+            "DELETE FROM ai_entity_references WHERE source_message_id=?1",
+            [&input.source_message_id],
+        )
+        .map_err(err)?;
+    for (index, task_id) in input.task_ids.iter().enumerate() {
+        validate_id(task_id)?;
+        let title = transaction
+            .query_row("SELECT title FROM tasks WHERE id=?1", [task_id], |row| {
+                row.get::<_, String>(0)
+            })
+            .optional()
+            .map_err(err)?
+            .ok_or_else(|| format!("Tarefa de referência não encontrada: {task_id}"))?;
+        transaction
+            .execute(
+                "INSERT INTO ai_entity_references(conversation_id,source_message_id,position,entity_type,entity_id,entity_label) VALUES(?1,?2,?3,'task',?4,?5)",
+                params![input.conversation_id, input.source_message_id, index as i64 + 1, task_id, title],
+            )
+            .map_err(err)?;
+    }
+    transaction.commit().map_err(err)?;
+    Ok(input.task_ids.len())
+}
+
+pub fn complete_referenced_task(
+    connection: &mut Connection,
+    conversation_id: &str,
+    position: i64,
+) -> Result<Task, String> {
+    validate_id(conversation_id)?;
+    if !(1..=50).contains(&position) {
+        return Err("A posição informada não existe na lista".into());
+    }
+    let transaction = connection.transaction().map_err(err)?;
+    let task_id = transaction
+        .query_row(
+            "SELECT reference.entity_id
+             FROM ai_entity_references reference
+             JOIN messages message ON message.id=reference.source_message_id
+             WHERE reference.conversation_id=?1 AND reference.entity_type='task' AND reference.position=?2
+             ORDER BY message.rowid DESC LIMIT 1",
+            params![conversation_id, position],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(err)?
+        .ok_or_else(|| "Não encontrei uma lista recente com essa posição nesta conversa".to_string())?;
+    let current = daily_repository::get_task(&transaction, &task_id)?
+        .ok_or_else(|| "A tarefa referenciada não existe mais".to_string())?;
+    if current.status == "completed" {
+        return Err(format!("A demanda '{}' já está concluída", current.title));
+    }
+    if current.status == "cancelled" {
+        return Err(format!(
+            "A demanda '{}' está cancelada e não pode ser concluída",
+            current.title
+        ));
+    }
+    transaction
+        .execute(
+            "UPDATE tasks SET status='completed',completed_at=COALESCE(completed_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND status NOT IN ('completed','cancelled')",
+            [&task_id],
+        )
+        .map_err(err)?;
+    transaction
+        .execute(
+            "INSERT INTO task_action_history(task_id,task_title,action,source,conversation_id,previous_status,new_status) VALUES(?1,?2,'completed','ai',?3,?4,'completed')",
+            params![task_id, current.title, conversation_id, current.status],
+        )
+        .map_err(err)?;
+    let completed = daily_repository::get_task(&transaction, &task_id)?
+        .ok_or_else(|| "A tarefa concluída não foi encontrada".to_string())?;
+    transaction.commit().map_err(err)?;
+    Ok(completed)
 }
 
 fn validate_settings(input: &AiSettingsInput) -> Result<(), String> {
@@ -236,11 +375,84 @@ mod tests {
                     .collect::<Vec<_>>(),
                 vec!["user", "assistant"]
             );
+            assert_eq!(
+                clear_conversation_messages(&mut connection, "conversation-1").unwrap(),
+                2
+            );
+            assert!(list_messages(&connection, "conversation-1")
+                .unwrap()
+                .is_empty());
+            assert!(get_conversation(&connection, "conversation-1")
+                .unwrap()
+                .is_some());
+            assert!(clear_conversation_messages(&mut connection, "missing").is_err());
             delete_conversation(&connection, "conversation-1").unwrap();
             assert!(list_messages(&connection, "conversation-1")
                 .unwrap()
                 .is_empty());
         }
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn task_references_are_conversation_scoped_and_completion_is_audited() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        database::initialize(&mut connection).unwrap();
+        connection.execute("INSERT INTO tasks(id,title,status,priority) VALUES('critical-1','Demanda crítica','pending','critical')", []).unwrap();
+        create_conversation(
+            &connection,
+            &ConversationInput {
+                id: "conversation-ref".into(),
+                title: "Demandas".into(),
+            },
+        )
+        .unwrap();
+        add_message(
+            &mut connection,
+            &MessageInput {
+                id: "assistant-list".into(),
+                conversation_id: "conversation-ref".into(),
+                role: "assistant".into(),
+                content: "1. Demanda crítica".into(),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            save_task_references(
+                &mut connection,
+                &SaveTaskReferencesInput {
+                    conversation_id: "conversation-ref".into(),
+                    source_message_id: "assistant-list".into(),
+                    task_ids: vec!["critical-1".into()],
+                },
+            )
+            .unwrap(),
+            1
+        );
+
+        let task = complete_referenced_task(&mut connection, "conversation-ref", 1).unwrap();
+        assert_eq!(task.status, "completed");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT source FROM task_action_history WHERE task_id='critical-1'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .unwrap(),
+            "ai"
+        );
+        assert!(
+            complete_referenced_task(&mut connection, "conversation-ref", 1)
+                .unwrap_err()
+                .contains("já está concluída")
+        );
+
+        clear_conversation_messages(&mut connection, "conversation-ref").unwrap();
+        assert!(
+            complete_referenced_task(&mut connection, "conversation-ref", 1)
+                .unwrap_err()
+                .contains("lista recente")
+        );
     }
 }

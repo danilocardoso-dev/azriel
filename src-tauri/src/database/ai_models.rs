@@ -54,3 +54,11 @@ pub struct MessageInput {
     pub role: String,
     pub content: String,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveTaskReferencesInput {
+    pub conversation_id: String,
+    pub source_message_id: String,
+    pub task_ids: Vec<String>,
+}

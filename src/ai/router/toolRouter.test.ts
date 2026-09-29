@@ -5,10 +5,12 @@ describe("Tool Router", () => {
   it.each([
     ["O que tenho para hoje?", "get_today_tasks"],
     ["Tenho alguma atividade atrasada?", "get_overdue_tasks"],
+    ["Quais são minhas demandas críticas?", "get_critical_tasks"],
+    ["Liste minhas tarefas CRITICAS", "get_critical_tasks"],
+    ["Quais são minhas demandas prioritárias?", "get_priority_tasks"],
+    ["Quais são minhas prioridades?", "get_priority_tasks"],
+    ["Tenho pendências de prioridade alta?", "get_priority_tasks"],
     ["Quais são meus projetos?", "list_projects"],
-    ["Qual minha maior lacuna?", "get_knowledge_gaps"],
-    ["Como está meu Mapa Stark?", "get_stark_map"],
-    ["Como está minha formação?", "get_current_education"],
     ["Azriel, situação.", "get_daily_operations_summary"],
     ["Quais processos estão consumindo mais memória?", "get_process_summary"],
     ["Como está o uso da CPU?", "get_cpu_status"],
@@ -17,64 +19,33 @@ describe("Tool Router", () => {
     ["O Ollama está disponível?", "get_ollama_status"],
     ["Quais rotinas eu tenho?", "list_routines"],
     ["Quais roadmaps estão ativos?", "list_study_roadmaps"],
-    ["Quais tópicos ainda não comecei?", "list_study_roadmaps"],
+    ["Como estão meus Estudos?", "list_study_roadmaps"],
+    ["Como está meu antigo Mapa Stark?", "list_study_roadmaps"],
     ["Como está meu roadmap de Controle e Automação?", "get_study_roadmap"],
     ["Qual é minha próxima atividade?", "get_current_study_position"],
     ["Onde parei nos estudos?", "get_current_study_position"],
-    ["Quais tópicos já concluí?", "get_current_study_position"],
-    ["Quais pesquisas estão relacionadas a Bioinformática?", "list_research_items"],
-    ["Por que minha cobertura em Eletrônica está nesse nível?", "explain_knowledge_level"],
-    ["Qual modelo está carregado?", "get_loaded_model"],
-    ["Quantos componentes ele possui?", "get_model_summary"],
-    ["Encontre o rotor.", "find_component"],
-    ["Selecione o rotor.", "select_component"],
-    ["Isole o rotor.", "isolate_component"],
-    ["Exploda a montagem.", "explode_all"],
-    ["Reconstrua a montagem.", "reassemble"],
-    ["Qual peça está selecionada?", "get_selected_component"],
   ])("roteia %s para %s", (query, tool) => expect(routeIntent(query).tools).toContain(tool));
 
-  it.each([
-    ["Qual é a função desta peça?", "get_component_semantics"],
-    ["Quais subsistemas existem?", "get_subsystems"],
-    ["Quais componentes pertencem ao subsistema Drive Train?", "get_subsystem_components"],
-    ["Quais relações possui esse componente?", "get_component_relationships"],
-    ["Quais componentes ainda não foram classificados?", "get_unclassified_components"],
-    ["Qual a cobertura semântica?", "get_semantic_coverage"],
-    ["Resuma a estrutura da montagem.", "get_assembly_graph_summary"],
-  ])("roteia leitura semântica %s", (query, tool) => expect(routeIntent(query).tools).toEqual([tool]));
+  it("não confunde criticidade geral ou lacunas críticas com demandas críticas", () => {
+    expect(routeIntent("O que é criticidade?").tools).toEqual([]);
+    expect(routeIntent("Quais são minhas lacunas críticas?").tools).toContain("get_knowledge_gaps");
+    expect(routeIntent("Quais são minhas lacunas críticas?").tools).not.toContain("get_critical_tasks");
+  });
 
-  it("resolve fatores absolutos e incrementais no software", () => {
-    expect(routeIntent("Abra em 50%.")).toMatchObject({ tools: ["set_explosion_factor"], factor: 0.5 });
-    expect(routeIntent("Exploda a montagem em 70%.")).toMatchObject({ tools: ["set_explosion_factor"], factor: 0.7 });
-    expect(routeIntent("Abra mais.")).toMatchObject({ tools: ["set_explosion_factor"], delta: 0.15 });
-    expect(routeIntent("Feche um pouco.")).toMatchObject({ tools: ["set_explosion_factor"], delta: -0.15 });
+  it("mantém o resumo geral alinhado aos módulos ativos", () => {
+    const route = routeIntent("Azriel, situação.");
+    expect(route.tools).toContain("list_study_roadmaps");
+    expect(route.tools).not.toContain("get_current_education");
   });
 
   it.each([
-    ["Mostre todos os componentes.", "show_all_components"],
-    ["Oculte o rotor.", "hide_component"],
-    ["Mostre o rotor.", "show_component"],
-    ["Foque o rotor.", "focus_component"],
-    ["Exploda o conjunto do eixo.", "explode_component"],
-    ["Resete a visualização do modelo.", "reset_model_view"],
-  ])("roteia ação visual %s", (query, tool) => expect(routeIntent(query).tools).toEqual([tool]));
-
-  it("mantém referências contextuais sem inventar um ID", () => {
-    expect(routeIntent("Isole essa peça.")).toMatchObject({ tools: ["isolate_component"], term: undefined });
-    expect(routeIntent("Esse componente está visível?")).toMatchObject({ tools: ["get_component_details"], term: undefined });
-    expect(routeIntent("Azriel, o que é essa peça?")).toMatchObject({ tools: ["get_component_details"] });
-    expect(routeIntent("Quantos filhos ela possui?")).toMatchObject({ tools: ["get_component_details"], term: undefined });
-  });
-
-  it("extrai o nome real do componente sem delegar IDs ao modelo", () => {
-    expect(routeIntent("Destaque o rotor.")).toMatchObject({ tools: ["select_component"], term: "rotor" });
-    expect(routeIntent("Detalhes do rotor.")).toMatchObject({ tools: ["get_component_details"], term: "rotor" });
-  });
-
-  it("não captura consultas de outros módulos como ações do Engineering", () => {
-    expect(routeIntent("Mostre meu Mapa Stark.").tools).toContain("get_stark_map");
-    expect(routeIntent("Mostre a pasta do ArcCore.").tools).toEqual(["reveal_workspace"]);
+    "Como está minha formação?",
+    "Exploda a montagem.",
+    "Selecione o rotor.",
+    "Qual modelo está carregado?",
+  ])("não roteia recursos removidos ou congelados: %s", (query) => {
+    const route = routeIntent(query);
+    expect(route.tools.some((tool) => tool.includes("education") || tool.includes("component") || tool.includes("model") || tool.includes("explosion") || tool === "explode_all")).toBe(false);
   });
 
   it("combina domínios relacionados a bioinformática", () => {
@@ -90,6 +61,25 @@ describe("Tool Router", () => {
   });
 
   it.each([
+    ["Finaliza a 1 para mim.", 1],
+    ["Conclua a tarefa 2.", 2],
+    ["Marque a terceira como concluída.", 3],
+  ])("resolve conclusão explícita por referência: %s", (query, position) => {
+    expect(routeIntent(query)).toMatchObject({ intent: "complete_task_reference", scope: "azriel", tools: ["complete_task"], referencePosition: position });
+  });
+
+  it.each([
+    "Talvez eu finalize a 1 depois.",
+    "A primeira está quase pronta.",
+  ])("não conclui tarefa com linguagem vaga: %s", (query) => {
+    expect(routeIntent(query).tools).not.toContain("complete_task");
+  });
+
+  it("mantém comando interno sem referência fora do conhecimento geral", () => {
+    expect(routeIntent("Finalize essa demanda.")).toMatchObject({ intent: "unsupported_internal", scope: "azriel", tools: [] });
+  });
+
+  it.each([
     "Explique o que é física quântica.",
     "Por que o céu é azul?",
     "Quanto é 5 * 542?",
@@ -100,19 +90,13 @@ describe("Tool Router", () => {
     expect(route.tools).toEqual([]);
   });
 
-  it("só consulta o estado interno quando o Azriel é mencionado", () => {
-    expect(routeIntent("Qual é o status do Azriel?")).toMatchObject({ scope: "azriel", intent: "azriel_status" });
-  });
-
   it.each([
     ["Azriel, abra o Visual Studio Code.", "open_application"],
     ["Abra o workspace do Azriel.", "open_workspace"],
     ["Abra o GeneScope.", "open_project"],
     ["Mostre a pasta do ArcCore.", "reveal_workspace"],
     ["Abra o GitHub do Azriel.", "open_registered_url"],
-  ])("aceita intenção explícita: %s", (query, tool) => {
-    expect(routeIntent(query).tools).toEqual([tool]);
-  });
+  ])("aceita intenção explícita: %s", (query, tool) => expect(routeIntent(query).tools).toEqual([tool]));
 
   it.each([
     "Talvez eu trabalhe no GeneScope hoje.",

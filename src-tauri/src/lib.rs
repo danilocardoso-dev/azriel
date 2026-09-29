@@ -4,13 +4,14 @@ mod automation_executor;
 mod automation_policy;
 mod commands;
 mod daily_commands;
-mod database;
+pub mod database;
 mod engineering_commands;
 mod git_monitor;
 mod market_commands;
 mod ollama;
 mod routine_commands;
 mod stark_commands;
+mod study_commands;
 mod system_commands;
 mod system_monitor;
 
@@ -21,6 +22,7 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(system_monitor::SystemMonitorState(std::sync::Mutex::new(
             system_monitor::SystemMonitor::new(),
         )))
@@ -80,6 +82,57 @@ pub fn run() {
             stark_commands::get_stark_summary,
             stark_commands::get_learning_engine_status,
             stark_commands::rebuild_learning_engine,
+            study_commands::start_study_session,
+            study_commands::pause_study_session,
+            study_commands::resume_study_session,
+            study_commands::complete_study_session,
+            study_commands::cancel_study_session,
+            study_commands::get_active_study_session,
+            study_commands::list_study_sessions,
+            study_commands::get_study_today_summary,
+            study_commands::get_study_settings,
+            study_commands::update_study_settings,
+            study_commands::list_study_notebooks,
+            study_commands::get_study_notebook,
+            study_commands::save_study_notebook,
+            study_commands::archive_study_notebook,
+            study_commands::restore_study_notebook,
+            study_commands::delete_study_notebook,
+            study_commands::get_study_note,
+            study_commands::save_study_note,
+            study_commands::create_study_note_from_material,
+            study_commands::delete_study_note,
+            study_commands::list_study_notes,
+            study_commands::search_study_notes,
+            study_commands::list_recent_study_notes,
+            study_commands::save_study_card,
+            study_commands::save_study_cards,
+            study_commands::get_study_card,
+            study_commands::list_study_cards,
+            study_commands::set_study_card_status,
+            study_commands::delete_study_card,
+            study_commands::get_study_review_dashboard_summary,
+            study_commands::get_study_review_queue,
+            study_commands::start_study_review_session,
+            study_commands::get_active_study_review_session,
+            study_commands::submit_study_review_result,
+            study_commands::complete_study_review_session,
+            study_commands::cancel_study_review_session,
+            study_commands::get_study_review_summary,
+            study_commands::list_study_review_sessions,
+            study_commands::import_study_material,
+            study_commands::add_study_link_material,
+            study_commands::list_study_materials,
+            study_commands::get_study_material,
+            study_commands::update_study_material,
+            study_commands::set_study_material_status,
+            study_commands::remove_study_material,
+            study_commands::delete_managed_study_material_file,
+            study_commands::associate_study_material,
+            study_commands::dissociate_study_material,
+            study_commands::reprocess_study_material_text,
+            study_commands::preview_study_material,
+            study_commands::open_study_material,
             daily_commands::list_tasks,
             daily_commands::get_task,
             daily_commands::save_task,
@@ -112,9 +165,15 @@ pub fn run() {
             ai_commands::list_conversations,
             ai_commands::create_conversation,
             ai_commands::delete_conversation,
+            ai_commands::clear_conversation_messages,
             ai_commands::list_messages,
             ai_commands::add_message,
+            ai_commands::save_ai_task_references,
+            ai_commands::complete_ai_referenced_task,
             ai_commands::ollama_status,
+            ai_commands::get_local_ai_model_status,
+            ai_commands::load_local_ai_model,
+            ai_commands::unload_local_ai_model,
             ai_commands::ollama_chat,
             system_commands::system_snapshot,
             system_commands::list_processes,
@@ -165,6 +224,11 @@ pub fn run() {
             market_commands::generate_market_lifecycle_intelligence,
             market_commands::get_market_lifecycle_intelligence,
             market_commands::compare_market_lifecycle_intelligence,
+            market_commands::run_market_multi_period_lifecycle_validation,
+            market_commands::list_market_multi_period_lifecycle_validations,
+            market_commands::get_market_multi_period_lifecycle_validation,
+            market_commands::resume_market_multi_period_lifecycle_validation,
+            market_commands::export_market_multi_period_lifecycle_validation,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao executar o Azriel");

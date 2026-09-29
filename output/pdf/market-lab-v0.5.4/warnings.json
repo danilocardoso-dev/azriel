@@ -1,0 +1,7 @@
+[
+  "AAPL_real_15m_20sessions_2026-03-12_to_2026-04-09_treated: SOURCE_FILE_UNAVAILABLE: quality gate executado sobre candles canônicos persistidos",
+  "AAPL_real_15m_OOS_20sessions_2026-04-10_to_2026-05-07_treated: SOURCE_FILE_UNAVAILABLE: quality gate executado sobre candles canônicos persistidos",
+  "OPEN_AT_END / CENSORED_AT_DATASET_END presente; PnL realizado usa somente CLOSED",
+  "INSUFFICIENT SAMPLE: menos de 20 lifecycles independentes",
+  "INSUFFICIENT_PERIOD_COVERAGE: 2 de 6 períodos desejados"
+]

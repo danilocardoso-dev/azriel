@@ -3,6 +3,15 @@ import type { AIToolName, RoutedIntent } from "../../types";
 const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
 const domains = ["bioinformática", "genética", "biologia molecular", "iot", "eletrônica", "robótica", "inteligência artificial", "big data", "biotecnologia"];
 const unique = (tools: AIToolName[]) => [...new Set(tools)];
+const ENGINEERING_VIEW_ENABLED = false;
+const ordinalPositions: Record<string, number> = { primeira: 1, primeiro: 1, segunda: 2, segundo: 2, terceira: 3, terceiro: 3, quarta: 4, quarto: 4, quinta: 5, quinto: 5, sexta: 6, sexto: 6, setima: 7, setimo: 7, oitava: 8, oitavo: 8, nona: 9, nono: 9, decima: 10, decimo: 10 };
+
+const referencePosition = (value: string) => {
+  const numeric = value.match(/\b([1-9]|[1-4][0-9]|50)\b/);
+  if (numeric) return Number(numeric[1]);
+  const word = Object.keys(ordinalPositions).find((candidate) => new RegExp(`\\b${candidate}\\b`).test(value));
+  return word ? ordinalPositions[word] : undefined;
+};
 
 function termFrom(query: string) {
   const normalized = normalize(query);
@@ -58,7 +67,14 @@ export function routeIntent(query: string): RoutedIntent {
   const value = normalize(query);
   const term = termFrom(query);
   if (!value) return { intent: "empty", scope: "general", tools: [] };
-  const engineering = engineeringIntent(value);
+  const explicitTaskCompletion = /^(?:azriel\s+)?(?:finaliza|finalize|conclua|concluir|marque)\b/.test(value) && (/(?:\bconcluid[ao]\b|\bfinalizad[ao]\b)/.test(value) || /\b(?:a|o|tarefa|demanda|pendencia)\b/.test(value));
+  if (explicitTaskCompletion) {
+    const position = referencePosition(value);
+    return position
+      ? { intent: "complete_task_reference", scope: "azriel", tools: ["complete_task"], referencePosition: position }
+      : { intent: "unsupported_internal", scope: "azriel", tools: [] };
+  }
+  const engineering = ENGINEERING_VIEW_ENABLED ? engineeringIntent(value) : null;
   if (engineering) return engineering;
   const explicitOpen = /^(?:azriel\s+)?(?:abra|abrir)\b/.test(value);
   const explicitReveal = /^(?:azriel\s+)?(?:mostre|mostrar|revele|revelar)\b/.test(value) && value.includes("pasta");
@@ -70,7 +86,7 @@ export function routeIntent(query: string): RoutedIntent {
   if (explicitOpen && /(aplicativo|programa|visual studio code|vscode|photoshop|chrome|ollama)\b/.test(value)) return { intent: "open_application", scope: "azriel", term: value, tools: ["open_application"] };
   if (explicitOpen) return { intent: "open_project", scope: "azriel", term: value, tools: ["open_project"] };
   if (value === "situacao" || value.includes("azriel situacao") || value.includes("resumo da situacao")) {
-    return { intent: "situation", scope: "azriel", tools: ["get_daily_operations_summary", "get_today_tasks", "get_overdue_tasks", "list_projects", "get_knowledge_gaps", "get_current_education", "get_system_status", "list_workspaces", "get_ollama_status"] };
+    return { intent: "situation", scope: "azriel", tools: ["get_daily_operations_summary", "get_today_tasks", "get_overdue_tasks", "list_projects", "list_study_roadmaps", "get_system_status", "list_workspaces", "get_ollama_status"] };
   }
   if (value.includes("process")) return { intent: "processes", scope: "azriel", tools: ["get_process_summary"] };
   if (value.includes("cpu") || value.includes("processador")) return { intent: "cpu", scope: "azriel", tools: ["get_cpu_status"] };
@@ -81,30 +97,27 @@ export function routeIntent(query: string): RoutedIntent {
   if (value.includes("commit")) return { intent: "git_commits", scope: "azriel", term: value, tools: ["list_workspaces", "get_recent_commits"] };
   if (value.includes("git") || value.includes("repositorio")) return { intent: "git", scope: "azriel", term: value, tools: ["list_workspaces", "get_git_status"] };
   if (value.includes("workspace") || value.includes("pasta autorizada")) return { intent: "workspaces", scope: "azriel", term: value, tools: ["list_workspaces", "get_workspace_status"] };
-  if (value.includes("por que") && (value.includes("cobertura") || value.includes("profundidade") || value.includes("nivel") || value.includes("aument"))) return { intent: "knowledge_explanation", scope: "azriel", term, tools: ["explain_knowledge_level"] };
-  if (value.includes("contribuiu") || value.includes("evidencia")) return { intent: "knowledge_evidence", scope: "azriel", term, tools: ["get_knowledge_evidence"] };
-  if (value.includes("evoluiram") || (value.includes("eventos") && value.includes("conhecimento"))) return { intent: "recent_learning", scope: "azriel", tools: ["get_recent_knowledge_events"] };
   if ((value.includes("onde") && (value.includes("parei") || value.includes("estou"))) || value.includes("proxima atividade") || value.includes("roadmap estou estudando") || (value.includes("topicos") && value.includes("conclui")) || value.includes("quanto falta")) return { intent: "current_study_position", scope: "azriel", term, tools: ["get_current_study_position"] };
   if (value.includes("dominio") || (value.includes("nivel") && value.includes("topico"))) return { intent: "topic_mastery", scope: "azriel", term, tools: ["get_topic_mastery"] };
   if (value.includes("roadmap")) {
     const details = value.includes("como esta") || value.includes("topico") || value.includes("atividade") || value.includes("conhecimento");
-    if (value.includes("contribuiu") || value.includes("aprendizado") || value.includes("evolucao")) return { intent: "roadmap_learning", scope: "azriel", term, tools: ["get_roadmap_learning_status"] };
     return { intent: details ? "roadmap_details" : "roadmaps", scope: "azriel", term, tools: [details ? "get_study_roadmap" : "list_study_roadmaps"] };
   }
   if (value.includes("topico") && (value.includes("nao comecei") || value.includes("nao iniciado"))) return { intent: "roadmap_topics_not_started", scope: "azriel", tools: ["list_study_roadmaps"] };
-  if ((value.includes("pesquisa") || value.includes("pesquisas")) && (value.includes("minha") || value.includes("minhas") || value.includes("relacionad") || term)) return { intent: "research", scope: "azriel", term, tools: ["list_research_items"] };
   if (value.includes("rotina")) return { intent: "routines", scope: "azriel", term: value, tools: ["list_routines"] };
   if (value.includes("projet") && value.includes("lacuna")) return { intent: "projects_for_gaps", scope: "azriel", tools: ["list_projects", "list_knowledge_areas", "get_knowledge_gaps"] };
   if ((value.includes("fazendo") || value.includes("atividade") || value.includes("trabalhando")) && term) {
     return { intent: "cross_domain_activity", scope: "azriel", term, tools: ["list_projects", "list_knowledge_areas", "get_today_tasks", "get_upcoming_tasks", "get_recent_notes"] };
   }
+  const taskQuery = /\b(demanda|demandas|tarefa|tarefas|pendencia|pendencias|prioridade|prioridades)\b/.test(value);
+  if (taskQuery && /\b(critica|criticas|critico|criticos)\b/.test(value)) return { intent: "critical_tasks", scope: "azriel", tools: ["get_critical_tasks"] };
+  if (taskQuery && (/\b(prioritaria|prioritarias|prioritario|prioritarios|prioridade|prioridades)\b/.test(value) || value.includes("prioridade alta"))) return { intent: "priority_tasks", scope: "azriel", tools: ["get_priority_tasks"] };
   if (value.includes("atrasad")) return { intent: "overdue", scope: "azriel", tools: ["get_overdue_tasks"] };
   if (value.includes("hoje")) return { intent: "today", scope: "azriel", tools: ["get_today_tasks"] };
   if (value.includes("proxim")) return { intent: "upcoming", scope: "azriel", tools: ["get_upcoming_tasks"] };
   if (value.includes("nota")) return { intent: "notes", scope: "azriel", tools: ["get_recent_notes"] };
-  if (value.includes("mapa stark") || value.includes("stark")) return { intent: "stark_map", scope: "azriel", tools: ["get_stark_map"] };
+  if (value.includes("estudos") || value.includes("mapa stark") || value.includes("stark")) return { intent: "studies", scope: "azriel", tools: ["list_study_roadmaps"] };
   if (value.includes("maior lacuna") || value.includes("lacuna")) return { intent: "knowledge_gaps", scope: "azriel", tools: ["get_knowledge_gaps"] };
-  if (value.includes("formacao") || value.includes("faculdade") || value.includes("curso")) return { intent: "education", scope: "azriel", tools: ["get_current_education", "get_planned_education"] };
   if (value.includes("projet")) {
     const tools: AIToolName[] = term ? ["list_projects", "list_knowledge_areas"] : ["list_projects"];
     return { intent: term ? "projects_by_knowledge" : "projects", scope: "azriel", term, tools: unique(tools) };

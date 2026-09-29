@@ -4,7 +4,7 @@ CREATE TABLE ai_settings (
   endpoint TEXT NOT NULL DEFAULT 'http://localhost:11434',
   model TEXT NOT NULL DEFAULT 'qwen2.5:0.5b',
   context_message_limit INTEGER NOT NULL DEFAULT 6 CHECK (context_message_limit BETWEEN 1 AND 20),
-  timeout_seconds INTEGER NOT NULL DEFAULT 45 CHECK (timeout_seconds BETWEEN 5 AND 180),
+  timeout_seconds INTEGER NOT NULL DEFAULT 90 CHECK (timeout_seconds BETWEEN 5 AND 180),
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

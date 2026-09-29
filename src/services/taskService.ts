@@ -1,6 +1,7 @@
 import { taskRepository } from "../repositories/taskRepository";
 import type { Task, TaskInput } from "../types";
 import { localDateKey } from "./dateService";
+import { notifyDataRelationsChanged } from "../contexts/dataEvents";
 
 function validate(input: TaskInput) {
   if (!input.title.trim()) throw new Error("Informe o título da tarefa.");
@@ -21,6 +22,11 @@ export const taskService = {
   save: (input: TaskInput) => taskRepository.save(validate(input)),
   createQuick: (title: string) => taskRepository.save(validate({ id: crypto.randomUUID(), title, description: "", status: "inbox", priority: "medium", dueDate: null, projectId: null, knowledgeAreaId: null })),
   complete: taskRepository.complete,
+  completeReferenced: async (conversationId: string, position: number) => {
+    const task = await taskRepository.completeReferenced(conversationId, position);
+    if (typeof window !== "undefined") notifyDataRelationsChanged();
+    return task;
+  },
   remove: taskRepository.remove,
   today: () => taskRepository.today(localDateKey()),
   pending: async () => filterCounterTasks(await taskRepository.list(), "pending"),

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { currentStudyContext, type RoadmapFilter } from "../../../services/roadmapExperience";
-import type { KnowledgeArea, KnowledgeEvent, LearningMutation, Project, RoadmapActivity, RoadmapActivityStatus, RoadmapStage, RoadmapTopic, StudyRoadmap } from "../../../types";
+import type { RoadmapActivity, RoadmapActivityStatus, RoadmapStage, RoadmapTopic, StudyRoadmap } from "../../../types";
 import { RoadmapNavigator } from "./RoadmapNavigator";
 import { RoadmapStructure } from "./RoadmapStructure";
 import { TopicInspector } from "./TopicInspector";
@@ -11,19 +11,20 @@ const readState = (): PersistedState => { try { return JSON.parse(localStorage.g
 
 type Props = {
   roadmaps: StudyRoadmap[];
-  knowledge: KnowledgeArea[];
-  projects: Project[];
-  events: KnowledgeEvent[];
   busyActivityId: string | null;
-  lastMutation: LearningMutation | null;
+  activeSessionActivityId: string | null;
+  sessionBusy: boolean;
   onNew: () => void;
   onEdit: (roadmap: StudyRoadmap) => void;
   onDelete: (roadmap: StudyRoadmap) => void;
   onActivityStatus: (activity: RoadmapActivity, status: RoadmapActivityStatus) => Promise<void>;
-  onKnowledge: (knowledge: KnowledgeArea) => void;
+  onStartSession: (roadmap: StudyRoadmap, activity: RoadmapActivity) => Promise<void>;
+  onNotes: (roadmap: StudyRoadmap, stage: RoadmapStage, topic: RoadmapTopic, activity: RoadmapActivity, mode: "open" | "create") => void;
+  onCards: (roadmap: StudyRoadmap, stage: RoadmapStage, topic: RoadmapTopic, activity: RoadmapActivity, mode: "open" | "create") => void;
+  onMaterials: (activity: RoadmapActivity) => void;
 };
 
-export function RoadmapWorkspace({ roadmaps, knowledge, projects, events, busyActivityId, lastMutation, onNew, onEdit, onDelete, onActivityStatus, onKnowledge }: Props) {
+export function RoadmapWorkspace({ roadmaps, busyActivityId, activeSessionActivityId, sessionBusy, onNew, onEdit, onDelete, onActivityStatus, onStartSession, onNotes, onCards, onMaterials }: Props) {
   const [stored] = useState(() => readState());
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<RoadmapFilter>("all");
@@ -61,11 +62,10 @@ export function RoadmapWorkspace({ roadmaps, knowledge, projects, events, busyAc
   };
 
   return <section className="roadmap-workspace-shell">
-    <header className="roadmap-workspace-title"><div><span>MAPA STARK // ROADMAP EXPERIENCE</span><h1>Roadmaps</h1><p>Estudo estruturado por etapas, tópicos e evidências reais.</p></div><button onClick={onNew}>＋ NOVO ROADMAP</button></header>
     {roadmaps.length ? <div className={`roadmap-workspace ${navigatorCollapsed ? "navigator-collapsed" : ""}`}>
       <RoadmapNavigator roadmaps={roadmaps} selectedId={selectedRoadmap?.id ?? null} query={query} filter={filter} collapsed={navigatorCollapsed} onQuery={setQuery} onFilter={setFilter} onSelect={selectRoadmap} onToggleCollapsed={() => setNavigatorCollapsed((value) => !value)} />
-      {selectedRoadmap && <RoadmapStructure roadmap={selectedRoadmap} events={events} expandedStages={expandedStages} selectedTopicId={selectedPair?.topic.id ?? null} currentActivityId={current?.activity.id ?? null} onToggleStage={(id) => setExpandedStages((value) => { const next = new Set(value); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onSelectTopic={selectTopic} onContinue={continueStudy} onEdit={() => onEdit(selectedRoadmap)} onDelete={() => onDelete(selectedRoadmap)} />}
-      {selectedRoadmap && <TopicInspector key={`${selectedRoadmap.id}-${selectedPair?.topic.id ?? "empty"}-${revealActivitiesToken}`} roadmap={selectedRoadmap} stage={selectedPair?.stage ?? null} topic={selectedPair?.topic ?? null} currentActivityId={current?.activity.id ?? null} knowledge={knowledge} projects={projects} events={events} busyActivityId={busyActivityId} lastMutation={lastMutation} startInActivities={revealTopicId === selectedPair?.topic.id} onActivityStatus={onActivityStatus} onKnowledge={onKnowledge} />}
-    </div> : <div className="core-empty">Nenhum roadmap cadastrado. Crie o primeiro caminho de estudo.</div>}
+      {selectedRoadmap && <RoadmapStructure roadmap={selectedRoadmap} expandedStages={expandedStages} selectedTopicId={selectedPair?.topic.id ?? null} currentActivityId={current?.activity.id ?? null} onToggleStage={(id) => setExpandedStages((value) => { const next = new Set(value); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onSelectTopic={selectTopic} onContinue={continueStudy} onEdit={() => onEdit(selectedRoadmap)} onDelete={() => onDelete(selectedRoadmap)} />}
+      {selectedRoadmap && <TopicInspector key={`${selectedRoadmap.id}-${selectedPair?.topic.id ?? "empty"}-${revealActivitiesToken}`} roadmap={selectedRoadmap} stage={selectedPair?.stage ?? null} topic={selectedPair?.topic ?? null} currentActivityId={current?.activity.id ?? null} activeSessionActivityId={activeSessionActivityId} busyActivityId={busyActivityId} sessionBusy={sessionBusy} startInActivities={revealTopicId === selectedPair?.topic.id} onActivityStatus={onActivityStatus} onStartSession={onStartSession} onNotes={onNotes} onCards={onCards} onMaterials={onMaterials} />}
+    </div> : <div className="study-empty-state"><span>STUDY LAB // ROADMAPS</span><h2>Nenhum roadmap ativo.</h2><p>Crie um roadmap para iniciar seu primeiro caminho de estudo.</p><button onClick={onNew}>＋ NOVO ROADMAP</button></div>}
   </section>;
 }

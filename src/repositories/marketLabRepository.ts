@@ -1,5 +1,5 @@
 import { invokeDatabase } from "./tauri";
-import type { HoldDiagnosticsComparison, HoldDiagnosticsReport, ImportMarketDatasetInput, LifecycleIntelligenceComparison, LifecycleIntelligenceReport, MarketAgentDefinition, MarketAiDecisionLog, MarketAiExperimentComparison, MarketAiRuntimeMetric, MarketAiStatus, MarketDataset, MarketExperimentInput, MarketExperimentResult, MarketExperimentSummary, MarketRepeatabilityInput, MarketRepeatabilityReport, MarketRiskProfile, MarketSignalDiagnostics, MarketValidationInput, MarketValidationResult, MarketValidationSummary, UpdateMarketAiConfigInput } from "../types";
+import type { HoldDiagnosticsComparison, HoldDiagnosticsReport, ImportMarketDatasetInput, LifecycleIntelligenceComparison, LifecycleIntelligenceReport, LifecycleValidationBatch, LifecycleValidationBatchInput, MarketAgentDefinition, MarketAiDecisionLog, MarketAiExperimentComparison, MarketAiRuntimeMetric, MarketAiStatus, MarketDataset, MarketExperimentInput, MarketExperimentResult, MarketExperimentSummary, MarketRepeatabilityInput, MarketRepeatabilityReport, MarketRiskProfile, MarketSignalDiagnostics, MarketValidationInput, MarketValidationResult, MarketValidationSummary, MultiPeriodLifecycleValidationReport, UpdateMarketAiConfigInput } from "../types";
 
 export const marketLabRepository = {
   listDatasets: () => invokeDatabase<MarketDataset[]>("list_market_datasets"),
@@ -29,4 +29,9 @@ export const marketLabRepository = {
   generateLifecycleIntelligence: (experimentId: string) => invokeDatabase<LifecycleIntelligenceReport>("generate_market_lifecycle_intelligence", { experimentId }),
   getLifecycleIntelligence: (experimentId: string) => invokeDatabase<LifecycleIntelligenceReport>("get_market_lifecycle_intelligence", { experimentId }),
   compareLifecycleIntelligence: (developmentExperimentId: string, outOfSampleExperimentId: string) => invokeDatabase<LifecycleIntelligenceComparison>("compare_market_lifecycle_intelligence", { developmentExperimentId, outOfSampleExperimentId }),
+  runMultiPeriodLifecycleValidation: (input: LifecycleValidationBatchInput) => invokeDatabase<MultiPeriodLifecycleValidationReport>("run_market_multi_period_lifecycle_validation", { input }),
+  listMultiPeriodLifecycleValidations: () => invokeDatabase<LifecycleValidationBatch[]>("list_market_multi_period_lifecycle_validations"),
+  getMultiPeriodLifecycleValidation: (batchId: string) => invokeDatabase<MultiPeriodLifecycleValidationReport>("get_market_multi_period_lifecycle_validation", { batchId }),
+  resumeMultiPeriodLifecycleValidation: (batchId: string) => invokeDatabase<MultiPeriodLifecycleValidationReport>("resume_market_multi_period_lifecycle_validation", { batchId }),
+  exportMultiPeriodLifecycleValidation: (batchId: string, path: string) => invokeDatabase<void>("export_market_multi_period_lifecycle_validation", { batchId, path }),
 };
