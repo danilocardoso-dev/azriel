@@ -94,25 +94,21 @@ const KNOWLEDGE_SEED: &[(&str, &str, &str, &str, i64, i64, &str)] = &[
     ),
 ];
 
-const PROJECT_SEED: &[(&str, &str, &str, &str, &str, &str, i64, &str)] = &[
-    (
-        "azriel",
-        "Azriel",
-        "Sistema pessoal",
-        "Central pessoal de inteligência, pesquisa, engenharia e evolução.",
-        "Orquestrar projetos, formação, conhecimento e lacunas em uma interface única.",
-        "active",
-        40,
-        "Consolidar a persistência local da v0.5.",
-    ),
-];
+const PROJECT_SEED: &[(&str, &str, &str, &str, &str, &str, i64, &str)] = &[(
+    "azriel",
+    "Azriel",
+    "Sistema pessoal",
+    "Central pessoal de inteligência, pesquisa, engenharia e evolução.",
+    "Orquestrar projetos, formação, conhecimento e lacunas em uma interface única.",
+    "active",
+    40,
+    "Consolidar a persistência local da v0.5.",
+)];
 
-const RELATION_SEED: &[(&str, &[&str])] = &[
-    (
-        "azriel",
-        &["software-engineering", "ai-engineering", "automation"],
-    ),
-];
+const RELATION_SEED: &[(&str, &[&str])] = &[(
+    "azriel",
+    &["software-engineering", "ai-engineering", "automation"],
+)];
 
 const EDUCATION_SEED: &[(
     &str,
@@ -615,7 +611,7 @@ mod tests {
     fn seed_is_idempotent() {
         let mut connection = database();
         seed(&mut connection).unwrap();
-        assert_eq!(database::schema_version(&connection).unwrap(), 41);
+        assert_eq!(database::schema_version(&connection).unwrap(), 43);
         assert_eq!(
             connection
                 .query_row("SELECT COUNT(*) FROM projects", [], |row| row
@@ -745,7 +741,10 @@ mod tests {
             .contains("evento(s) de aprendizagem"));
 
         connection
-            .execute("DELETE FROM knowledge_events WHERE id='protected-event'", [])
+            .execute(
+                "DELETE FROM knowledge_events WHERE id='protected-event'",
+                [],
+            )
             .unwrap();
         delete_knowledge(&connection, &input.id).unwrap();
         assert!(!list_knowledge(&connection)

@@ -1,0 +1,30 @@
+import { invokeDatabase } from "./tauri";
+import type { FinanceCommitment, FinanceCommitmentAdjustmentInput, FinanceCommitmentFilter, FinanceCommitmentGenerationResult, FinanceCommitmentLinkInput, FinanceCommitmentSettlementInput, FinanceCommitmentSettlementResult, FinanceCommitmentSummary, FinanceContract, FinanceContractInput, FinanceLoan, FinanceLoanInput, FinanceLoanInstallment, FinanceLoanInstallmentInput, FinanceRecurrence, FinanceRecurrenceInput, FinanceOriginStatus, FinancialCategory, FinancialCategoryInput, FinancialDashboard, FinancialMonthlyReport, FinancialTransaction, FinancialTransactionFilter, FinancialTransactionInput, FinancialView } from "../types";
+
+export const financeRepository = {
+  listCategories: (includeDisabled = true) => invokeDatabase<FinancialCategory[]>("list_financial_categories", { includeDisabled }),
+  saveCategory: (input: FinancialCategoryInput) => invokeDatabase<FinancialCategory>("save_financial_category", { input }),
+  setCategoryEnabled: (id: string, enabled: boolean) => invokeDatabase<FinancialCategory>("set_financial_category_enabled", { id, enabled }),
+  listTransactions: (filter: FinancialTransactionFilter = {}) => invokeDatabase<FinancialTransaction[]>("list_financial_transactions", { filter }),
+  saveTransaction: (input: FinancialTransactionInput) => invokeDatabase<FinancialTransaction>("save_financial_transaction", { input }),
+  markTransactionPaid: (id: string, paidAt: string) => invokeDatabase<FinancialTransaction>("mark_financial_transaction_paid", { id, paidAt }),
+  cancelTransaction: (id: string) => invokeDatabase<FinancialTransaction>("cancel_financial_transaction", { id }),
+  dashboard: (month: string, view: FinancialView, today: string) => invokeDatabase<FinancialDashboard>("get_financial_dashboard", { month, view, today }),
+  monthlyReport: (month: string, view: FinancialView) => invokeDatabase<FinancialMonthlyReport>("get_financial_monthly_report", { month, view }),
+  listContracts: () => invokeDatabase<FinanceContract[]>("list_finance_contracts"),
+  saveContract: (input: FinanceContractInput) => invokeDatabase<FinanceContract>("save_finance_contract", { input }),
+  listRecurrences: () => invokeDatabase<FinanceRecurrence[]>("list_finance_recurrences"),
+  saveRecurrence: (input: FinanceRecurrenceInput) => invokeDatabase<FinanceRecurrence>("save_finance_recurrence", { input }),
+  listLoans: () => invokeDatabase<FinanceLoan[]>("list_finance_loans"),
+  saveLoan: (input: FinanceLoanInput) => invokeDatabase<FinanceLoan>("save_finance_loan", { input }),
+  listLoanInstallments: (loanId: string) => invokeDatabase<FinanceLoanInstallment[]>("list_finance_loan_installments", { loanId }),
+  saveLoanInstallment: (input: FinanceLoanInstallmentInput) => invokeDatabase<FinanceLoanInstallment>("save_finance_loan_installment", { input }),
+  setOriginStatus: (sourceType: "CONTRACT" | "RECURRING_EXPENSE" | "LOAN", id: string, status: FinanceOriginStatus, effectiveDate: string) => invokeDatabase<void>("set_finance_origin_status", { sourceType, id, status, effectiveDate }),
+  generateCommitments: (today: string, horizonMonths = 3) => invokeDatabase<FinanceCommitmentGenerationResult>("generate_finance_commitments", { today, horizonMonths }),
+  listCommitments: (filter: FinanceCommitmentFilter) => invokeDatabase<FinanceCommitment[]>("list_finance_commitments", { filter }),
+  adjustCommitment: (input: FinanceCommitmentAdjustmentInput, today: string) => invokeDatabase<FinanceCommitment>("adjust_finance_commitment", { input, today }),
+  cancelCommitment: (id: string, today: string) => invokeDatabase<FinanceCommitment>("cancel_finance_commitment", { id, today }),
+  settleCommitment: (input: FinanceCommitmentSettlementInput, today: string) => invokeDatabase<FinanceCommitmentSettlementResult>("settle_finance_commitment", { input, today }),
+  linkCommitmentTransaction: (input: FinanceCommitmentLinkInput, today: string) => invokeDatabase<FinanceCommitmentSettlementResult>("link_finance_commitment_transaction", { input, today }),
+  commitmentSummary: (today: string) => invokeDatabase<FinanceCommitmentSummary>("get_finance_commitment_summary", { today }),
+};

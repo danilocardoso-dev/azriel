@@ -6,6 +6,10 @@ pub mod daily_models;
 pub mod daily_repository;
 pub mod engineering_models;
 pub mod engineering_repository;
+pub mod finance_commitment_models;
+pub mod finance_commitment_repository;
+pub mod finance_models;
+pub mod finance_repository;
 pub mod learning_engine;
 pub mod market_ai;
 pub mod market_ai_intraday;
@@ -39,9 +43,9 @@ pub mod routine_models;
 pub mod routine_repository;
 pub mod stark_models;
 pub mod stark_repository;
-pub mod study_models;
 pub mod study_material_models;
 pub mod study_material_repository;
+pub mod study_models;
 pub mod study_repository;
 pub mod study_review_models;
 pub mod study_review_repository;
@@ -268,6 +272,16 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         41,
         "knowledge_catalog_reset",
         include_str!("../../migrations/0041_knowledge_catalog_reset.sql"),
+    ),
+    (
+        42,
+        "financial_foundation",
+        include_str!("../../migrations/0042_financial_foundation.sql"),
+    ),
+    (
+        43,
+        "finance_commitments",
+        include_str!("../../migrations/0043_finance_commitments.sql"),
     ),
 ];
 
@@ -1711,9 +1725,31 @@ mod tests {
         apply_migrations_through(&mut connection, 37).unwrap();
 
         assert_eq!(schema_version(&connection).unwrap(), 37);
-        assert_eq!(connection.query_row("SELECT front FROM study_cards WHERE id='keep-library-card'", [], |row| row.get::<_, String>(0)).unwrap(), "Pergunta");
-        for table in ["study_materials", "study_material_relations", "material_text_content"] {
-            assert_eq!(connection.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1", [table], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT front FROM study_cards WHERE id='keep-library-card'",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "Pergunta"
+        );
+        for table in [
+            "study_materials",
+            "study_material_relations",
+            "material_text_content",
+        ] {
+            assert_eq!(
+                connection
+                    .query_row(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                        [table],
+                        |row| row.get::<_, i64>(0)
+                    )
+                    .unwrap(),
+                1
+            );
         }
     }
 
@@ -1758,10 +1794,7 @@ mod tests {
         prepare_migration_registry(&customized).unwrap();
         apply_migrations_through(&mut customized, 37).unwrap();
         customized
-            .execute(
-                "UPDATE ai_settings SET timeout_seconds=120 WHERE id=1",
-                [],
-            )
+            .execute("UPDATE ai_settings SET timeout_seconds=120 WHERE id=1", [])
             .unwrap();
         apply_migrations_through(&mut customized, 38).unwrap();
         assert_eq!(
@@ -1786,11 +1819,13 @@ mod tests {
         assert_eq!(schema_version(&connection).unwrap(), 39);
         for table in ["ai_entity_references", "task_action_history"] {
             assert_eq!(
-                connection.query_row(
-                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
-                    [table],
-                    |row| row.get::<_, i64>(0),
-                ).unwrap(),
+                connection
+                    .query_row(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                        [table],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .unwrap(),
                 1
             );
         }
@@ -1833,14 +1868,124 @@ mod tests {
         apply_migrations_through(&mut connection, 41).unwrap();
 
         assert_eq!(schema_version(&connection).unwrap(), 41);
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM knowledge_areas", [], |row| row.get::<_, i64>(0)).unwrap(), 10);
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM knowledge_areas", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            10
+        );
         assert_eq!(connection.query_row("SELECT COUNT(*) FROM knowledge_areas WHERE id IN ('software-engineering','systems-infrastructure','cybersecurity','dfir','reliability-observability','ai-engineering','automation','english','technology-business','engineering-leadership')", [], |row| row.get::<_, i64>(0)).unwrap(), 10);
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM knowledge_areas WHERE id='programming'", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM projects WHERE id='azriel'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM project_knowledge WHERE project_id='azriel'", [], |row| row.get::<_, i64>(0)).unwrap(), 3);
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM study_roadmaps WHERE id='keep-roadmap'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM knowledge_areas WHERE id='programming'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM projects WHERE id='azriel'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM project_knowledge WHERE project_id='azriel'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            3
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM study_roadmaps WHERE id='keep-roadmap'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
         assert_eq!(connection.query_row("SELECT COUNT(*) FROM roadmap_topics WHERE id='keep-topic' AND knowledge_node_id IS NULL", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM activity_knowledge_nodes", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
-        assert_eq!(connection.query_row("SELECT COUNT(*) FROM knowledge_events", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM activity_knowledge_nodes", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM knowledge_events", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn migration_forty_two_adds_finance_without_changing_existing_data() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 41).unwrap();
+        connection.execute("INSERT INTO tasks(id,title,status,priority) VALUES ('finance-preserved','Preservada','pending','medium')", []).unwrap();
+
+        apply_migrations_through(&mut connection, 42).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 42);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM tasks WHERE id='finance-preserved'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM financial_categories", [], |row| row
+                    .get::<_, i64>(
+                    0
+                ))
+                .unwrap(),
+            18
+        );
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='financial_transactions'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+    }
+
+    #[test]
+    fn migration_forty_three_adds_commitments_without_changing_finance_data() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 42).unwrap();
+        connection.execute("INSERT INTO financial_transactions(id,transaction_type,scope,description,amount_cents,category_id,competence_date,status) VALUES ('kept-finance','EXPENSE','PERSONAL','Preservado',1000,'personal-housing','2026-10-01','PLANNED')", []).unwrap();
+
+        apply_migrations_through(&mut connection, 43).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 43);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM financial_transactions WHERE id='kept-finance'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(connection.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='finance_commitments'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
     }
 }

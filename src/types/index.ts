@@ -1,4 +1,4 @@
-export type ModuleId = "command" | "ai" | "daily" | "projects" | "studies" | "market" | "automation" | "settings";
+export type ModuleId = "command" | "ai" | "daily" | "projects" | "studies" | "finance" | "market" | "automation" | "settings";
 export type AzrielState = "idle" | "processing" | "tool" | "executing" | "engineering" | "routine" | "alert" | "offline";
 export type AIToolPermission = "read" | "visual_action" | "safe_write" | "confirm_write";
 export type ProjectStatus = "active" | "research" | "paused" | "planned" | "completed";
@@ -47,6 +47,55 @@ export interface Note {
 }
 export type NoteInput = Omit<Note, "createdAt" | "updatedAt">;
 export interface DailyCounters { pending: number; today: number; overdue: number; priority: number; notes: number; completed: number }
+
+export type FinancialTransactionType = "INCOME" | "EXPENSE";
+export type FinancialScope = "PERSONAL" | "PROFESSIONAL";
+export type FinancialStatus = "PLANNED" | "PAID" | "CANCELLED";
+export type FinancialView = "COMPETENCE" | "CASH";
+export interface FinancialCategory { id: string; name: string; scope: FinancialScope; enabled: boolean; createdAt: string; updatedAt: string }
+export type FinancialCategoryInput = Pick<FinancialCategory, "id" | "name" | "scope" | "enabled">;
+export interface FinancialTransaction {
+  id: string; transactionType: FinancialTransactionType; scope: FinancialScope; description: string;
+  amountCents: number; categoryId: string; categoryName: string; competenceDate: string;
+  dueDate: string | null; paidAt: string | null; status: FinancialStatus; notes: string | null;
+  createdAt: string; updatedAt: string;
+}
+export type FinancialTransactionInput = Omit<FinancialTransaction, "categoryName" | "createdAt" | "updatedAt">;
+export interface FinancialTransactionFilter { dateFrom?: string | null; dateTo?: string | null; categoryId?: string | null; transactionType?: FinancialTransactionType | null; scope?: FinancialScope | null; status?: FinancialStatus | null; view?: FinancialView | null }
+export interface FinancialTotals { incomeCents: number; expenseCents: number; resultCents: number }
+export interface FinancialDashboard {
+  month: string; view: FinancialView; realized: FinancialTotals; planned: FinancialTotals;
+  personalRealized: FinancialTotals; personalPlanned: FinancialTotals;
+  professionalRealized: FinancialTotals; professionalPlanned: FinancialTotals;
+  upcomingDue: FinancialTransaction[];
+}
+export interface FinancialCategoryTotal { categoryId: string; categoryName: string; scope: FinancialScope; amountCents: number; shareBasisPoints: number | null }
+export interface FinancialMonthlyReport {
+  month: string; view: FinancialView; realized: FinancialTotals; planned: FinancialTotals;
+  personal: FinancialTotals; professional: FinancialTotals; categoryExpenses: FinancialCategoryTotal[];
+  previousMonth: string; previousRealized: FinancialTotals; previousHasData: boolean;
+  resultChangeCents: number; resultChangeBasisPoints: number | null;
+}
+export type FinanceFrequency = "MONTHLY" | "WEEKLY" | "YEARLY" | "ONE_TIME";
+export type FinanceOriginStatus = "ACTIVE" | "PAUSED" | "ENDED" | "CANCELLED" | "PAID";
+export type FinanceCommitmentSource = "CONTRACT" | "RECURRING_EXPENSE" | "LOAN_INSTALLMENT";
+export type FinanceCommitmentStatus = "PENDING" | "SETTLED" | "OVERDUE" | "CANCELLED";
+export interface FinanceContract { id:string; name:string; counterparty:string; description:string|null; scope:FinancialScope; amountCents:number; currency:"BRL"; frequency:FinanceFrequency; startDate:string; endDate:string|null; firstDueDate:string; status:FinanceOriginStatus; categoryId:string; categoryName:string; notes:string|null; resumeDate:string|null; createdAt:string; updatedAt:string }
+export type FinanceContractInput=Pick<FinanceContract,"id"|"name"|"counterparty"|"description"|"scope"|"amountCents"|"frequency"|"startDate"|"endDate"|"firstDueDate"|"categoryId"|"notes">;
+export interface FinanceRecurrence { id:string; title:string; scope:FinancialScope; amountCents:number; estimated:boolean; frequency:FinanceFrequency; startDate:string; endDate:string|null; firstDueDate:string; status:FinanceOriginStatus; categoryId:string; categoryName:string; notes:string|null; resumeDate:string|null; createdAt:string; updatedAt:string }
+export type FinanceRecurrenceInput=Pick<FinanceRecurrence,"id"|"title"|"scope"|"amountCents"|"estimated"|"frequency"|"startDate"|"endDate"|"firstDueDate"|"categoryId"|"notes">;
+export interface FinanceLoan { id:string; name:string; creditor:string; purpose:string|null; scope:FinancialScope; originalPrincipalCents:number; informedBalanceCents:number; balanceAsOf:string; installmentCount:number; interestRateBasisPoints:number|null; interestRatePeriod:"MONTHLY"|"YEARLY"|null; status:FinanceOriginStatus; categoryId:string; categoryName:string; notes:string|null; resumeDate:string|null; createdAt:string; updatedAt:string }
+export type FinanceLoanInput=Pick<FinanceLoan,"id"|"name"|"creditor"|"purpose"|"scope"|"originalPrincipalCents"|"informedBalanceCents"|"balanceAsOf"|"installmentCount"|"interestRateBasisPoints"|"interestRatePeriod"|"categoryId"|"notes">;
+export interface FinanceLoanInstallment { id:string; loanId:string; loanName:string; installmentNumber:number; dueDate:string; amountCents:number; principalCents:number|null; interestCents:number|null; feesCents:number|null; notes:string|null; commitmentId:string|null; commitmentStatus:string|null; createdAt:string; updatedAt:string }
+export type FinanceLoanInstallmentInput=Pick<FinanceLoanInstallment,"id"|"loanId"|"installmentNumber"|"dueDate"|"amountCents"|"principalCents"|"interestCents"|"feesCents"|"notes">;
+export interface FinanceCommitment { id:string; sourceType:FinanceCommitmentSource; sourceId:string; sourceName:string; occurrenceKey:string; direction:FinancialTransactionType; scope:FinancialScope; categoryId:string; categoryName:string; expectedAmountCents:number; estimated:boolean; competenceDate:string; dueDate:string; status:"PENDING"|"SETTLED"|"CANCELLED"; effectiveStatus:FinanceCommitmentStatus; transactionId:string|null; settledAt:string|null; createdAt:string; updatedAt:string }
+export interface FinanceCommitmentFilter { dateFrom?:string|null; dateTo?:string|null; sourceType?:FinanceCommitmentSource|null; scope?:FinancialScope|null; status?:FinanceCommitmentStatus|null; direction?:FinancialTransactionType|null; today?:string|null }
+export interface FinanceCommitmentAdjustmentInput { id:string; expectedAmountCents:number; competenceDate:string; dueDate:string; estimated:boolean }
+export interface FinanceCommitmentSettlementInput { commitmentId:string; transactionId:string; actualAmountCents:number; paidAt:string; notes:string|null }
+export interface FinanceCommitmentLinkInput { commitmentId:string; transactionId:string }
+export interface FinanceCommitmentSettlementResult { commitment:FinanceCommitment; transactionId:string; reused:boolean }
+export interface FinanceCommitmentGenerationResult { created:number; existing:number; windowStart:string; windowEnd:string }
+export interface FinanceCommitmentSummary { receivableNext30Cents:number; payableNext30Cents:number; overdueReceivableCents:number; overduePayableCents:number; overdueCount:number; activeContracts:number; contractedMonthlyEquivalentCents:number; professionalRecurringMonthlyEquivalentCents:number; futureInstallmentsCents:number; informedDebtBalanceCents:number }
 
 export interface AISettings {
   provider: "ollama"; endpoint: string; model: string; contextMessageLimit: number;

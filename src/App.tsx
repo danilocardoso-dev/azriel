@@ -16,6 +16,7 @@ import { RoutineConfirmationDialog } from "./components/automation/RoutineConfir
 
 const MarketLabPage = lazy(() => import("./pages/MarketLabPage").then((module) => ({ default: module.MarketLabPage })));
 const StudiesPage = lazy(() => import("./pages/StudiesPage").then((module) => ({ default: module.StudiesPage })));
+const FinancePage = lazy(() => import("./pages/FinancePage").then((module) => ({ default: module.FinancePage })));
 
 function App() {
   const { loading, error, reload, databaseInfo } = useAzrielData();
@@ -83,6 +84,7 @@ function App() {
       case "ai": return <AICorePage />;
       case "daily": return <DailyOperationsPage initialCapture={moduleAction === "new-task" ? "task" : moduleAction === "new-note" ? "note" : undefined} />;
       case "studies": return <Suspense fallback={<div className="data-state"><span className="live-dot" /><strong>INICIALIZANDO STUDY LAB</strong></div>}><StudiesPage /></Suspense>;
+      case "finance": return <Suspense fallback={<div className="data-state"><span className="live-dot" /><strong>INICIALIZANDO FINANÇAS</strong></div>}><FinancePage /></Suspense>;
       case "market": return <Suspense fallback={<div className="data-state"><span className="live-dot" /><strong>INICIALIZANDO MARKET LAB</strong></div>}><MarketLabPage /></Suspense>;
       case "automation": return <AutomationPage />;
       case "settings": return <SettingsPage />;

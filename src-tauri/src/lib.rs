@@ -6,6 +6,8 @@ mod commands;
 mod daily_commands;
 pub mod database;
 mod engineering_commands;
+mod finance_commands;
+mod finance_commitment_commands;
 mod git_monitor;
 mod market_commands;
 mod ollama;
@@ -152,6 +154,31 @@ pub fn run() {
             daily_commands::archive_note,
             daily_commands::delete_note,
             daily_commands::daily_counters,
+            finance_commands::list_financial_categories,
+            finance_commands::save_financial_category,
+            finance_commands::set_financial_category_enabled,
+            finance_commands::list_financial_transactions,
+            finance_commands::save_financial_transaction,
+            finance_commands::mark_financial_transaction_paid,
+            finance_commands::cancel_financial_transaction,
+            finance_commands::get_financial_dashboard,
+            finance_commands::get_financial_monthly_report,
+            finance_commitment_commands::list_finance_contracts,
+            finance_commitment_commands::save_finance_contract,
+            finance_commitment_commands::list_finance_recurrences,
+            finance_commitment_commands::save_finance_recurrence,
+            finance_commitment_commands::list_finance_loans,
+            finance_commitment_commands::save_finance_loan,
+            finance_commitment_commands::list_finance_loan_installments,
+            finance_commitment_commands::save_finance_loan_installment,
+            finance_commitment_commands::set_finance_origin_status,
+            finance_commitment_commands::generate_finance_commitments,
+            finance_commitment_commands::list_finance_commitments,
+            finance_commitment_commands::adjust_finance_commitment,
+            finance_commitment_commands::cancel_finance_commitment,
+            finance_commitment_commands::settle_finance_commitment,
+            finance_commitment_commands::link_finance_commitment_transaction,
+            finance_commitment_commands::get_finance_commitment_summary,
             engineering_commands::get_engineering_calibration,
             engineering_commands::update_engineering_calibration,
             engineering_commands::reset_engineering_calibration,

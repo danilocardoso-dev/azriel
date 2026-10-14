@@ -6,6 +6,7 @@ export const modules: Array<{ id: ModuleId; label: string; code: string; descrip
   { id: "daily", label: "Operações Diárias", code: "OPS", description: "Tarefas, notas e prioridades" },
   { id: "projects", label: "Projetos", code: "PRJ", description: "Projetos e objetivos" },
   { id: "studies", label: "Estudos", code: "STD", description: "Roadmaps, etapas e atividades de estudo" },
+  { id: "finance", label: "Finanças", code: "FIN", description: "Controle pessoal e custos profissionais" },
   { id: "market", label: "Market Lab", code: "LAB", description: "Backtests determinísticos e experimentais" },
   { id: "automation", label: "Automação", code: "AUT", description: "Ações locais autorizadas" },
   { id: "settings", label: "Configurações", code: "CFG", description: "Preferências da interface" },
