@@ -1,5 +1,5 @@
 import { invokeDatabase } from "./tauri";
-import type { FinanceCommitment, FinanceCommitmentAdjustmentInput, FinanceCommitmentFilter, FinanceCommitmentGenerationResult, FinanceCommitmentLinkInput, FinanceCommitmentSettlementInput, FinanceCommitmentSettlementResult, FinanceCommitmentSummary, FinanceContract, FinanceContractInput, FinanceLoan, FinanceLoanInput, FinanceLoanInstallment, FinanceLoanInstallmentInput, FinanceRecurrence, FinanceRecurrenceInput, FinanceOriginStatus, FinancialCategory, FinancialCategoryInput, FinancialDashboard, FinancialMonthlyReport, FinancialTransaction, FinancialTransactionFilter, FinancialTransactionInput, FinancialView } from "../types";
+import type { BudgetCopyResult, FinanceAlert, FinanceCommitment, FinanceCommitmentAdjustmentInput, FinanceCommitmentFilter, FinanceCommitmentGenerationResult, FinanceCommitmentLinkInput, FinanceCommitmentSettlementInput, FinanceCommitmentSettlementResult, FinanceCommitmentSummary, FinanceContract, FinanceContractInput, FinanceLoan, FinanceLoanInput, FinanceLoanInstallment, FinanceLoanInstallmentInput, FinanceRecurrence, FinanceRecurrenceInput, FinanceOriginStatus, FinancialBudget, FinancialBudgetInput, FinancialCategory, FinancialCategoryInput, FinancialDashboard, FinancialGoal, FinancialGoalInput, FinancialMonthlyReport, FinancialProjection, FinancialTransaction, FinancialTransactionFilter, FinancialTransactionInput, FinancialView, GoalContribution, GoalContributionInput, ProjectionScenario } from "../types";
 
 export const financeRepository = {
   listCategories: (includeDisabled = true) => invokeDatabase<FinancialCategory[]>("list_financial_categories", { includeDisabled }),
@@ -27,4 +27,15 @@ export const financeRepository = {
   settleCommitment: (input: FinanceCommitmentSettlementInput, today: string) => invokeDatabase<FinanceCommitmentSettlementResult>("settle_finance_commitment", { input, today }),
   linkCommitmentTransaction: (input: FinanceCommitmentLinkInput, today: string) => invokeDatabase<FinanceCommitmentSettlementResult>("link_finance_commitment_transaction", { input, today }),
   commitmentSummary: (today: string) => invokeDatabase<FinanceCommitmentSummary>("get_finance_commitment_summary", { today }),
+  listBudgets: (yearMonth:string,view:FinancialView)=>invokeDatabase<FinancialBudget[]>("list_finance_budgets",{yearMonth,view}),
+  saveBudget: (input:FinancialBudgetInput)=>invokeDatabase<FinancialBudget>("save_finance_budget",{input}),
+  deleteBudget: (id:string)=>invokeDatabase<void>("delete_finance_budget",{id}),
+  copyBudgets: (fromMonth:string,toMonth:string)=>invokeDatabase<BudgetCopyResult>("copy_finance_budgets",{fromMonth,toMonth}),
+  listGoals: (includeArchived=false)=>invokeDatabase<FinancialGoal[]>("list_finance_goals",{includeArchived}),
+  saveGoal: (input:FinancialGoalInput)=>invokeDatabase<FinancialGoal>("save_finance_goal",{input}),
+  listGoalContributions: (goalId:string)=>invokeDatabase<GoalContribution[]>("list_finance_goal_contributions",{goalId}),
+  saveGoalContribution: (input:GoalContributionInput)=>invokeDatabase<GoalContribution>("save_finance_goal_contribution",{input}),
+  deleteGoalContribution: (id:string)=>invokeDatabase<void>("delete_finance_goal_contribution",{id}),
+  projection: (today:string,view:FinancialView,horizonMonths:3|6|12,baseCents:number,scenario:ProjectionScenario)=>invokeDatabase<FinancialProjection>("get_finance_projection",{today,view,horizonMonths,baseCents,scenario}),
+  alerts: (today:string,yearMonth:string,view:FinancialView,upcomingDays=7)=>invokeDatabase<FinanceAlert[]>("get_finance_alerts",{today,yearMonth,view,upcomingDays}),
 };

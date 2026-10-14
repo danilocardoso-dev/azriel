@@ -96,6 +96,19 @@ export interface FinanceCommitmentLinkInput { commitmentId:string; transactionId
 export interface FinanceCommitmentSettlementResult { commitment:FinanceCommitment; transactionId:string; reused:boolean }
 export interface FinanceCommitmentGenerationResult { created:number; existing:number; windowStart:string; windowEnd:string }
 export interface FinanceCommitmentSummary { receivableNext30Cents:number; payableNext30Cents:number; overdueReceivableCents:number; overduePayableCents:number; overdueCount:number; activeContracts:number; contractedMonthlyEquivalentCents:number; professionalRecurringMonthlyEquivalentCents:number; futureInstallmentsCents:number; informedDebtBalanceCents:number }
+export interface FinancialBudget { id:string;yearMonth:string;scope:FinancialScope;categoryId:string;categoryName:string;categoryEnabled:boolean;limitCents:number;realizedCents:number;committedCents:number;availableCents:number;usageBasisPoints:number;createdAt:string;updatedAt:string }
+export type FinancialBudgetInput=Pick<FinancialBudget,"id"|"yearMonth"|"scope"|"categoryId"|"limitCents">;
+export interface BudgetCopyResult { created:number;skipped:number }
+export type FinancialGoalStatus="ACTIVE"|"COMPLETED"|"ARCHIVED";
+export interface FinancialGoal { id:string;title:string;scope:FinancialScope;targetCents:number;targetDate:string|null;status:FinancialGoalStatus;contributedCents:number;remainingCents:number;progressBasisPoints:number;createdAt:string;updatedAt:string }
+export type FinancialGoalInput=Pick<FinancialGoal,"id"|"title"|"scope"|"targetCents"|"targetDate"|"status">;
+export interface GoalContribution { id:string;goalId:string;amountCents:number;contributionDate:string;note:string|null;createdAt:string;updatedAt:string }
+export type GoalContributionInput=Pick<GoalContribution,"id"|"goalId"|"amountCents"|"contributionDate"|"note">;
+export interface ProjectionScenario { professionalIncomeReductionPercent:number;operatingCostIncreasePercent:number;newMonthlyCommitmentCents:number;closedContractId:string|null }
+export interface ProjectionItem { originKey:string;sourceType:string;sourceName:string;direction:FinancialTransactionType;scope:FinancialScope;categoryId:string;amountCents:number;expectedDate:string;estimated:boolean }
+export interface ProjectionMonth { month:string;incomeCents:number;expenseCents:number;resultCents:number;accumulatedCents:number }
+export interface FinancialProjection { view:FinancialView;horizonMonths:number;baseCents:number;items:ProjectionItem[];months:ProjectionMonth[];baseResultCents:number;scenarioResultCents:number;scenarioDifferenceCents:number }
+export interface FinanceAlert { id:string;level:"INFO"|"WARNING"|"CRITICAL";alertType:string;title:string;description:string;referenceId:string }
 
 export interface AISettings {
   provider: "ollama"; endpoint: string; model: string; contextMessageLimit: number;

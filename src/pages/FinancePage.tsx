@@ -2,15 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { DataState } from "../components/layout/DataState";
 import { ModuleIntro } from "../components/layout/ModuleIntro";
 import { CommitmentSummaryCards, CommitmentsPanel, OriginsPanel } from "../components/finance/FinanceV2";
+import { FinanceAlerts, PlanningPanel, ProjectionsPanel } from "../components/finance/FinancePlanning";
 import { financeService, formatBrazilianDate, formatCurrency, formatCurrencyInput, formatMonth, maskBrazilianDate, parseBrazilianDate, parseCurrencyToCents, shiftMonth } from "../services/financeService";
 import { localDateKey } from "../services/dateService";
 import type {
   FinancialCategory, FinancialCategoryInput, FinancialDashboard, FinancialMonthlyReport,
   FinancialScope, FinancialStatus, FinancialTransaction, FinancialTransactionInput,
-  FinancialTransactionType, FinancialView, FinanceCommitmentSummary,
+  FinancialTransactionType, FinancialView, FinanceAlert, FinanceCommitmentSummary, FinanceContract,
 } from "../types";
 
-type FinanceTab = "overview" | "transactions" | "commitments" | "origins" | "reports" | "categories";
+type FinanceTab = "overview" | "transactions" | "commitments" | "origins" | "planning" | "projections" | "reports" | "categories";
 
 const currentMonth = () => localDateKey().slice(0, 7);
 const monthBounds = (month: string) => {
@@ -93,6 +94,8 @@ export function FinancePage() {
   const [dashboard, setDashboard] = useState<FinancialDashboard | null>(null);
   const [report, setReport] = useState<FinancialMonthlyReport | null>(null);
   const [commitmentSummary, setCommitmentSummary] = useState<FinanceCommitmentSummary | null>(null);
+  const [alerts, setAlerts] = useState<FinanceAlert[]>([]);
+  const [contracts, setContracts] = useState<FinanceContract[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<FinancialTransaction | "new" | null>(null);
@@ -107,14 +110,16 @@ export function FinancePage() {
     setLoading(true); setError(null);
     try {
       const [from, to] = monthBounds(month);
-      const [nextCategories, nextTransactions, nextDashboard, nextReport, nextCommitmentSummary] = await Promise.all([
+      const [nextCategories, nextTransactions, nextDashboard, nextReport, nextCommitmentSummary, nextAlerts, nextContracts] = await Promise.all([
         financeService.listCategories(true),
         financeService.listTransactions({ dateFrom: from, dateTo: to, view }),
         financeService.dashboard(month, view, localDateKey()),
         financeService.monthlyReport(month, view),
         financeService.commitmentSummary(localDateKey()),
+        financeService.alerts(localDateKey(), month, view, 7),
+        financeService.listContracts(),
       ]);
-      setCategories(nextCategories); setTransactions(nextTransactions); setDashboard(nextDashboard); setReport(nextReport); setCommitmentSummary(nextCommitmentSummary);
+      setCategories(nextCategories); setTransactions(nextTransactions); setDashboard(nextDashboard); setReport(nextReport); setCommitmentSummary(nextCommitmentSummary); setAlerts(nextAlerts); setContracts(nextContracts);
     } catch (reason) { setError(String(reason)); } finally { setLoading(false); }
   }, [month, view]);
   useEffect(() => {
@@ -137,7 +142,7 @@ export function FinancePage() {
   return <div className="finance-page">
     <ModuleIntro code="FIN-01" title="Finanças" description="Controle financeiro local, pessoal e profissional, com separação entre competência e caixa." metric={dashboard ? `${formatCurrency(dashboard.realized.resultCents)} REALIZADO` : "SQLITE LOCAL"} />
     <div className="finance-toolbar">
-      <nav>{(["overview","transactions","commitments","origins","reports","categories"] as FinanceTab[]).map((item) => <button className={tab === item ? "active" : ""} onClick={() => setTab(item)} key={item}>{({ overview:"VISÃO GERAL",transactions:"LANÇAMENTOS",commitments:"COMPROMISSOS",origins:"ORIGENS",reports:"RELATÓRIOS",categories:"CATEGORIAS" })[item]}</button>)}</nav>
+      <nav>{(["overview","transactions","commitments","origins","planning","projections","reports","categories"] as FinanceTab[]).map((item) => <button className={tab === item ? "active" : ""} onClick={() => setTab(item)} key={item}>{({ overview:"VISÃO GERAL",transactions:"LANÇAMENTOS",commitments:"COMPROMISSOS",origins:"ORIGENS",planning:"PLANEJAMENTO",projections:"PROJEÇÕES",reports:"RELATÓRIOS",categories:"CATEGORIAS" })[item]}</button>)}</nav>
       <div className="finance-month-control" aria-label="Navegação mensal"><span>MÊS</span><div><button type="button" onClick={() => setMonth((value) => shiftMonth(value, -1))} aria-label="Mês anterior">‹</button><strong>{formatMonth(month).toLocaleUpperCase("pt-BR")}</strong><button type="button" onClick={() => setMonth((value) => shiftMonth(value, 1))} aria-label="Próximo mês">›</button></div>{month !== currentMonth() && <button className="finance-month-control__today" type="button" onClick={() => setMonth(currentMonth())}>MÊS ATUAL</button>}</div>
       <label>VISÃO<select value={view} onChange={(event) => setView(event.target.value as FinancialView)}><option value="COMPETENCE">COMPETÊNCIA</option><option value="CASH">CAIXA</option></select></label>
       <button className="primary" onClick={() => setEditing("new")}>＋ NOVO LANÇAMENTO</button>
@@ -149,6 +154,7 @@ export function FinancePage() {
         <BalanceSummary values={summaryStatus === "REALIZED" ? dashboard.realized : dashboard.planned} />
         <div className="finance-scope-summary"><ScopeBalance title="PESSOAL" values={summaryStatus === "REALIZED" ? dashboard.personalRealized : dashboard.personalPlanned} /><ScopeBalance title="PROFISSIONAL" values={summaryStatus === "REALIZED" ? dashboard.professionalRealized : dashboard.professionalPlanned} /></div>
         <CommitmentSummaryCards summary={commitmentSummary} />
+        <FinanceAlerts items={alerts} />
         <div className="finance-upcoming"><header><strong>PRÓXIMOS VENCIMENTOS</strong><span>{dashboard.upcomingDue.length} REGISTROS</span></header>{dashboard.upcomingDue.length ? dashboard.upcomingDue.map((item) => <button key={item.id} onClick={() => setEditing(item)}><span><strong>{item.description}</strong><small>{item.categoryName} · {item.scope === "PERSONAL" ? "PESSOAL" : "PROFISSIONAL"}</small></span><span><strong>{formatCurrency(item.amountCents)}</strong><small>{formatBrazilianDate(item.dueDate) || "SEM VENCIMENTO"}</small></span></button>) : <p>Nenhum vencimento planejado no período.</p>}</div>
       </section>}
       {tab === "transactions" && <section className="finance-transactions">
@@ -158,6 +164,8 @@ export function FinancePage() {
       </section>}
       {tab === "commitments" && <CommitmentsPanel transactions={transactions} onChanged={reload} />}
       {tab === "origins" && <OriginsPanel categories={categories} onChanged={reload} />}
+      {tab === "planning" && <PlanningPanel month={month} view={view} categories={categories} alerts={alerts} onChanged={reload} />}
+      {tab === "projections" && <ProjectionsPanel view={view} contracts={contracts} />}
       {tab === "categories" && <CategoryManager categories={categories} onChanged={reload} />}
       {tab === "reports" && report && <section className="finance-reports"><header><span>RELATÓRIO MENSAL</span><h2>{formatMonth(month)} · {view === "COMPETENCE" ? "COMPETÊNCIA" : "CAIXA"}</h2></header><div className="finance-total-grid"><Totals title="REALIZADO" values={report.realized} tone="realized" /><Totals title="PLANEJADO" values={report.planned} /></div><div className="finance-total-grid"><Totals title="PESSOAL · REALIZADO" values={report.personal} /><Totals title="PROFISSIONAL · REALIZADO" values={report.professional} /></div><div className="finance-category-report"><header><strong>SAÍDAS POR CATEGORIA</strong><span>PARTICIPAÇÃO NO TOTAL REALIZADO</span></header>{report.categoryExpenses.length ? report.categoryExpenses.map((item) => <article key={item.categoryId}><span><strong>{item.categoryName}</strong><small>{item.scope === "PERSONAL" ? "PESSOAL" : "PROFISSIONAL"}</small></span><div><i style={{ width: `${(item.shareBasisPoints ?? 0) / 100}%` }} /></div><b>{formatCurrency(item.amountCents)} · {((item.shareBasisPoints ?? 0) / 100).toFixed(1)}%</b></article>) : <p>Nenhuma saída realizada no mês.</p>}</div><div className="finance-comparison"><span>MÊS ANTERIOR · {formatMonth(report.previousMonth)}</span>{report.previousHasData ? <><strong>{formatCurrency(report.previousRealized.resultCents)}</strong><small>Variação do resultado: {formatCurrency(report.resultChangeCents)}{report.resultChangeBasisPoints === null ? "" : ` · ${(report.resultChangeBasisPoints / 100).toFixed(1)}%`}</small></> : <strong>SEM BASE PARA COMPARAÇÃO</strong>}</div></section>}
     </>}

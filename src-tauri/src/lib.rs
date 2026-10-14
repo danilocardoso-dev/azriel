@@ -8,6 +8,7 @@ pub mod database;
 mod engineering_commands;
 mod finance_commands;
 mod finance_commitment_commands;
+mod finance_planning_commands;
 mod git_monitor;
 mod market_commands;
 mod ollama;
@@ -179,6 +180,17 @@ pub fn run() {
             finance_commitment_commands::settle_finance_commitment,
             finance_commitment_commands::link_finance_commitment_transaction,
             finance_commitment_commands::get_finance_commitment_summary,
+            finance_planning_commands::list_finance_budgets,
+            finance_planning_commands::save_finance_budget,
+            finance_planning_commands::delete_finance_budget,
+            finance_planning_commands::copy_finance_budgets,
+            finance_planning_commands::list_finance_goals,
+            finance_planning_commands::save_finance_goal,
+            finance_planning_commands::list_finance_goal_contributions,
+            finance_planning_commands::save_finance_goal_contribution,
+            finance_planning_commands::delete_finance_goal_contribution,
+            finance_planning_commands::get_finance_projection,
+            finance_planning_commands::get_finance_alerts,
             engineering_commands::get_engineering_calibration,
             engineering_commands::update_engineering_calibration,
             engineering_commands::reset_engineering_calibration,

@@ -9,6 +9,8 @@ pub mod engineering_repository;
 pub mod finance_commitment_models;
 pub mod finance_commitment_repository;
 pub mod finance_models;
+pub mod finance_planning_models;
+pub mod finance_planning_repository;
 pub mod finance_repository;
 pub mod learning_engine;
 pub mod market_ai;
@@ -282,6 +284,11 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         43,
         "finance_commitments",
         include_str!("../../migrations/0043_finance_commitments.sql"),
+    ),
+    (
+        44,
+        "finance_planning",
+        include_str!("../../migrations/0044_finance_planning.sql"),
     ),
 ];
 
@@ -1987,5 +1994,44 @@ mod tests {
             1
         );
         assert_eq!(connection.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='finance_commitments'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+    }
+
+    #[test]
+    fn migration_forty_four_adds_planning_without_changing_finance_data() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        prepare_migration_registry(&connection).unwrap();
+        apply_migrations_through(&mut connection, 43).unwrap();
+        connection.execute("INSERT INTO financial_transactions(id,transaction_type,scope,description,amount_cents,category_id,competence_date,status) VALUES ('kept-planning','EXPENSE','PERSONAL','Preservado',1000,'personal-housing','2026-10-01','PLANNED')", []).unwrap();
+
+        apply_migrations_through(&mut connection, 44).unwrap();
+
+        assert_eq!(schema_version(&connection).unwrap(), 44);
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM financial_transactions WHERE id='kept-planning'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            1
+        );
+        for table in [
+            "finance_budgets",
+            "finance_goals",
+            "finance_goal_contributions",
+            "finance_goal_contribution_history",
+        ] {
+            assert_eq!(
+                connection
+                    .query_row(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                        [table],
+                        |row| row.get::<_, i64>(0)
+                    )
+                    .unwrap(),
+                1
+            );
+        }
     }
 }
