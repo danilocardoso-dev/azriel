@@ -1,5 +1,8 @@
-//! Cliente dos perpétuos USDT-M da BingX, restrito à conta DEMO (VST).
-//! Não existe endpoint de conta real neste código: dinheiro real exige uma mudança deliberada.
+//! Cliente dos perpétuos USDT-M da BingX.
+//! - Dados de mercado (candles, cotação, contratos): API pública real, só leitura e sem chave.
+//!   O volume da demo é o do ambiente simulado e não acompanha o mercado (correlação ~0).
+//! - Conta, posição e ordens (tudo que é assinado): somente a conta DEMO (VST).
+//! Requisições assinadas nunca vão para o endpoint real: dinheiro real exige uma mudança deliberada.
 
 use super::indicators::Candle;
 use super::strategy::{OpenPosition, Side};
@@ -10,6 +13,15 @@ use sha2::Sha256;
 use std::time::Duration;
 
 pub const VST_BASE_URL: &str = "https://open-api-vst.bingx.com";
+pub const MARKET_DATA_BASE_URL: &str = "https://open-api.bingx.com";
+
+fn public_url(path: &str, query: &str) -> String {
+    if query.is_empty() { format!("{MARKET_DATA_BASE_URL}{path}") } else { format!("{MARKET_DATA_BASE_URL}{path}?{query}") }
+}
+
+fn signed_url(path: &str, query: &str) -> String {
+    format!("{VST_BASE_URL}{path}?{query}")
+}
 
 #[derive(Debug, Clone)]
 pub struct ContractRules {
@@ -163,7 +175,7 @@ impl BingxClient {
 
     async fn public(&self, path: &str, params: &[(&str, String)]) -> Result<Value, String> {
         let query = params.iter().map(|(key, value)| format!("{key}={}", encode(value))).collect::<Vec<_>>().join("&");
-        let url = if query.is_empty() { format!("{VST_BASE_URL}{path}") } else { format!("{VST_BASE_URL}{path}?{query}") };
+        let url = public_url(path, &query);
         // Endpoints públicos aceitam 1 req/s por IP; o gráfico e o motor podem colidir, então tenta de novo uma vez.
         match self.send(self.http.get(&url)).await {
             Ok(data) => Ok(data),
@@ -177,7 +189,7 @@ impl BingxClient {
     async fn signed(&self, method: Method, path: &str, params: &[(&str, String)]) -> Result<Value, String> {
         let timestamp = chrono::Utc::now().timestamp_millis() + self.time_offset_ms;
         let query = signed_query(params, &self.secret, timestamp)?;
-        let request = self.http.request(method, format!("{VST_BASE_URL}{path}?{query}")).header("X-BX-APIKEY", &self.api_key);
+        let request = self.http.request(method, signed_url(path, &query)).header("X-BX-APIKEY", &self.api_key);
         self.send(request).await
     }
 
@@ -371,6 +383,13 @@ fn parse_position(data: &Value) -> Option<OpenPosition> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn market_data_is_real_but_signed_requests_only_reach_the_demo() {
+        assert!(public_url("/openApi/swap/v3/quote/klines", "symbol=BTC-USDT").starts_with("https://open-api.bingx.com/"));
+        assert!(signed_url("/openApi/swap/v2/trade/order", "x=1").starts_with("https://open-api-vst.bingx.com/"));
+        assert!(signed_url("/openApi/swap/v3/user/balance", "x=1").contains("-vst."));
+    }
 
     #[test]
     fn signature_matches_hmac_of_sorted_unencoded_params() {
