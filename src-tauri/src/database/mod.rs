@@ -2,6 +2,8 @@ pub mod ai_models;
 pub mod ai_repository;
 pub mod daily_models;
 pub mod daily_repository;
+pub mod trading_models;
+pub mod trading_repository;
 
 use rusqlite::Connection;
 use std::{

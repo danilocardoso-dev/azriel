@@ -22,6 +22,57 @@ pub fn update_settings(
     get_settings(connection)
 }
 
+pub fn get_remote_settings(connection: &Connection) -> Result<RemoteAiSettings, String> {
+    connection.query_row(
+        "SELECT provider,enabled,model,api_key<>'',updated_at FROM ai_remote_settings WHERE id=1",
+        [],
+        |row| Ok(RemoteAiSettings { provider: row.get(0)?, enabled: row.get(1)?, model: row.get(2)?, api_key_configured: row.get(3)?, updated_at: row.get(4)? }),
+    ).map_err(err)
+}
+
+pub fn update_remote_settings(
+    connection: &Connection,
+    input: &RemoteAiSettingsInput,
+) -> Result<RemoteAiSettings, String> {
+    let model = input.model.trim();
+    if model.chars().count() > 120
+        || !model.chars().all(|character| character.is_ascii_alphanumeric() || ['-', '_', '.', ':', '/'].contains(&character))
+    {
+        return Err("Modelo remoto inválido".into());
+    }
+    if let Some(key) = &input.api_key {
+        let key = key.trim();
+        if key.chars().count() > 200 || key.chars().any(char::is_whitespace) {
+            return Err("Chave de API inválida".into());
+        }
+        connection
+            .execute("UPDATE ai_remote_settings SET api_key=?1 WHERE id=1", [key])
+            .map_err(err)?;
+    }
+    let configured: bool = connection
+        .query_row("SELECT api_key<>'' FROM ai_remote_settings WHERE id=1", [], |row| row.get(0))
+        .map_err(err)?;
+    if input.enabled && (!configured || model.is_empty()) {
+        return Err("Configure a chave e selecione um modelo antes de ligar o Gemini".into());
+    }
+    connection.execute(
+        "UPDATE ai_remote_settings SET enabled=?1,model=?2,updated_at=CURRENT_TIMESTAMP WHERE id=1",
+        params![input.enabled, model],
+    ).map_err(err)?;
+    get_remote_settings(connection)
+}
+
+/// Uso exclusivo do backend para chamar o provedor remoto.
+pub fn remote_credentials(connection: &Connection) -> Result<(String, String), String> {
+    let (key, model): (String, String) = connection
+        .query_row("SELECT api_key,model FROM ai_remote_settings WHERE id=1", [], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map_err(err)?;
+    if key.is_empty() {
+        return Err("Chave do Gemini não configurada".into());
+    }
+    Ok((key, model))
+}
+
 pub fn list_conversations(connection: &Connection) -> Result<Vec<Conversation>, String> {
     let mut statement = connection
         .prepare(
@@ -314,6 +365,27 @@ fn err(error: rusqlite::Error) -> String {
 mod tests {
     use super::*;
     use crate::database;
+
+    #[test]
+    fn remote_settings_hide_the_key_and_require_it_to_enable() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        database::initialize(&mut connection).unwrap();
+        let initial = get_remote_settings(&connection).unwrap();
+        assert!(!initial.enabled && !initial.api_key_configured);
+        assert!(update_remote_settings(&connection, &RemoteAiSettingsInput { enabled: true, model: "gemini-2.5-flash".into(), api_key: None }).is_err());
+
+        let saved = update_remote_settings(&connection, &RemoteAiSettingsInput { enabled: true, model: "gemini-2.5-flash".into(), api_key: Some("AIza-test".into()) }).unwrap();
+        assert!(saved.enabled && saved.api_key_configured);
+        assert!(!serde_json::to_string(&saved).unwrap().contains("AIza-test"));
+        assert_eq!(remote_credentials(&connection).unwrap(), ("AIza-test".into(), "gemini-2.5-flash".into()));
+
+        let kept = update_remote_settings(&connection, &RemoteAiSettingsInput { enabled: false, model: "gemini-2.5-pro".into(), api_key: None }).unwrap();
+        assert!(kept.api_key_configured && !kept.enabled);
+        assert!(update_remote_settings(&connection, &RemoteAiSettingsInput { enabled: false, model: "x; DROP".into(), api_key: None }).is_err());
+
+        update_remote_settings(&connection, &RemoteAiSettingsInput { enabled: false, model: String::new(), api_key: Some(String::new()) }).unwrap();
+        assert!(remote_credentials(&connection).is_err());
+    }
 
     #[test]
     fn settings_and_conversations_are_persistent() {

@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { AICoreService } from "../ai/AICoreService";
 import { ContextBuilder } from "../ai/context/ContextBuilder";
+import { GeminiProvider } from "../ai/providers/GeminiProvider";
 import { OllamaProvider } from "../ai/providers/OllamaProvider";
 import { ToolRegistry } from "../ai/tools/toolRegistry";
 import { routeIntent } from "../ai/router/toolRouter";
+import { preferredGeminiModel } from "../components/ai/aiSettingsFlow";
 import { aiRepository } from "../repositories/aiRepository";
 import { conversationService } from "../services/conversationService";
-import type { AISettings, AISettingsInput, AzrielState, Conversation, ConversationMessage, LocalAiModelStatus, OllamaStatus } from "../types";
+import type { AIEngine, AISettings, AISettingsInput, AzrielState, Conversation, ConversationMessage, LocalAiModelStatus, OllamaStatus, RemoteAISettings } from "../types";
 import { AIContext, type AIContextValue } from "./ai-context";
 
 const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export function AIProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<AISettings | null>(null);
+  const [remoteSettings, setRemoteSettings] = useState<RemoteAISettings | null>(null);
+  const [remoteModels, setRemoteModels] = useState<string[]>([]);
   const [status, setStatus] = useState<OllamaStatus | null>(null);
   const [modelLifecycle, setModelLifecycle] = useState<LocalAiModelStatus | null>(null);
   const [modelTransition, setModelTransition] = useState<"LOADING" | "UNLOADING" | null>(null);
@@ -37,6 +41,9 @@ export function AIProvider({ children }: { children: ReactNode }) {
     try {
       const nextSettings = await aiRepository.getSettings();
       setSettings(nextSettings);
+      const nextRemote = await aiRepository.getRemoteSettings().catch(() => null);
+      setRemoteSettings(nextRemote);
+      if (nextRemote?.apiKeyConfigured) void aiRepository.listRemoteModels().then(setRemoteModels).catch(() => setRemoteModels([]));
       try {
         setConversations(await conversationService.list());
       } catch (reason) {
@@ -154,11 +161,49 @@ export function AIProvider({ children }: { children: ReactNode }) {
     finally { setModelTransition(null); }
   }, [modelTransition]);
 
+  const engine: AIEngine = remoteSettings?.enabled ? "gemini" : "ollama";
+  const engineAvailable = engine === "gemini" ? Boolean(remoteSettings?.apiKeyConfigured && remoteSettings.model) : Boolean(status?.available);
+
+  const updateRemote = useCallback(async (input: Parameters<typeof aiRepository.updateRemoteSettings>[0]) => {
+    setError(null);
+    try { const next = await aiRepository.updateRemoteSettings(input); setRemoteSettings(next); return next; }
+    catch (reason) { setError(messageOf(reason)); throw reason; }
+  }, []);
+
+  const refreshRemoteModels = useCallback(async () => {
+    const models = await aiRepository.listRemoteModels();
+    setRemoteModels(models);
+    return models;
+  }, []);
+
+  const setEngine = useCallback(async (next: AIEngine) => {
+    if (!remoteSettings) throw new Error("Configurações do Gemini ainda não foram carregadas.");
+    if (next === "ollama") { await updateRemote({ enabled: false, model: remoteSettings.model }); return; }
+    if (!remoteSettings.apiKeyConfigured) { const detail = "Cadastre a chave do Gemini em Configurações antes de ligá-lo."; setError(detail); throw new Error(detail); }
+    let model = remoteSettings.model;
+    if (!model) {
+      try { model = preferredGeminiModel(remoteModels.length ? remoteModels : await refreshRemoteModels()); }
+      catch (reason) { setError(messageOf(reason)); throw reason; }
+    }
+    await updateRemote({ enabled: true, model });
+  }, [refreshRemoteModels, remoteModels, remoteSettings, updateRemote]);
+
+  const saveRemoteKey = useCallback(async (apiKey: string) => {
+    const current = await updateRemote({ enabled: false, model: remoteSettings?.model ?? "", apiKey });
+    try { const models = await refreshRemoteModels(); if (!current.model) await updateRemote({ enabled: false, model: preferredGeminiModel(models) }); }
+    catch (reason) { setError(`Chave salva, mas a lista de modelos falhou: ${messageOf(reason)}`); }
+  }, [refreshRemoteModels, remoteSettings, updateRemote]);
+
+  const removeRemoteKey = useCallback(async () => {
+    await updateRemote({ enabled: false, model: "", apiKey: "" });
+    setRemoteModels([]);
+  }, [updateRemote]);
+
   const send = useCallback(async (query: string) => {
     if (!settings) throw new Error("Configurações do AI Core ainda não foram carregadas.");
     const localIntent = routeIntent(query).intent;
     const worksWithoutModel = ["critical_tasks", "priority_tasks", "complete_task_reference", "unsupported_internal"].includes(localIntent);
-    if (!status?.available && !worksWithoutModel) throw new Error(status?.error || "AI Core offline. Verifique o Ollama nas Configurações.");
+    if (!engineAvailable && !worksWithoutModel) throw new Error(engine === "gemini" ? "Gemini sem chave ou modelo. Verifique em Configurações." : status?.error || "AI Core offline. Verifique o Ollama nas Configurações.");
     setSending(true); setError(null);
     let conversation = selectedConversation;
     try {
@@ -167,17 +212,25 @@ export function AIProvider({ children }: { children: ReactNode }) {
         setSelectedConversation(conversation);
         setConversations((current) => [conversation!, ...current]);
       }
-      const service = new AICoreService(new OllamaProvider(settings), new ContextBuilder(new ToolRegistry()), conversationService, settings);
+      const provider = engine === "gemini" && remoteSettings ? new GeminiProvider(remoteSettings) : new OllamaProvider(settings);
+      const effective = engine === "gemini" && remoteSettings ? { ...settings, model: remoteSettings.model } : settings;
+      const service = new AICoreService(provider, new ContextBuilder(new ToolRegistry()), conversationService, effective);
       await service.send(query, conversation, (state, detail) => { setCoreState(state); if (detail) setPhase(detail); }, (message) => setMessages((current) => [...current, message]));
       setConversations(await conversationService.list());
     } catch (reason) {
-      const detail = messageOf(reason); setError(detail); setCoreState(detail.toLowerCase().includes("ollama") ? "offline" : "alert"); setPhase("FALHA NO AI CORE");
+      const detail = messageOf(reason); setError(detail); setCoreState(/ollama|gemini|internet/i.test(detail) ? "offline" : "alert"); setPhase("FALHA NO AI CORE");
       if (conversation) setMessages(await conversationService.messages(conversation.id).catch(() => []));
       throw reason;
     } finally { setSending(false); }
-  }, [selectedConversation, settings, status]);
+  }, [engine, engineAvailable, remoteSettings, selectedConversation, settings, status]);
 
-  const value = useMemo<AIContextValue>(() => ({ settings, status, modelLifecycle, modelTransition, conversations, selectedConversation, messages, coreState, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, reload, send, updateSettings, probeOllama, refreshStatus, refreshModelLifecycle, loadLocalModel, unloadLocalModel }), [settings, status, modelLifecycle, modelTransition, conversations, selectedConversation, messages, coreState, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, reload, send, updateSettings, probeOllama, refreshStatus, refreshModelLifecycle, loadLocalModel, unloadLocalModel]);
+  const selectModel = useCallback(async (model: string) => {
+    if (engine === "gemini") { await updateRemote({ enabled: true, model }); return; }
+    if (!settings) throw new Error("Configurações do AI Core ainda não foram carregadas.");
+    await updateSettings({ endpoint: settings.endpoint, model, contextMessageLimit: settings.contextMessageLimit, timeoutSeconds: settings.timeoutSeconds });
+  }, [engine, settings, updateRemote, updateSettings]);
+
+  const value = useMemo<AIContextValue>(() => ({ settings, remoteSettings, remoteModels, engine, engineAvailable, setEngine, selectModel, saveRemoteKey, removeRemoteKey, refreshRemoteModels, status, modelLifecycle, modelTransition, conversations, selectedConversation, messages, coreState, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, reload, send, updateSettings, probeOllama, refreshStatus, refreshModelLifecycle, loadLocalModel, unloadLocalModel }), [settings, remoteSettings, remoteModels, engine, engineAvailable, setEngine, selectModel, saveRemoteKey, removeRemoteKey, refreshRemoteModels, status, modelLifecycle, modelTransition, conversations, selectedConversation, messages, coreState, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, reload, send, updateSettings, probeOllama, refreshStatus, refreshModelLifecycle, loadLocalModel, unloadLocalModel]);
   return <AIContext.Provider value={value}>{children}</AIContext.Provider>;
 }
 

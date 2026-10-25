@@ -1,6 +1,9 @@
 import systemPrompt from "../prompts/system.txt?raw";
 import generalPrompt from "../prompts/general.txt?raw";
+import agentPrompt from "../prompts/agent.txt?raw";
+import { localDateKey } from "../services/dateService";
 import type { AIRequest, AISettings, AIToolResult, AzrielState, Conversation, ConversationMessage, Task } from "../types";
+import { runAgent } from "./agent/agentLoop";
 import { routeIntent } from "./router/toolRouter";
 import { ContextBuilder } from "./context/ContextBuilder";
 import type { AIProvider } from "./providers/AIProvider";
@@ -47,6 +50,10 @@ export interface AIExchange {
 
 const repetitionFallback = "Não consegui formular uma resposta confiável sem repetição. Tente reformular a pergunta ou selecione um modelo maior nas Configurações do AI Core.";
 export const AI_HISTORY_CHARACTER_BUDGET = 1_600;
+export const AGENT_HISTORY_CHARACTER_BUDGET = 6_000;
+// Intenções que dependem de referências numeradas salvas pelo fluxo determinístico.
+const DETERMINISTIC_INTENTS = ["critical_tasks", "priority_tasks", "complete_task_reference", "unsupported_internal"];
+const toolsUnsupported = (error: unknown) => (error instanceof Error ? error.message : String(error)).includes("não suporta ferramentas");
 
 export function hasPathologicalRepetition(value: string): boolean {
   const words = value.toLocaleLowerCase("pt-BR").match(/[\p{L}\p{N}]+/gu) ?? [];
@@ -99,6 +106,18 @@ export class AICoreService {
     const userMessage = await this.conversations.addMessage({ conversationId: conversation.id, role: "user", content: cleanQuery });
     onMessage?.(userMessage);
     const intent = routeIntent(cleanQuery);
+    if (this.provider.chatWithTools && !DETERMINISTIC_INTENTS.includes(intent.intent)) {
+      try {
+        const agentAnswer = await this.answerWithAgent(cleanQuery, conversation.id, onPhase);
+        const assistantMessage = await this.conversations.addMessage({ conversationId: conversation.id, role: "assistant", content: agentAnswer });
+        onMessage?.(assistantMessage);
+        onPhase?.("idle", "RESPOSTA CONCLUÍDA");
+        return { conversation, userMessage, assistantMessage };
+      } catch (error) {
+        // Modelo sem tool calling: segue pelo roteador por palavras-chave.
+        if (!toolsUnsupported(error)) throw error;
+      }
+    }
     let answer: string;
     let systemMessages: Array<{ role: "system"; content: string }>;
     if (intent.scope === "azriel") {
@@ -165,5 +184,23 @@ export class AICoreService {
     onMessage?.(assistantMessage);
     onPhase?.("idle", "RESPOSTA CONCLUÍDA");
     return { conversation, userMessage, assistantMessage };
+  }
+
+  private async answerWithAgent(query: string, conversationId: string, onPhase?: (state: AzrielState, detail?: string) => void): Promise<string> {
+    onPhase?.("processing", "ANALISANDO SOLICITAÇÃO");
+    const history = selectConversationHistory(await this.conversations.messages(conversationId), this.settings.contextMessageLimit, AGENT_HISTORY_CHARACTER_BUDGET)
+      .map(({ role, content }) => ({ role, content }));
+    const result = await runAgent({
+      provider: this.provider,
+      registry: this.contextBuilder.registry,
+      model: this.settings.model,
+      timeoutSeconds: this.settings.timeoutSeconds,
+      messages: [{ role: "system", content: `${agentPrompt}\nData local atual: ${localDateKey()}.` }, ...history],
+      query,
+      conversationId,
+      onTool: (domain) => onPhase?.("tool", `CONSULTANDO ${domain.toUpperCase()}`),
+    });
+    if (!result.content || hasPathologicalRepetition(result.content)) return repetitionFallback;
+    return result.content;
   }
 }

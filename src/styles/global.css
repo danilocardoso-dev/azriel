@@ -1358,6 +1358,35 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border-color: var(--cyan);
   background: rgba(70, 233, 255, 0.12);
 }
+.ai-engine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ai-engine__toggle {
+  display: flex;
+}
+.ai-terminal__header-actions .ai-engine__toggle button + button {
+  border-left: none;
+}
+.ai-terminal__header-actions .ai-engine__toggle button[data-active="true"] {
+  border-color: var(--cyan);
+  background: rgba(70, 233, 255, 0.18);
+  box-shadow: 0 0 10px var(--cyan-glow);
+}
+.ai-terminal__header-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.ai-engine select {
+  max-width: 190px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  background: rgba(4, 12, 18, 0.9);
+  color: var(--cyan);
+  font: 9px var(--mono);
+  letter-spacing: 0.04em;
+}
 .ai-terminal__header-actions i {
   font-style: normal;
   font: 700 9px var(--mono);

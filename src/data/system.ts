@@ -3,6 +3,7 @@ export const modules: Array<{ id: ModuleId; label: string; code: string; descrip
   { id: "command", label: "Command Center", code: "CMD", description: "Visão operacional" },
   { id: "ai", label: "AI Core", code: "AIC", description: "Conversa local" },
   { id: "daily", label: "Operações Diárias", code: "OPS", description: "Tarefas e notas" },
+  { id: "trading", label: "Trading", code: "TRD", description: "Agente na conta demo" },
   { id: "settings", label: "Configurações", code: "CFG", description: "Modelo local" },
 ];
 export const azrielStates: Record<AzrielState, { label: string; message: string }> = {

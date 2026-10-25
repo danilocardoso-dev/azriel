@@ -33,6 +33,53 @@ pub struct OllamaChatResult {
     pub truncated: bool,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct OllamaToolFunction {
+    pub name: String,
+    #[serde(default = "empty_arguments")]
+    pub arguments: serde_json::Value,
+}
+
+fn empty_arguments() -> serde_json::Value {
+    serde_json::json!({})
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct OllamaToolCall {
+    pub function: OllamaToolFunction,
+    /// Campos do provedor remoto que precisam voltar intactos na rodada seguinte
+    /// (ex.: `thought_signature` do Gemini). O Ollama nunca os preenche.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extra_content: Option<serde_json::Value>,
+}
+
+/// Mensagem do loop de agente: alem de system/user/assistant aceita o papel
+/// `tool` e as chamadas de ferramenta no formato nativo do Ollama.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct OllamaAgentMessage {
+    pub role: String,
+    #[serde(default)]
+    pub content: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_calls: Vec<OllamaToolCall>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OllamaAgentResult {
+    pub content: String,
+    pub model: String,
+    pub truncated: bool,
+    pub tool_calls: Vec<OllamaToolCall>,
+}
+
+const AGENT_MESSAGE_LIMIT: usize = 60;
+const AGENT_TOOL_LIMIT: usize = 40;
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalAiModelStatus {
@@ -58,6 +105,12 @@ struct TagModel {
 struct ChatResponse {
     model: String,
     message: OllamaMessage,
+    done_reason: Option<String>,
+}
+#[derive(Deserialize)]
+struct AgentChatResponse {
+    model: String,
+    message: OllamaAgentMessage,
     done_reason: Option<String>,
 }
 
@@ -453,7 +506,174 @@ pub async fn chat_with_format(
     }) {
         return Err("Conteúdo de conversa inválido para o AI Core".into());
     }
-    let options = match generation_profile {
+    let options = generation_options(generation_profile)?;
+    let message_count = messages.len();
+    let input_characters = messages
+        .iter()
+        .map(|message| message.content.chars().count())
+        .sum::<usize>();
+    let request_started = std::time::Instant::now();
+    let mut request_body = serde_json::json!({
+        "model": model.trim(), "messages": messages, "stream": false,
+        "think": false,
+        "options": options
+    });
+    if MODEL_MANUALLY_PINNED.load(Ordering::Acquire) {
+        request_body["keep_alive"] = serde_json::json!(-1);
+    }
+    if let Some(schema) = structured_output_schema {
+        request_body["format"] = schema;
+    }
+    let response = send_chat(
+        &endpoint,
+        model,
+        &request_body,
+        timeout_seconds,
+        request_started,
+        message_count,
+        input_characters,
+    )
+    .await?;
+    let payload = response
+        .json::<ChatResponse>()
+        .await
+        .map_err(|_| "Resposta de chat inválida recebida do Ollama".to_string())?;
+    if payload.message.content.trim().is_empty() {
+        return Err("Ollama retornou uma resposta vazia".into());
+    }
+    eprintln!(
+        "[AI_CORE] chat status=success latency_ms={} messages={} input_chars={}",
+        request_started.elapsed().as_millis(),
+        message_count,
+        input_characters,
+    );
+    Ok(OllamaChatResult {
+        content: payload.message.content.trim().into(),
+        model: payload.model,
+        truncated: payload.done_reason.as_deref() == Some("length"),
+    })
+}
+
+/// Uma rodada do loop de agente: envia as ferramentas disponiveis e devolve
+/// texto ou as chamadas de ferramenta escolhidas pelo modelo. A execucao das
+/// ferramentas fica no AI Core, nunca aqui.
+pub async fn chat_with_tools(
+    endpoint: &str,
+    model: &str,
+    messages: Vec<OllamaAgentMessage>,
+    tools: Vec<serde_json::Value>,
+    timeout_seconds: u64,
+) -> Result<OllamaAgentResult, String> {
+    if LIFECYCLE_OPERATION_ACTIVE.load(Ordering::Acquire) {
+        return Err("Aguarde a operacao de ativacao ou desativacao da IA terminar.".into());
+    }
+    let endpoint = normalize_endpoint(endpoint)?;
+    validate_model(model)?;
+    if messages.is_empty() || messages.len() > AGENT_MESSAGE_LIMIT || tools.len() > AGENT_TOOL_LIMIT {
+        return Err("Quantidade de mensagens ou ferramentas inválida para o AI Core".into());
+    }
+    if messages.iter().any(|message| {
+        let empty_allowed = message.role == "assistant" && !message.tool_calls.is_empty();
+        !["system", "user", "assistant", "tool"].contains(&message.role.as_str())
+            || (message.content.trim().is_empty() && !empty_allowed)
+            || message.content.chars().count() > 50_000
+    }) {
+        return Err("Conteúdo de conversa inválido para o AI Core".into());
+    }
+    let message_count = messages.len();
+    let input_characters = messages
+        .iter()
+        .map(|message| message.content.chars().count())
+        .sum::<usize>();
+    let request_started = std::time::Instant::now();
+    let mut request_body = serde_json::json!({
+        "model": model.trim(), "messages": messages, "stream": false,
+        "think": false,
+        "options": generation_options("agent")?
+    });
+    if !tools.is_empty() {
+        request_body["tools"] = serde_json::json!(tools);
+    }
+    if MODEL_MANUALLY_PINNED.load(Ordering::Acquire) {
+        request_body["keep_alive"] = serde_json::json!(-1);
+    }
+    let response = send_chat(
+        &endpoint,
+        model,
+        &request_body,
+        timeout_seconds,
+        request_started,
+        message_count,
+        input_characters,
+    )
+    .await?;
+    let payload = response
+        .json::<AgentChatResponse>()
+        .await
+        .map_err(|_| "Resposta de chat inválida recebida do Ollama".to_string())?;
+    if payload.message.content.trim().is_empty() && payload.message.tool_calls.is_empty() {
+        return Err("Ollama retornou uma resposta vazia".into());
+    }
+    eprintln!(
+        "[AI_CORE] agent status=success latency_ms={} messages={} input_chars={} tool_calls={}",
+        request_started.elapsed().as_millis(),
+        message_count,
+        input_characters,
+        payload.message.tool_calls.len(),
+    );
+    Ok(OllamaAgentResult {
+        content: payload.message.content.trim().into(),
+        model: payload.model,
+        truncated: payload.done_reason.as_deref() == Some("length"),
+        tool_calls: payload.message.tool_calls,
+    })
+}
+
+async fn send_chat(
+    endpoint: &str,
+    model: &str,
+    request_body: &serde_json::Value,
+    timeout_seconds: u64,
+    request_started: std::time::Instant,
+    message_count: usize,
+    input_characters: usize,
+) -> Result<reqwest::Response, String> {
+    let response = client(timeout_seconds)?
+        .post(format!("{endpoint}/api/chat"))
+        .json(request_body)
+        .send()
+        .await
+        .map_err(|error| {
+            eprintln!(
+                "[AI_CORE] chat status={} latency_ms={} messages={} input_chars={}",
+                if error.is_timeout() {
+                    "timeout"
+                } else {
+                    "connection_error"
+                },
+                request_started.elapsed().as_millis(),
+                message_count,
+                input_characters,
+            );
+            request_error(&error)
+        })?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let detail = response.text().await.unwrap_or_default();
+        eprintln!(
+            "[AI_CORE] chat status=http_{} latency_ms={} messages={} input_chars={}",
+            status.as_u16(),
+            request_started.elapsed().as_millis(),
+            message_count,
+            input_characters,
+        );
+        return Err(response_error(status.as_u16(), &detail, model));
+    }
+    Ok(response)
+}
+
+fn generation_options(generation_profile: &str) -> Result<serde_json::Value, String> {
+    Ok(match generation_profile {
         "standard" => serde_json::json!({
             "temperature": 0.35,
             "top_p": 0.9,
@@ -495,73 +715,15 @@ pub async fn chat_with_format(
             "num_predict": 120,
             "seed": 42
         }),
+        "agent" => serde_json::json!({
+            "temperature": 0.2,
+            "top_p": 0.85,
+            "top_k": 30,
+            "repeat_penalty": 1.12,
+            "repeat_last_n": 128,
+            "num_predict": 700
+        }),
         _ => return Err("Perfil de geração inválido para o AI Core".into()),
-    };
-    let message_count = messages.len();
-    let input_characters = messages
-        .iter()
-        .map(|message| message.content.chars().count())
-        .sum::<usize>();
-    let request_started = std::time::Instant::now();
-    let mut request_body = serde_json::json!({
-        "model": model.trim(), "messages": messages, "stream": false,
-        "think": false,
-        "options": options
-    });
-    if MODEL_MANUALLY_PINNED.load(Ordering::Acquire) {
-        request_body["keep_alive"] = serde_json::json!(-1);
-    }
-    if let Some(schema) = structured_output_schema {
-        request_body["format"] = schema;
-    }
-    let response = client(timeout_seconds)?
-        .post(format!("{endpoint}/api/chat"))
-        .json(&request_body)
-        .send()
-        .await
-        .map_err(|error| {
-            eprintln!(
-                "[AI_CORE] chat status={} latency_ms={} messages={} input_chars={}",
-                if error.is_timeout() {
-                    "timeout"
-                } else {
-                    "connection_error"
-                },
-                request_started.elapsed().as_millis(),
-                message_count,
-                input_characters,
-            );
-            request_error(&error)
-        })?;
-    if !response.status().is_success() {
-        let status = response.status();
-        let detail = response.text().await.unwrap_or_default();
-        eprintln!(
-            "[AI_CORE] chat status=http_{} latency_ms={} messages={} input_chars={}",
-            status.as_u16(),
-            request_started.elapsed().as_millis(),
-            message_count,
-            input_characters,
-        );
-        return Err(response_error(status.as_u16(), &detail, model));
-    }
-    let payload = response
-        .json::<ChatResponse>()
-        .await
-        .map_err(|_| "Resposta de chat inválida recebida do Ollama".to_string())?;
-    if payload.message.content.trim().is_empty() {
-        return Err("Ollama retornou uma resposta vazia".into());
-    }
-    eprintln!(
-        "[AI_CORE] chat status=success latency_ms={} messages={} input_chars={}",
-        request_started.elapsed().as_millis(),
-        message_count,
-        input_characters,
-    );
-    Ok(OllamaChatResult {
-        content: payload.message.content.trim().into(),
-        model: payload.model,
-        truncated: payload.done_reason.as_deref() == Some("length"),
     })
 }
 
@@ -644,6 +806,8 @@ fn response_error(status: u16, detail: &str, model: &str) -> String {
     let detail = detail.to_lowercase();
     if detail.contains("model") && detail.contains("not found") {
         format!("O modelo '{}' não está instalado no Ollama", model.trim())
+    } else if detail.contains("does not support tools") {
+        format!("O modelo '{}' não suporta ferramentas", model.trim())
     } else {
         format!("Ollama respondeu com status {status}")
     }
@@ -871,6 +1035,71 @@ mod tests {
 
         assert_eq!(result.content, "Olá!");
         assert!(requests.lock().unwrap()[0].contains(r#""think":false"#));
+    }
+
+    #[test]
+    fn agent_chat_sends_tools_and_returns_tool_calls() {
+        let (endpoint, requests) = mock_ollama(vec![(
+            200,
+            r#"{"model":"qwen3.5:4b","message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"get_today_tasks","arguments":{}}}]},"done_reason":"stop"}"#,
+        )]);
+        let tool = serde_json::json!({"type":"function","function":{"name":"get_today_tasks","description":"Tarefas de hoje","parameters":{"type":"object","properties":{}}}});
+        let result = tauri::async_runtime::block_on(chat_with_tools(
+            &endpoint,
+            "qwen3.5:4b",
+            vec![OllamaAgentMessage {
+                role: "user".into(),
+                content: "O que tenho hoje?".into(),
+                tool_calls: vec![],
+                tool_name: None,
+            }],
+            vec![tool],
+            5,
+        ))
+        .unwrap();
+
+        assert_eq!(result.tool_calls.len(), 1);
+        assert_eq!(result.tool_calls[0].function.name, "get_today_tasks");
+        let request = requests.lock().unwrap()[0].clone();
+        assert!(request.contains(r#""tools":"#));
+        assert!(!request.contains(r#""tool_calls""#));
+    }
+
+    #[test]
+    fn agent_chat_accepts_tool_results_and_rejects_unknown_roles() {
+        let (endpoint, requests) = mock_ollama(vec![(
+            200,
+            r#"{"model":"qwen3.5:4b","message":{"role":"assistant","content":"Você tem 2 tarefas."},"done_reason":"stop"}"#,
+        )]);
+        let call = OllamaToolCall {
+            function: OllamaToolFunction {
+                name: "get_today_tasks".into(),
+                arguments: serde_json::json!({}),
+            },
+            id: None,
+            extra_content: None,
+        };
+        let messages = vec![
+            OllamaAgentMessage { role: "user".into(), content: "Hoje?".into(), tool_calls: vec![], tool_name: None },
+            OllamaAgentMessage { role: "assistant".into(), content: String::new(), tool_calls: vec![call], tool_name: None },
+            OllamaAgentMessage { role: "tool".into(), content: "[]".into(), tool_calls: vec![], tool_name: Some("get_today_tasks".into()) },
+        ];
+        let result = tauri::async_runtime::block_on(chat_with_tools(&endpoint, "qwen3.5:4b", messages, vec![], 5)).unwrap();
+        assert_eq!(result.content, "Você tem 2 tarefas.");
+        assert!(result.tool_calls.is_empty());
+        let request = requests.lock().unwrap()[0].clone();
+        assert!(!request.contains(r#""tools":"#));
+        assert!(request.contains(r#""tool_name":"get_today_tasks""#));
+        assert!(!request.contains("extra_content"));
+
+        let invalid = vec![OllamaAgentMessage { role: "root".into(), content: "x".into(), tool_calls: vec![], tool_name: None }];
+        assert!(tauri::async_runtime::block_on(chat_with_tools("http://127.0.0.1:9", "qwen3.5:4b", invalid, vec![], 5)).is_err());
+    }
+
+    #[test]
+    fn model_without_tool_support_has_a_clear_error() {
+        let message = response_error(400, r#"{"error":"registry.ollama.ai/library/gemma:2b does not support tools"}"#, "gemma:2b");
+        assert_eq!(message, "O modelo 'gemma:2b' não suporta ferramentas");
     }
 
     #[test]

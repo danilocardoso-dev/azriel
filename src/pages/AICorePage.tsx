@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { AIConversationHistoryDialog } from "../components/ai/AIConversationHistoryDialog";
+import { EngineSwitcher } from "../components/ai/EngineSwitcher";
 import { DeleteConfirmationDialog } from "../components/daily/DeleteConfirmationDialog";
 import { ModuleIntro } from "../components/layout/ModuleIntro";
 import { useAI } from "../contexts/useAI";
@@ -14,7 +15,7 @@ const suggestions = [
 ];
 
 export function AICorePage() {
-  const { settings, status, conversations, selectedConversation, messages, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, send } = useAI();
+  const { settings, status, engine, engineAvailable, conversations, selectedConversation, messages, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, send } = useAI();
   const [input, setInput] = useState("");
   const [conversationToDelete, setConversationToDelete] = useState<Conversation | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -50,7 +51,7 @@ export function AICorePage() {
   }
 
   return <>
-    <ModuleIntro code="AI-10" title="AI Core" description="Consulta local e somente leitura aos dados reais do Azriel." metric={`OLLAMA // ${status?.available ? "ONLINE" : "OFFLINE"}`} />
+    <ModuleIntro code="AI-10" title="AI Core" description="Consulta somente leitura aos dados reais do Azriel." metric={`${engine === "gemini" ? "GEMINI" : "OLLAMA"} // ${engineAvailable ? "ONLINE" : "OFFLINE"}`} />
     <div className="ai-layout">
       <aside className="ai-conversations">
         <header><span>CONVERSAS</span><strong>{conversations.length}</strong></header>
@@ -58,18 +59,18 @@ export function AICorePage() {
         <nav>{conversations.map((conversation) => <div className={`ai-conversation-item${selectedConversation?.id === conversation.id ? " active" : ""}`} key={conversation.id}><button className="ai-conversation-item__open" onClick={() => void selectConversation(conversation)}><strong>{conversation.title}</strong><small>{formatTimestamp(conversation.updatedAt)}</small></button><button className="ai-conversation-item__delete" aria-label={`Excluir conversa ${conversation.title}`} title="Excluir conversa" onClick={() => setConversationToDelete(conversation)}>×</button></div>)}</nav>
       </aside>
       <section className="ai-terminal">
-        <header><div><span>AZRIEL // AI CORE</span><small>{selectedConversation ? selectedConversation.title : "NOVA SESSÃO"}</small></div><div className="ai-terminal__header-actions"><button type="button" onClick={() => setHistoryOpen(true)} disabled={!selectedConversation || loading || sending}>CONTEXTO {messages.length}</button><i data-state={status?.available ? "online" : "offline"}>{status?.available ? "ONLINE" : "OFFLINE"}</i></div></header>
+        <header><div><span>AZRIEL // AI CORE</span><small>{selectedConversation ? selectedConversation.title : "NOVA SESSÃO"}</small></div><div className="ai-terminal__header-actions"><EngineSwitcher disabled={sending} /><button type="button" onClick={() => setHistoryOpen(true)} disabled={!selectedConversation || loading || sending}>CONTEXTO {messages.length}</button><i data-state={engineAvailable ? "online" : "offline"}>{engineAvailable ? "ONLINE" : "OFFLINE"}</i></div></header>
         <div className="ai-terminal__messages" aria-live="polite">
           {!selectedConversation && messages.length === 0 && <div className="ai-welcome"><span>AI CORE // READ ONLY</span><h2>Como posso consultar o sistema?</h2><p>Azriel utiliza ferramentas controladas para recuperar dados. Nenhuma alteração pode ser executada pela IA.</p><div>{suggestions.map((suggestion) => <button onClick={() => setInput(suggestion)} key={suggestion}>{suggestion}</button>)}</div></div>}
-          {selectedConversation && messages.length === 0 && !loading && <div className="ai-welcome"><span>CONTEXTO LIMPO</span><h2>Esta conversa está pronta para recomeçar.</h2><p>A conversa foi preservada, mas nenhuma mensagem anterior será enviada ao Ollama.</p></div>}
+          {selectedConversation && messages.length === 0 && !loading && <div className="ai-welcome"><span>CONTEXTO LIMPO</span><h2>Esta conversa está pronta para recomeçar.</h2><p>A conversa foi preservada, mas nenhuma mensagem anterior será enviada ao modelo.</p></div>}
           {messages.map((message) => <article className={`ai-message ai-message--${message.role}`} key={message.id}><header><span>{message.role === "user" ? "AZ" : "AZRIEL"}</span><time>{formatTimestamp(message.createdAt)}</time></header><p>{message.content}</p></article>)}
           {sending && <div className="ai-phase"><span /><strong>{phase}</strong></div>}
           {loading && selectedConversation && <div className="ai-phase"><span /><strong>RECUPERANDO HISTÓRICO</strong></div>}
           {error && <div className="ai-terminal__error"><strong>AI CORE ALERT</strong><p>{error}</p></div>}
-          {!status?.available && !loading && <div className="ai-terminal__offline"><strong>AI CORE OFFLINE</strong><p>{status?.error || "Ollama não encontrado no endpoint configurado."}</p><small>Os demais módulos permanecem operacionais. Verifique a conexão em Configurações.</small></div>}
+          {!engineAvailable && !loading && <div className="ai-terminal__offline"><strong>AI CORE OFFLINE</strong><p>{engine === "gemini" ? "Gemini sem chave ou sem modelo selecionado." : status?.error || "Ollama não encontrado no endpoint configurado."}</p><small>Os demais módulos permanecem operacionais. Troque o motor acima ou verifique em Configurações.</small></div>}
           <div ref={endRef} />
         </div>
-        <form className="ai-composer" onSubmit={submit}><span>&gt;</span><textarea rows={5} placeholder="Digite um comando para o Azriel..." value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} disabled={!status?.available || sending} /><button disabled={!status?.available || sending || !input.trim()}>{sending ? "PROCESSANDO" : "ENVIAR"}</button></form>
+        <form className="ai-composer" onSubmit={submit}><span>&gt;</span><textarea rows={5} placeholder="Digite um comando para o Azriel..." value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} disabled={!engineAvailable || sending} /><button disabled={!engineAvailable || sending || !input.trim()}>{sending ? "PROCESSANDO" : "ENVIAR"}</button></form>
       </section>
     </div>
     {historyOpen && selectedConversation && settings && <AIConversationHistoryDialog conversation={selectedConversation} messages={messages} contextMessageLimit={settings.contextMessageLimit} busy={clearingHistory} onClose={() => setHistoryOpen(false)} onRequestClear={() => { setHistoryOpen(false); setHistoryClearPending(true); }} />}

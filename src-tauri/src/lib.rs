@@ -2,9 +2,12 @@ mod ai_commands;
 mod commands;
 mod daily_commands;
 pub mod database;
+mod gemini;
 mod ollama;
 mod system_commands;
 mod system_monitor;
+mod trading;
+mod trading_commands;
 
 use database::DatabaseState;
 use tauri::Manager;
@@ -17,14 +20,24 @@ pub fn run() {
         .manage(system_monitor::SystemMonitorState(std::sync::Mutex::new(
             system_monitor::SystemMonitor::new(),
         )))
+        .manage(trading::engine::TradingState::default())
         .setup(|app| {
             let database_path = app.path().app_data_dir()?.join("azriel.db");
             let connection = database::open(&database_path)
                 .map_err(|error| format!("erro ao iniciar o banco: {error}"))?;
+            let resume_trading = database::trading_repository::get_settings(&connection)
+                .map(|settings| settings.running)
+                .unwrap_or(false);
             app.manage(DatabaseState {
                 connection: std::sync::Mutex::new(connection),
                 path: database_path,
             });
+            // O motor estava ligado quando o Azriel fechou: retoma de onde parou.
+            if resume_trading {
+                if let Err(error) = trading::engine::start(app.handle().clone()) {
+                    eprintln!("[TRADING] retomada falhou: {error}");
+                }
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -72,6 +85,19 @@ pub fn run() {
             ai_commands::load_local_ai_model,
             ai_commands::unload_local_ai_model,
             ai_commands::ollama_chat,
+            ai_commands::ollama_agent_chat,
+            ai_commands::get_remote_ai_settings,
+            ai_commands::update_remote_ai_settings,
+            ai_commands::list_remote_ai_models,
+            ai_commands::remote_agent_chat,
+            trading_commands::get_trading_overview,
+            trading_commands::update_trading_settings,
+            trading_commands::update_trading_keys,
+            trading_commands::get_trading_live,
+            trading_commands::start_trading,
+            trading_commands::stop_trading,
+            trading_commands::run_trading_cycle_now,
+            trading_commands::close_trading_position,
             system_commands::system_snapshot,
             system_commands::list_processes,
         ])

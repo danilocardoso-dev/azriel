@@ -4,7 +4,7 @@ import { ToolRegistry } from "../tools/toolRegistry";
 export interface BuiltContext { intent: RoutedIntent; results: AIToolResult[]; text: string; empty: boolean }
 
 export class ContextBuilder {
-  constructor(private readonly registry: ToolRegistry, private readonly maximumCharacters = 14_000) {}
+  constructor(readonly registry: ToolRegistry, private readonly maximumCharacters = 14_000) {}
 
   async build(query: string, intent: RoutedIntent, onTool?: (domain: string, permission: AIToolPermission) => void, conversationId?: string): Promise<BuiltContext> {
     const results: AIToolResult[] = [];

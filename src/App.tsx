@@ -5,6 +5,7 @@ import { CommandCenter } from "./pages/CommandCenter";
 import { SettingsPage } from "./pages/SettingsPage";
 import { DailyOperationsPage } from "./pages/DailyOperationsPage";
 import { AICorePage } from "./pages/AICorePage";
+import { TradingPage } from "./pages/TradingPage";
 import type { ModuleId } from "./types";
 import { useAI } from "./contexts/useAI";
 
@@ -69,6 +70,8 @@ function App() {
       <DailyOperationsPage
         initialCapture={moduleAction === "new-task" ? "task" : moduleAction === "new-note" ? "note" : undefined}
       />
+    ) : activeModule === "trading" ? (
+      <TradingPage />
     ) : activeModule === "settings" ? (
       <SettingsPage />
     ) : (

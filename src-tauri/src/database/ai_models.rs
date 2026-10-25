@@ -20,6 +20,27 @@ pub struct AiSettingsInput {
     pub timeout_seconds: i64,
 }
 
+/// Motor remoto (Gemini). A chave nunca sai do backend: a interface só sabe se ela existe.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteAiSettings {
+    pub provider: String,
+    pub enabled: bool,
+    pub model: String,
+    pub api_key_configured: bool,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteAiSettingsInput {
+    pub enabled: bool,
+    pub model: String,
+    /// `None` mantém a chave atual; `Some("")` remove.
+    #[serde(default)]
+    pub api_key: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Conversation {

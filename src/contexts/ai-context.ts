@@ -1,8 +1,18 @@
 import { createContext } from "react";
-import type { AISettings, AISettingsInput, AzrielState, Conversation, ConversationMessage, LocalAiModelStatus, OllamaStatus } from "../types";
+import type { AIEngine, AISettings, AISettingsInput, AzrielState, Conversation, ConversationMessage, LocalAiModelStatus, OllamaStatus, RemoteAISettings } from "../types";
 
 export interface AIContextValue {
   settings: AISettings | null;
+  remoteSettings: RemoteAISettings | null;
+  remoteModels: string[];
+  /** Motor ativo e se ele está pronto para responder. */
+  engine: AIEngine;
+  engineAvailable: boolean;
+  setEngine: (engine: AIEngine) => Promise<void>;
+  selectModel: (model: string) => Promise<void>;
+  saveRemoteKey: (apiKey: string) => Promise<void>;
+  removeRemoteKey: () => Promise<void>;
+  refreshRemoteModels: () => Promise<string[]>;
   status: OllamaStatus | null;
   modelLifecycle: LocalAiModelStatus | null;
   modelTransition: "LOADING" | "UNLOADING" | null;

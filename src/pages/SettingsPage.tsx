@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AISettingsPanel } from "../components/ai/AISettingsPanel";
+import { GeminiSettingsPanel } from "../components/ai/GeminiSettingsPanel";
 import { ModuleIntro } from "../components/layout/ModuleIntro";
 import { getDatabaseInfo } from "../services/databaseService";
 import type { DatabaseInfo } from "../types";
@@ -40,7 +41,7 @@ export function SettingsPage() {
             </span>
             <span>
               AI Provider
-              <strong>OLLAMA LOCAL</strong>
+              <strong>OLLAMA LOCAL + GEMINI OPCIONAL</strong>
             </span>
             <span>
               Dados Operacionais
@@ -58,6 +59,7 @@ export function SettingsPage() {
         </section>
 
         <AISettingsPanel />
+        <GeminiSettingsPanel />
       </div>
     </section>
   );

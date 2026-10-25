@@ -1,6 +1,10 @@
 use crate::{
     database::{ai_models::*, ai_repository, daily_models::Task, DatabaseState},
-    ollama::{self, LocalAiModelStatus, OllamaChatResult, OllamaMessage, OllamaStatus},
+    gemini,
+    ollama::{
+        self, LocalAiModelStatus, OllamaAgentMessage, OllamaAgentResult, OllamaChatResult,
+        OllamaMessage, OllamaStatus,
+    },
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -143,6 +147,55 @@ pub async fn unload_local_ai_model(
     let (endpoint, model, timeout) = configured_ollama(&state)?;
     ollama::unload_model(&endpoint, &model, timeout).await
 }
+#[tauri::command]
+pub fn get_remote_ai_settings(state: State<'_, DatabaseState>) -> Result<RemoteAiSettings, String> {
+    let connection = lock(&state)?;
+    ai_repository::get_remote_settings(&connection)
+}
+
+#[tauri::command]
+pub fn update_remote_ai_settings(
+    state: State<'_, DatabaseState>,
+    input: RemoteAiSettingsInput,
+) -> Result<RemoteAiSettings, String> {
+    let connection = lock(&state)?;
+    ai_repository::update_remote_settings(&connection, &input)
+}
+
+#[tauri::command]
+pub async fn list_remote_ai_models(state: State<'_, DatabaseState>) -> Result<Vec<String>, String> {
+    let (api_key, _) = {
+        let connection = lock(&state)?;
+        ai_repository::remote_credentials(&connection)?
+    };
+    gemini::list_models(&api_key, 15).await
+}
+
+#[tauri::command]
+pub async fn remote_agent_chat(
+    state: State<'_, DatabaseState>,
+    messages: Vec<OllamaAgentMessage>,
+    tools: Vec<Value>,
+    timeout_seconds: u64,
+) -> Result<OllamaAgentResult, String> {
+    let (api_key, model) = {
+        let connection = lock(&state)?;
+        ai_repository::remote_credentials(&connection)?
+    };
+    gemini::chat_with_tools(&api_key, &model, messages, tools, timeout_seconds).await
+}
+
+#[tauri::command]
+pub async fn ollama_agent_chat(
+    endpoint: String,
+    model: String,
+    messages: Vec<OllamaAgentMessage>,
+    tools: Vec<Value>,
+    timeout_seconds: u64,
+) -> Result<OllamaAgentResult, String> {
+    ollama::chat_with_tools(&endpoint, &model, messages, tools, timeout_seconds).await
+}
+
 #[tauri::command]
 pub async fn ollama_chat(
     endpoint: String,

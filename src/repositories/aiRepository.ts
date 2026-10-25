@@ -1,4 +1,4 @@
-import type { AIRequest, AIResponse, AISettings, AISettingsInput, Conversation, ConversationMessage, ConversationMessageInput, LocalAiModelStatus, OllamaStatus } from "../types";
+import type { AgentRequest, AgentResponse, AIRequest, AIResponse, AISettings, AISettingsInput, RemoteAISettings, RemoteAISettingsInput, Conversation, ConversationMessage, ConversationMessageInput, LocalAiModelStatus, OllamaStatus } from "../types";
 import { invokeDatabase } from "./tauri";
 
 export const aiRepository = {
@@ -23,6 +23,22 @@ export const aiRepository = {
     generationProfile: request.generationProfile ?? "standard",
     structuredOutputSchema: request.structuredOutputSchema ?? null,
     requestMetadata: request.requestMetadata ?? null,
+  }),
+  getRemoteSettings: () => invokeDatabase<RemoteAISettings>("get_remote_ai_settings"),
+  updateRemoteSettings: (input: RemoteAISettingsInput) => invokeDatabase<RemoteAISettings>("update_remote_ai_settings", { input: { ...input, apiKey: input.apiKey ?? null } }),
+  listRemoteModels: () => invokeDatabase<string[]>("list_remote_ai_models"),
+  // O modelo e a chave do Gemini são lidos pelo backend; request.model é ignorado aqui.
+  remoteAgentChat: (request: AgentRequest) => invokeDatabase<AgentResponse>("remote_agent_chat", {
+    messages: request.messages,
+    tools: request.tools,
+    timeoutSeconds: request.timeoutSeconds,
+  }),
+  agentChat: (endpoint: string, request: AgentRequest) => invokeDatabase<AgentResponse>("ollama_agent_chat", {
+    endpoint,
+    model: request.model,
+    messages: request.messages,
+    tools: request.tools,
+    timeoutSeconds: request.timeoutSeconds,
   }),
 };
 
