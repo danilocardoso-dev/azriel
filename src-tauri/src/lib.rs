@@ -1,20 +1,8 @@
 mod ai_commands;
-mod automation_commands;
-mod automation_executor;
-mod automation_policy;
 mod commands;
 mod daily_commands;
 pub mod database;
-mod engineering_commands;
-mod finance_commands;
-mod finance_commitment_commands;
-mod finance_planning_commands;
-mod git_monitor;
-mod market_commands;
 mod ollama;
-mod routine_commands;
-mod stark_commands;
-mod study_commands;
 mod system_commands;
 mod system_monitor;
 
@@ -32,7 +20,7 @@ pub fn run() {
         .setup(|app| {
             let database_path = app.path().app_data_dir()?.join("azriel.db");
             let connection = database::open(&database_path)
-                .map_err(|error| format!("erro ao iniciar o banco de dados: {error}"))?;
+                .map_err(|error| format!("erro ao iniciar o banco: {error}"))?;
             app.manage(DatabaseState {
                 connection: std::sync::Mutex::new(connection),
                 path: database_path,
@@ -40,106 +28,20 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if window.label() != "main" {
-                return;
-            }
+            if window.label() != "main" { return; }
             match event {
                 tauri::WindowEvent::Resized(_) if window.is_minimized().unwrap_or(false) => {
-                    if let Some(orb) = window.app_handle().get_webview_window("orb") {
-                        let _ = orb.show();
-                    }
+                    if let Some(orb) = window.app_handle().get_webview_window("orb") { let _ = orb.show(); }
                     let _ = window.hide();
                 }
                 tauri::WindowEvent::Destroyed => {
-                    if let Some(orb) = window.app_handle().get_webview_window("orb") {
-                        let _ = orb.close();
-                    }
+                    if let Some(orb) = window.app_handle().get_webview_window("orb") { let _ = orb.close(); }
                 }
                 _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![
             commands::database_info,
-            commands::list_knowledge,
-            commands::get_knowledge,
-            commands::save_knowledge,
-            commands::delete_knowledge,
-            commands::update_knowledge_metrics,
-            commands::list_knowledge_history,
-            commands::list_projects,
-            commands::get_project,
-            commands::save_project,
-            commands::delete_project,
-            commands::list_education,
-            commands::save_education,
-            commands::delete_education,
-            stark_commands::list_knowledge_baselines,
-            stark_commands::list_knowledge_events,
-            stark_commands::list_study_roadmaps,
-            stark_commands::save_study_roadmap,
-            stark_commands::export_study_roadmap_json,
-            stark_commands::import_study_roadmap_json,
-            stark_commands::open_roadmap_resource_url,
-            stark_commands::add_roadmap_resource_to_library,
-            stark_commands::update_roadmap_activity_status,
-            stark_commands::delete_study_roadmap,
-            stark_commands::list_research_items,
-            stark_commands::save_research_item,
-            stark_commands::delete_research_item,
-            stark_commands::get_stark_summary,
-            stark_commands::get_learning_engine_status,
-            stark_commands::rebuild_learning_engine,
-            study_commands::start_study_session,
-            study_commands::pause_study_session,
-            study_commands::resume_study_session,
-            study_commands::complete_study_session,
-            study_commands::cancel_study_session,
-            study_commands::get_active_study_session,
-            study_commands::list_study_sessions,
-            study_commands::get_study_today_summary,
-            study_commands::get_study_settings,
-            study_commands::update_study_settings,
-            study_commands::list_study_notebooks,
-            study_commands::get_study_notebook,
-            study_commands::save_study_notebook,
-            study_commands::archive_study_notebook,
-            study_commands::restore_study_notebook,
-            study_commands::delete_study_notebook,
-            study_commands::get_study_note,
-            study_commands::save_study_note,
-            study_commands::create_study_note_from_material,
-            study_commands::delete_study_note,
-            study_commands::list_study_notes,
-            study_commands::search_study_notes,
-            study_commands::list_recent_study_notes,
-            study_commands::save_study_card,
-            study_commands::save_study_cards,
-            study_commands::get_study_card,
-            study_commands::list_study_cards,
-            study_commands::set_study_card_status,
-            study_commands::delete_study_card,
-            study_commands::get_study_review_dashboard_summary,
-            study_commands::get_study_review_queue,
-            study_commands::start_study_review_session,
-            study_commands::get_active_study_review_session,
-            study_commands::submit_study_review_result,
-            study_commands::complete_study_review_session,
-            study_commands::cancel_study_review_session,
-            study_commands::get_study_review_summary,
-            study_commands::list_study_review_sessions,
-            study_commands::import_study_material,
-            study_commands::add_study_link_material,
-            study_commands::list_study_materials,
-            study_commands::get_study_material,
-            study_commands::update_study_material,
-            study_commands::set_study_material_status,
-            study_commands::remove_study_material,
-            study_commands::delete_managed_study_material_file,
-            study_commands::associate_study_material,
-            study_commands::dissociate_study_material,
-            study_commands::reprocess_study_material_text,
-            study_commands::preview_study_material,
-            study_commands::open_study_material,
             daily_commands::list_tasks,
             daily_commands::get_task,
             daily_commands::save_task,
@@ -155,54 +57,6 @@ pub fn run() {
             daily_commands::archive_note,
             daily_commands::delete_note,
             daily_commands::daily_counters,
-            finance_commands::list_financial_categories,
-            finance_commands::save_financial_category,
-            finance_commands::set_financial_category_enabled,
-            finance_commands::list_financial_transactions,
-            finance_commands::save_financial_transaction,
-            finance_commands::mark_financial_transaction_paid,
-            finance_commands::cancel_financial_transaction,
-            finance_commands::get_financial_dashboard,
-            finance_commands::get_financial_monthly_report,
-            finance_commitment_commands::list_finance_contracts,
-            finance_commitment_commands::save_finance_contract,
-            finance_commitment_commands::list_finance_recurrences,
-            finance_commitment_commands::save_finance_recurrence,
-            finance_commitment_commands::list_finance_loans,
-            finance_commitment_commands::save_finance_loan,
-            finance_commitment_commands::list_finance_loan_installments,
-            finance_commitment_commands::save_finance_loan_installment,
-            finance_commitment_commands::set_finance_origin_status,
-            finance_commitment_commands::generate_finance_commitments,
-            finance_commitment_commands::list_finance_commitments,
-            finance_commitment_commands::adjust_finance_commitment,
-            finance_commitment_commands::cancel_finance_commitment,
-            finance_commitment_commands::settle_finance_commitment,
-            finance_commitment_commands::link_finance_commitment_transaction,
-            finance_commitment_commands::get_finance_commitment_summary,
-            finance_planning_commands::list_finance_budgets,
-            finance_planning_commands::save_finance_budget,
-            finance_planning_commands::delete_finance_budget,
-            finance_planning_commands::copy_finance_budgets,
-            finance_planning_commands::list_finance_goals,
-            finance_planning_commands::save_finance_goal,
-            finance_planning_commands::list_finance_goal_contributions,
-            finance_planning_commands::save_finance_goal_contribution,
-            finance_planning_commands::delete_finance_goal_contribution,
-            finance_planning_commands::get_finance_projection,
-            finance_planning_commands::get_finance_alerts,
-            engineering_commands::get_engineering_calibration,
-            engineering_commands::update_engineering_calibration,
-            engineering_commands::reset_engineering_calibration,
-            engineering_commands::read_engineering_model,
-            engineering_commands::register_engineering_model,
-            engineering_commands::get_assembly_intelligence,
-            engineering_commands::save_component_semantic,
-            engineering_commands::save_engineering_subsystem,
-            engineering_commands::delete_engineering_subsystem,
-            engineering_commands::save_component_relationship,
-            engineering_commands::delete_component_relationship,
-            engineering_commands::write_engineering_semantics_export,
             ai_commands::get_ai_settings,
             ai_commands::update_ai_settings,
             ai_commands::list_conversations,
@@ -220,59 +74,7 @@ pub fn run() {
             ai_commands::ollama_chat,
             system_commands::system_snapshot,
             system_commands::list_processes,
-            system_commands::list_workspaces,
-            system_commands::save_workspace,
-            system_commands::delete_workspace,
-            system_commands::get_workspace_status,
-            automation_commands::list_registered_actions,
-            automation_commands::list_applications,
-            automation_commands::save_application,
-            automation_commands::delete_application,
-            automation_commands::list_registered_urls,
-            automation_commands::save_registered_url,
-            automation_commands::delete_registered_url,
-            automation_commands::list_action_history,
-            automation_commands::execute_automation_action,
-            routine_commands::list_routines,
-            routine_commands::save_routine,
-            routine_commands::delete_routine,
-            routine_commands::list_routine_history,
-            routine_commands::run_routine,
-            routine_commands::confirm_routine_execution,
-            routine_commands::cancel_routine_execution,
-            market_commands::import_market_dataset,
-            market_commands::list_market_datasets,
-            market_commands::list_market_agents,
-            market_commands::list_market_risk_profiles,
-            market_commands::run_market_experiment,
-            market_commands::list_market_experiments,
-            market_commands::get_market_experiment,
-            market_commands::rerun_market_experiment,
-            market_commands::run_market_repeatability,
-            market_commands::get_market_repeatability,
-            market_commands::activate_market_kill_switch,
-            market_commands::run_market_validation,
-            market_commands::list_market_validations,
-            market_commands::get_market_validation,
-            market_commands::get_market_ai_status,
-            market_commands::update_market_ai_config,
-            market_commands::list_market_ai_runtime,
-            market_commands::list_market_validation_ai_runtime,
-            market_commands::list_market_ai_decisions,
-            market_commands::list_market_ai_experiment_comparisons,
-            market_commands::get_market_signal_diagnostics,
-            market_commands::generate_market_hold_diagnostics,
-            market_commands::get_market_hold_diagnostics,
-            market_commands::compare_market_hold_diagnostics,
-            market_commands::generate_market_lifecycle_intelligence,
-            market_commands::get_market_lifecycle_intelligence,
-            market_commands::compare_market_lifecycle_intelligence,
-            market_commands::run_market_multi_period_lifecycle_validation,
-            market_commands::list_market_multi_period_lifecycle_validations,
-            market_commands::get_market_multi_period_lifecycle_validation,
-            market_commands::resume_market_multi_period_lifecycle_validation,
-            market_commands::export_market_multi_period_lifecycle_validation,
         ])
         .run(tauri::generate_context!())
-        .expect("erro ao executar o Azriel");
+        .expect("erro ao executar Azriel");
 }

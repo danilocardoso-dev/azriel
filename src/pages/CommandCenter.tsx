@@ -1,149 +1,324 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { AzrielCore } from "../components/azriel/AzrielCore";
-import { localAiCardState } from "../components/ai/localAiLifecycle";
-import { ModuleIntro } from "../components/layout/ModuleIntro";
-import { useAI } from "../contexts/useAI";
-import { useAutomation } from "../contexts/useAutomation";
-import { useAzrielData } from "../contexts/useAzrielData";
 import { useDailyOperations } from "../contexts/useDailyOperations";
-import { useSystem } from "../contexts/useSystem";
-import { starkService } from "../services/starkService";
-import { formatBytes, formatUptime } from "../services/systemService";
-import type { AzrielState, StudyRoadmap } from "../types";
+import { useAI } from "../contexts/useAI";
+import { azrielStates } from "../data/system";
+import { formatBytes, formatUptime, systemService } from "../services/systemService";
+import type { AzrielState, SystemSnapshot, Task } from "../types";
 
 interface CommandCenterProps {
   coreState: AzrielState;
   onOpenAI: () => void;
-  onOpenStudies: () => void;
   onOpenDaily: () => void;
-  onOpenMarket: () => void;
-  onOpenAutomation: () => void;
-  onNewProject: () => void;
   onNewTask: () => void;
   onNewNote: () => void;
 }
 
-export function CommandCenter({ coreState, onOpenAI, onOpenStudies, onOpenDaily, onOpenMarket, onOpenAutomation, onNewProject, onNewTask, onNewNote }: CommandCenterProps) {
-  const { projects, databaseInfo } = useAzrielData();
-  const { counters, loading: dailyLoading, error: dailyError } = useDailyOperations();
-  const { settings: aiSettings, status: aiStatus, modelLifecycle, modelTransition, refreshModelLifecycle, loadLocalModel, unloadLocalModel } = useAI();
-  const { snapshot, workspaces } = useSystem();
-  const { state: automationState, actions, applications, routines, routineHistory } = useAutomation();
-  const [roadmaps, setRoadmaps] = useState<StudyRoadmap[]>([]);
-  const [roadmapError, setRoadmapError] = useState(false);
-  const [modelActionError, setModelActionError] = useState<string | null>(null);
+export function CommandCenter({
+  coreState,
+  onOpenAI,
+  onOpenDaily,
+  onNewTask,
+  onNewNote,
+}: CommandCenterProps) {
+  const { counters, tasks, notes, loading, completeTask } = useDailyOperations();
+  const { send } = useAI();
+  const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(null);
+  const [quickInput, setQuickInput] = useState("");
+  const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    void starkService.roadmaps().then((items) => {
-      if (active) setRoadmaps(items);
-    }).catch(() => {
-      if (active) setRoadmapError(true);
-    });
-    return () => { active = false; };
+    const updateSnapshot = () => {
+      systemService
+        .snapshot()
+        .then((data) => {
+          if (active) setSnapshot(data);
+        })
+        .catch(() => undefined);
+    };
+
+    updateSnapshot();
+    const interval = window.setInterval(updateSnapshot, 10_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
   }, []);
 
-  useEffect(() => {
-    let active = true;
-    const refresh = async () => { if (active) await refreshModelLifecycle(); };
-    const first = window.setTimeout(() => void refresh(), 0);
-    const interval = window.setInterval(() => void refresh(), 20_000);
-    return () => { active = false; window.clearTimeout(first); window.clearInterval(interval); };
-  }, [refreshModelLifecycle]);
+  const memoryPercent = useMemo(() => {
+    if (!snapshot || snapshot.memory.totalBytes <= 0) return 0;
+    return Math.round((snapshot.memory.usedBytes / snapshot.memory.totalBytes) * 100);
+  }, [snapshot]);
 
-  const activeProjects = projects.filter((project) => project.status === "active" || project.status === "research");
-  const activeRoadmaps = roadmaps.filter((roadmap) => roadmap.status === "active");
-  const currentRoadmap = activeRoadmaps[0] ?? roadmaps.find((roadmap) => roadmap.status !== "completed") ?? roadmaps[0];
-  const routinesToday = routineHistory.filter((item) => new Date(item.startedAt).toDateString() === new Date().toDateString()).length;
-  const memoryPercent = snapshot && snapshot.memory.totalBytes > 0 ? Math.round(snapshot.memory.usedBytes / snapshot.memory.totalBytes * 100) : 0;
-  const storage = snapshot?.storage[0];
-  const storagePercent = storage && storage.totalBytes > 0 ? Math.round((storage.totalBytes - storage.availableBytes) / storage.totalBytes * 100) : null;
-  const automationOnline = automationState !== "error" && automationState !== "offline";
-  const localAi = localAiCardState(modelLifecycle, modelTransition);
-  const localAiMessage = modelActionError || modelLifecycle?.error || (localAi.effectiveState === "NOT_AVAILABLE" ? "O modelo configurado nao esta instalado no Ollama." : null);
-  const systemStatus = snapshot ? "TELEMETRIA ATIVA" : "AGUARDANDO SISTEMA";
-  const systemSummary = useMemo(() => [
-    { label: "CPU", value: snapshot ? `${snapshot.cpu.usagePercent.toFixed(0)}%` : "—", detail: `${snapshot?.details.logicalCores ?? 0} PROCESSADORES` },
-    { label: "MEMÓRIA", value: snapshot ? `${memoryPercent}%` : "—", detail: snapshot ? `${formatBytes(snapshot.memory.availableBytes)} LIVRES` : "SEM LEITURA" },
-    { label: "ARMAZENAMENTO", value: storagePercent === null ? "—" : `${storagePercent}%`, detail: storage?.name ?? "SEM VOLUME" },
-    { label: "TEMPO ATIVO", value: snapshot ? formatUptime(snapshot.details.uptimeSeconds) : "—", detail: "DESDE A INICIALIZAÇÃO" },
-  ], [memoryPercent, snapshot, storage, storagePercent]);
+  const memoryFree = useMemo(() => {
+    if (!snapshot) return "—";
+    return formatBytes(snapshot.memory.availableBytes);
+  }, [snapshot]);
 
-  async function runModelAction() {
-    if (localAi.disabled) return;
-    setModelActionError(null);
+  const uptime = useMemo(() => {
+    if (!snapshot) return "—";
+    return formatUptime(snapshot.details.uptimeSeconds);
+  }, [snapshot]);
+
+  const stateInfo = azrielStates[coreState] ?? {
+    label: coreState.toUpperCase(),
+    message: "Operações táticas ativas.",
+  };
+
+  const handleCommandSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    const query = quickInput.trim();
+    if (!query) return;
+    setQuickInput("");
+    onOpenAI();
     try {
-      if (localAi.action === "load") await loadLocalModel();
-      else if (localAi.action === "unload") await unloadLocalModel();
-      else await refreshModelLifecycle();
-    } catch (reason) {
-      setModelActionError(reason instanceof Error ? reason.message : String(reason));
-      await refreshModelLifecycle();
+      await send(query);
+    } catch {
+      // Handled in context
     }
-  }
+  };
 
-  return <>
-    <ModuleIntro code="CMD-01" title="Command Center" description="Visão operacional dos módulos ativos, atividades e recursos locais." metric={systemStatus} />
-    <nav className="command-quick-actions" aria-label="Ações rápidas"><span>ACESSO RÁPIDO</span><button onClick={onOpenStudies}>ESTUDOS</button><button onClick={onNewProject}>＋ PROJETO</button><button onClick={onNewTask}>＋ TAREFA</button><button onClick={onNewNote}>＋ NOTA</button></nav>
+  const handleQuickQuestion = async (query: string) => {
+    onOpenAI();
+    try {
+      await send(query);
+    } catch {
+      // Handled in context
+    }
+  };
 
-    <div className="command-center-v2">
-      <section className="command-center-v2__hero">
-        <article className="command-core-card">
-          <header><span>AZRIEL CORE</span><i>{coreState.toUpperCase()}</i></header>
-          <div className="command-core-card__body"><AzrielCore state={coreState} onClick={onOpenAI} compact /><div><small>SESSÃO LOCAL</small><strong>PERSONAL INTELLIGENCE SYSTEM</strong><p>Projetos, estudos, operações, automações e experimentos reunidos em uma única leitura.</p></div></div>
-          <footer><span>SQLITE <b>S{databaseInfo?.schemaVersion ?? "—"}</b></span><span>AI <b>{aiStatus?.available ? "ONLINE" : "OFFLINE"}</b></span><span>REDE <b>{snapshot?.network.length ? "ATIVA" : "—"}</b></span></footer>
-        </article>
+  const handleFinishTask = async (id: string) => {
+    setBusyTaskId(id);
+    try {
+      await completeTask(id);
+    } finally {
+      setBusyTaskId(null);
+    }
+  };
 
-        <section className="command-system-panel" aria-label="Telemetria do dispositivo">
-          <header><span>DISPOSITIVO</span><strong>{snapshot?.details.hostname ?? "COMPUTADOR LOCAL"}</strong><i>{snapshot?.details.osName ?? "SISTEMA INDISPONÍVEL"}</i></header>
-          <div>{systemSummary.map((item) => <article key={item.label}><span>{item.label}</span><strong>{item.value}</strong><small>{item.detail}</small></article>)}</div>
-        </section>
-      </section>
+  const activeTodayTasks = useMemo(() => {
+    return tasks.filter((t) => t.status !== "completed").slice(0, 4);
+  }, [tasks]);
 
-      <section className="command-module-grid">
-        <button className="command-module-card command-module-card--studies" onClick={onOpenStudies}>
-          <header><span>STD</span><strong>ESTUDOS</strong><i>{activeRoadmaps.length} ATIVOS</i></header>
-          {roadmapError ? <p>ROADMAPS INDISPONÍVEIS</p> : currentRoadmap ? <><h2>{currentRoadmap.name}</h2><p>{currentRoadmap.completedActivities} de {currentRoadmap.totalActivities} atividades concluídas</p><div className="command-progress"><i style={{ width: `${currentRoadmap.progress}%` }} /></div><footer><b>{currentRoadmap.progress}%</b><span>CONTINUAR ESTUDO →</span></footer></> : <><h2>Nenhum roadmap</h2><p>Crie uma trilha para começar.</p><footer><span>ABRIR ESTUDOS →</span></footer></>}
-        </button>
+  const recentNotes = useMemo(() => {
+    return notes.filter((n) => n.status !== "archived").slice(0, 3);
+  }, [notes]);
 
-        <button className="command-module-card" onClick={onOpenDaily}>
-          <header><span>OPS</span><strong>OPERAÇÕES DIÁRIAS</strong><i>{dailyError ? "ERRO" : dailyLoading ? "SINCRONIZANDO" : "ATIVO"}</i></header>
-          <div className="command-stat-row"><span><b>{counters.today}</b>HOJE</span><span data-alert={counters.overdue > 0}><b>{counters.overdue}</b>ATRASADAS</span><span><b>{counters.priority}</b>PRIORITÁRIAS</span></div>
-          <footer><span>ABRIR OPERAÇÕES →</span></footer>
-        </button>
+  return (
+    <div className="stark-hud-deck">
+      {/* Top Reactor Cockpit Stage */}
+      <section className="stark-cockpit">
+        {/* Left Telemetry Wing */}
+        <aside className="stark-hud-wing stark-hud-wing--left">
+          <header className="stark-wing-head">
+            <span className="stark-bracket">┌</span>
+            <strong>HARDWARE TELEMETRY</strong>
+            <i>SYS // READOUT</i>
+          </header>
+          <div className="stark-telemetry-body">
+            <div className="stark-telemetry-gauge">
+              <div className="stark-gauge-label">
+                <span>CPU UTILIZATION</span>
+                <strong>{snapshot ? `${snapshot.cpu.usagePercent.toFixed(0)}%` : "—"}</strong>
+              </div>
+              <div className="stark-gauge-bar">
+                <i style={{ width: `${snapshot ? Math.min(snapshot.cpu.usagePercent, 100) : 0}%` }} />
+              </div>
+              <small>{snapshot ? `${snapshot.details.logicalCores} NÚCLEOS ATIVOS` : "AGUARDANDO"}</small>
+            </div>
 
-        <article className="command-module-card">
-          <header><span>PRJ</span><strong>PROJETOS</strong><i>{activeProjects.length} ATIVOS</i></header>
-          <div className="command-project-list">{activeProjects.slice(0, 4).map((project) => <span key={project.id}><strong>{project.name}</strong><i>{project.progress}%</i></span>)}{!activeProjects.length && <p>Nenhum projeto ativo.</p>}</div>
-          <footer><button onClick={onNewProject}>NOVO PROJETO</button></footer>
-        </article>
+            <div className="stark-telemetry-gauge">
+              <div className="stark-gauge-label">
+                <span>RAM ALLOCATION</span>
+                <strong>{memoryPercent}%</strong>
+              </div>
+              <div className="stark-gauge-bar">
+                <i style={{ width: `${memoryPercent}%` }} />
+              </div>
+              <small>{memoryFree} DISPONÍVEIS</small>
+            </div>
 
-        <button className="command-module-card" onClick={onOpenAutomation}>
-          <header><span>AUT</span><strong>AUTOMAÇÃO</strong><i>{automationOnline ? "SAFE MODE" : "OFFLINE"}</i></header>
-          <div className="command-stat-row"><span><b>{actions.length}</b>AÇÕES</span><span><b>{applications.filter((item) => item.enabled).length}</b>APPS</span><span><b>{routines.filter((item) => item.enabled).length}</b>ROTINAS</span></div>
-          <footer><span>{routinesToday} EXECUÇÕES HOJE</span><span>ABRIR →</span></footer>
-        </button>
-
-        <article className="command-module-card command-local-ai-card" data-state={localAi.effectiveState.toLowerCase()}>
-          <header><span>AIC</span><strong>IA LOCAL</strong><i>{localAi.headline}</i></header>
-          <div className="command-local-ai-card__status">
-            <h2>{modelLifecycle?.model || aiSettings?.model || "MODELO CONFIGURADO"}</h2>
-            <span><b>OLLAMA SERVER</b><i>{modelLifecycle?.serverStatus || (aiStatus?.available ? "ONLINE" : "VERIFICANDO")}</i></span>
-            <span><b>MODELO</b><i>{localAi.effectiveState}</i></span>
-            <span><b>PROVIDER</b><i>{modelLifecycle?.provider || "OLLAMA"}</i></span>
-            {localAiMessage && <p>{localAiMessage}</p>}
+            <div className="stark-telemetry-stat">
+              <span>TEMPO ATIVO</span>
+              <strong>{uptime}</strong>
+            </div>
+            <div className="stark-telemetry-stat">
+              <span>ESTAÇÃO HOST</span>
+              <strong style={{ fontSize: "11px", letterSpacing: "0.05em" }}>
+                {snapshot?.details.hostname ?? "AZRIEL LOCAL"}
+              </strong>
+            </div>
           </div>
-          <footer><button onClick={onOpenAI}>ABRIR CONVERSA</button><button className="command-local-ai-card__action" onClick={() => void runModelAction()} disabled={localAi.disabled}>{localAi.actionLabel}</button></footer>
-        </article>
+          <footer className="stark-wing-footer">
+            <span className="stark-bracket">└</span>
+            <small>TELEMETRIA LOCAL</small>
+          </footer>
+        </aside>
 
-        <button className="command-module-card command-module-card--market" onClick={onOpenMarket}>
-          <header><span>LAB</span><strong>MARKET LAB</strong><i>LOCAL</i></header>
-          <h2>Laboratório quantitativo</h2><p>Backtests, validação e observação de agentes sem execução financeira real.</p>
-          <footer><span>ABRIR LABORATÓRIO →</span></footer>
-        </button>
+        {/* Center: The Holographic Arc Reactor */}
+        <div className="stark-reactor-column">
+          <div className="stark-reactor-glow-field">
+            <AzrielCore state={coreState} onClick={onOpenAI} />
+          </div>
+
+          <div className="stark-reactor-info">
+            <span className="stark-reactor-badge">ARC REACTOR // {stateInfo.label}</span>
+            <h2>{stateInfo.message}</h2>
+          </div>
+
+          {/* Holographic Sound Waveform */}
+          <div className="stark-waveform" aria-hidden="true">
+            <span /><span /><span /><span /><span /><span /><span /><span /><span /><span /><span /><span />
+          </div>
+        </div>
+
+        {/* Right Mission Directives Wing */}
+        <aside className="stark-hud-wing stark-hud-wing--right">
+          <header className="stark-wing-head">
+            <i>OPS // OVERVIEW</i>
+            <strong>DIRETRIZES TÁTICAS</strong>
+            <span className="stark-bracket">┐</span>
+          </header>
+          <div className="stark-telemetry-body">
+            <button className="stark-mission-metric" onClick={onOpenDaily} type="button">
+              <span>TAREFAS PENDENTES</span>
+              <strong>{loading ? "…" : counters.pending}</strong>
+              <small>{counters.priority} DE ALTA PRIORIDADE</small>
+            </button>
+
+            <button
+              className={`stark-mission-metric ${counters.overdue > 0 ? "stark-mission-metric--alert" : ""}`}
+              onClick={onOpenDaily}
+              type="button"
+            >
+              <span>FOCO PARA HOJE</span>
+              <strong style={{ color: counters.overdue > 0 ? "var(--amber-alert)" : undefined }}>
+                {loading ? "…" : counters.today}
+              </strong>
+              <small>
+                {counters.overdue > 0 ? `⚠ ${counters.overdue} ATRASADAS` : "AGENDA REGULAR"}
+              </small>
+            </button>
+
+            <button className="stark-mission-metric" onClick={onOpenDaily} type="button">
+              <span>NOTAS NO REGISTRO</span>
+              <strong>{loading ? "…" : counters.notes}</strong>
+              <small>PERSISTÊNCIA SQLITE</small>
+            </button>
+
+            <div className="stark-telemetry-stat">
+              <span>CANAL OLLAMA</span>
+              <strong style={{ color: coreState === "offline" ? "var(--red-critical)" : "var(--green-online)" }}>
+                {coreState === "offline" ? "OFFLINE" : "ATIVO"}
+              </strong>
+            </div>
+          </div>
+          <footer className="stark-wing-footer">
+            <small>ESTADO DO FLUXO</small>
+            <span className="stark-bracket">┘</span>
+          </footer>
+        </aside>
       </section>
 
-      <footer className="command-center-v2__footer"><span>{workspaces.filter((workspace) => workspace.enabled).length} WORKSPACES AUTORIZADOS</span><span>DADOS LOCAIS</span><span>SEM CONTROLE IRRESTRITO</span></footer>
+      {/* Center Command Console */}
+      <section className="stark-command-deck">
+        <form className="stark-command-bar" onSubmit={handleCommandSubmit}>
+          <span className="stark-prompt-symbol">&gt;</span>
+          <input
+            type="text"
+            placeholder="AZRIEL // DIGITE UMA ORDEM, PERGUNTA OU COMANDO..."
+            value={quickInput}
+            onChange={(e) => setQuickInput(e.target.value)}
+          />
+          <button type="submit" disabled={!quickInput.trim()}>
+            TRANSMITIR
+          </button>
+        </form>
+
+        <div className="stark-quick-chips">
+          <button type="button" onClick={() => void handleQuickQuestion("Azriel, relatório do sistema.")}>
+            ⚡ RELATÓRIO DO SISTEMA
+          </button>
+          <button type="button" onClick={() => void handleQuickQuestion("O que tenho agendado para hoje?")}>
+            ⚡ AGENDA DE HOJE
+          </button>
+          <button type="button" onClick={() => void handleQuickQuestion("Quais tarefas são prioritárias?")}>
+            ⚡ PRIORIDADES
+          </button>
+          <button type="button" onClick={onNewTask}>
+            ＋ NOVA TAREFA
+          </button>
+          <button type="button" onClick={onNewNote}>
+            ＋ NOVA NOTA
+          </button>
+          <button type="button" onClick={onOpenAI}>
+            🧠 TERMINAL COMPLETO
+          </button>
+        </div>
+      </section>
+
+      {/* Holographic Tactical Data Streams */}
+      <section className="stark-data-streams">
+        {/* Stream 1: Urgent Tasks */}
+        <div className="stark-stream-panel">
+          <header className="stark-stream-header">
+            <span>DIRETRIZES ATIVAS // FILTRO RÁPIDO</span>
+            <button type="button" onClick={onOpenDaily}>VER TODAS →</button>
+          </header>
+          <div className="stark-stream-list">
+            {activeTodayTasks.length > 0 ? (
+              activeTodayTasks.map((task: Task) => (
+                <article key={task.id} className="stark-stream-item">
+                  <div className="stark-item-info">
+                    <strong>{task.title}</strong>
+                    <small>
+                      <span className={`stark-priority-tag priority--${task.priority}`}>
+                        {task.priority.toUpperCase()}
+                      </span>
+                      {" · "}
+                      {task.dueDate ? `PRAZO: ${task.dueDate}` : "SEM PRAZO DEFINIDO"}
+                    </small>
+                  </div>
+                  <button
+                    type="button"
+                    className="stark-check-btn"
+                    disabled={busyTaskId === task.id}
+                    onClick={() => void handleFinishTask(task.id)}
+                    title="Concluir tarefa"
+                  >
+                    ✓ CONCLUIR
+                  </button>
+                </article>
+              ))
+            ) : (
+              <p className="stark-empty-msg">NENHUMA TAREFA PENDENTE NO RADAR ATUAL.</p>
+            )}
+          </div>
+        </div>
+
+        {/* Stream 2: Recent Notes */}
+        <div className="stark-stream-panel">
+          <header className="stark-stream-header">
+            <span>MEMÓRIA OPERACIONAL // ANOTAÇÕES RECENTES</span>
+            <button type="button" onClick={onOpenDaily}>NOTAS →</button>
+          </header>
+          <div className="stark-stream-list">
+            {recentNotes.length > 0 ? (
+              recentNotes.map((note) => (
+                <article key={note.id} className="stark-stream-item">
+                  <div className="stark-item-info">
+                    <strong>{note.title || "ANOTAÇÃO"}</strong>
+                    <p>{note.content}</p>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <p className="stark-empty-msg">NENHUMA ANOTAÇÃO SALVA RECENTEMENTE.</p>
+            )}
+          </div>
+        </div>
+      </section>
     </div>
-  </>;
+  );
 }

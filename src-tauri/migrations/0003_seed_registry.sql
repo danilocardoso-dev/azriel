@@ -1,4 +1,0 @@
-CREATE TABLE _azriel_seeds (
-  key TEXT PRIMARY KEY,
-  applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);

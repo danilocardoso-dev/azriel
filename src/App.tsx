@@ -1,50 +1,36 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getCurrentWindow, Window } from "@tauri-apps/api/window";
 import { modules } from "./data/system";
 import { CommandCenter } from "./pages/CommandCenter";
-import { ProjectsPage } from "./pages/ProjectsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { DailyOperationsPage } from "./pages/DailyOperationsPage";
 import { AICorePage } from "./pages/AICorePage";
-import { AutomationPage } from "./pages/AutomationPage";
 import type { ModuleId } from "./types";
-import { useAzrielData } from "./contexts/useAzrielData";
-import { DataState } from "./components/layout/DataState";
 import { useAI } from "./contexts/useAI";
-import { useAutomation } from "./contexts/useAutomation";
-import { RoutineConfirmationDialog } from "./components/automation/RoutineConfirmationDialog";
-
-const MarketLabPage = lazy(() => import("./pages/MarketLabPage").then((module) => ({ default: module.MarketLabPage })));
-const StudiesPage = lazy(() => import("./pages/StudiesPage").then((module) => ({ default: module.StudiesPage })));
-const FinancePage = lazy(() => import("./pages/FinancePage").then((module) => ({ default: module.FinancePage })));
 
 function App() {
-  const { loading, error, reload, databaseInfo } = useAzrielData();
-  const { coreState, status: aiStatus } = useAI();
-  const { state: automationState, pendingRoutine } = useAutomation();
-  const displayState = automationState === "executing" ? (pendingRoutine ? "routine" : "executing") : coreState;
+  const { coreState } = useAI();
   const [activeModule, setActiveModule] = useState<ModuleId>("command");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [moduleAction, setModuleAction] = useState<"new-project" | "new-task" | "new-note" | null>(null);
+  const [moduleAction, setModuleAction] = useState<"new-task" | "new-note" | null>(null);
   const [now, setNow] = useState(() => new Date());
 
   const changeFullscreen = useCallback(async (forcedState?: boolean) => {
-    const appWindow = getCurrentWindow();
-    const nextState = forcedState ?? !(await appWindow.isFullscreen());
-    await appWindow.setFullscreen(nextState);
-    setIsFullscreen(nextState);
+    const window = getCurrentWindow();
+    const state = forcedState ?? !(await window.isFullscreen());
+    await window.setFullscreen(state);
+    setIsFullscreen(state);
   }, []);
 
   const enterOrbMode = useCallback(async () => {
-    const appWindow = getCurrentWindow();
-    const orbWindow = await Window.getByLabel("orb");
-    if (!orbWindow) {
-      await appWindow.minimize();
+    const window = getCurrentWindow();
+    const orb = await Window.getByLabel("orb");
+    if (!orb) {
+      await window.minimize();
       return;
     }
-    await orbWindow.show();
-    await appWindow.hide();
+    await orb.show();
+    await window.hide();
   }, []);
 
   useEffect(() => {
@@ -55,10 +41,8 @@ function App() {
   useEffect(() => {
     let active = true;
     const appWindow = getCurrentWindow();
-    void appWindow.isFullscreen().then((fullscreen) => {
-      if (active) setIsFullscreen(fullscreen);
-    }).catch(() => undefined);
-    const handleFullscreenShortcut = (event: KeyboardEvent) => {
+    void appWindow.isFullscreen().then((value) => active && setIsFullscreen(value)).catch(() => undefined);
+    const shortcut = (event: KeyboardEvent) => {
       if (event.key === "F11") {
         event.preventDefault();
         void changeFullscreen();
@@ -66,84 +50,125 @@ function App() {
         void changeFullscreen(false);
       }
     };
-    window.addEventListener("keydown", handleFullscreenShortcut);
+    globalThis.window.addEventListener("keydown", shortcut);
     return () => {
       active = false;
-      window.removeEventListener("keydown", handleFullscreenShortcut);
+      globalThis.window.removeEventListener("keydown", shortcut);
     };
   }, [changeFullscreen, isFullscreen]);
 
-  const currentModule = useMemo(() => modules.find((module) => module.id === activeModule)!, [activeModule]);
-
-  const renderModule = () => {
-    if (["command", "projects", "studies"].includes(activeModule) && (loading || error)) {
-      return <DataState loading={loading} error={error} empty={false} onRetry={() => void reload()} />;
-    }
-    switch (activeModule) {
-      case "projects": return <ProjectsPage openCreate={moduleAction === "new-project"} />;
-      case "ai": return <AICorePage />;
-      case "daily": return <DailyOperationsPage initialCapture={moduleAction === "new-task" ? "task" : moduleAction === "new-note" ? "note" : undefined} />;
-      case "studies": return <Suspense fallback={<div className="data-state"><span className="live-dot" /><strong>INICIALIZANDO STUDY LAB</strong></div>}><StudiesPage /></Suspense>;
-      case "finance": return <Suspense fallback={<div className="data-state"><span className="live-dot" /><strong>INICIALIZANDO FINANÇAS</strong></div>}><FinancePage /></Suspense>;
-      case "market": return <Suspense fallback={<div className="data-state"><span className="live-dot" /><strong>INICIALIZANDO MARKET LAB</strong></div>}><MarketLabPage /></Suspense>;
-      case "automation": return <AutomationPage />;
-      case "settings": return <SettingsPage />;
-      default: return <CommandCenter coreState={displayState} onOpenAI={() => { setModuleAction(null); setActiveModule("ai"); }} onOpenStudies={() => { setModuleAction(null); setActiveModule("studies"); }} onOpenDaily={() => { setModuleAction(null); setActiveModule("daily"); }} onOpenMarket={() => { setModuleAction(null); setActiveModule("market"); }} onOpenAutomation={() => { setModuleAction(null); setActiveModule("automation"); }} onNewProject={() => { setModuleAction("new-project"); setActiveModule("projects"); }} onNewTask={() => { setModuleAction("new-task"); setActiveModule("daily"); }} onNewNote={() => { setModuleAction("new-note"); setActiveModule("daily"); }} />;
-    }
+  const openDaily = (action: "new-task" | "new-note" | null = null) => {
+    setModuleAction(action);
+    setActiveModule("daily");
   };
 
+  const content =
+    activeModule === "ai" ? (
+      <AICorePage />
+    ) : activeModule === "daily" ? (
+      <DailyOperationsPage
+        initialCapture={moduleAction === "new-task" ? "task" : moduleAction === "new-note" ? "note" : undefined}
+      />
+    ) : activeModule === "settings" ? (
+      <SettingsPage />
+    ) : (
+      <CommandCenter
+        coreState={coreState}
+        onOpenAI={() => setActiveModule("ai")}
+        onOpenDaily={() => openDaily()}
+        onNewTask={() => openDaily("new-task")}
+        onNewNote={() => openDaily("new-note")}
+      />
+    );
+
   return (
-    <div className={`app-shell app-shell--${displayState} ${sidebarCollapsed ? "app-shell--sidebar-collapsed" : ""}`}>
-      <header className="topbar">
-        <button className="brand" onClick={() => { setModuleAction(null); setActiveModule("command"); }} aria-label="Abrir Command Center">
-          <span className="brand__mark"><i /></span><strong>AZRIEL</strong><small>PERSONAL INTELLIGENCE SYSTEM</small>
+    <div className={`stark-shell stark-shell--${coreState}`}>
+      {/* Top Holographic Navigation Bar */}
+      <header className="stark-topbar">
+        <button
+          className="stark-brand"
+          onClick={() => {
+            setModuleAction(null);
+            setActiveModule("command");
+          }}
+          aria-label="Voltar ao Reator Central"
+          type="button"
+        >
+          <span className="brand__mark"><i /></span>
+          <div>
+            <strong>AZRIEL</strong>
+            <small>TACTICAL INTELLIGENCE</small>
+          </div>
         </button>
-        <div className="topbar__context"><span>{currentModule.code}</span>{currentModule.description}</div>
-        <div className="topbar__system">
-          <div className="topbar__status"><span className="live-dot" /><div><strong>SISTEMA ONLINE</strong><small>HUD V0.8.4 / SQLite {databaseInfo ? `S${databaseInfo.schemaVersion}` : ""}</small></div></div>
-          <div className="topbar__window-actions">
-            <button className="topbar__window-control" onClick={() => void enterOrbMode()} aria-label="Minimizar para o orbe" title="Minimizar para o orbe">&minus;</button>
-            <button className={`topbar__window-control ${isFullscreen ? "active" : ""}`} onClick={() => void changeFullscreen()} aria-label={isFullscreen ? "Sair da tela cheia" : "Entrar em tela cheia"} aria-pressed={isFullscreen} title={isFullscreen ? "Sair da tela cheia (Esc)" : "Tela cheia (F11)"}>⛶</button>
+
+        {/* Central HUD Mode Switcher */}
+        <nav className="stark-nav" aria-label="Deck tático">
+          {modules.map((module) => (
+            <button
+              key={module.id}
+              type="button"
+              className={`stark-nav__pill ${activeModule === module.id ? "active" : ""}`}
+              onClick={() => {
+                setModuleAction(null);
+                setActiveModule(module.id);
+              }}
+            >
+              <span>{module.code}</span>
+              <strong>{module.label}</strong>
+            </button>
+          ))}
+        </nav>
+
+        {/* Right Status Telemetry */}
+        <div className="stark-telemetry-head">
+          <div className="stark-status-beacon">
+            <span className="live-dot" />
+            <span>NÚCLEO {coreState.toUpperCase()}</span>
+          </div>
+          <div className="stark-time">{now.toLocaleTimeString("pt-BR")}</div>
+          <div className="stark-window-controls">
+            <button
+              className="stark-btn-control"
+              onClick={() => void enterOrbMode()}
+              title="Minimizar para o Orbe"
+              aria-label="Minimizar para o Orbe"
+              type="button"
+            >
+              −
+            </button>
+            <button
+              className={`stark-btn-control ${isFullscreen ? "active" : ""}`}
+              onClick={() => void changeFullscreen()}
+              title={isFullscreen ? "Sair da tela cheia" : "Tela cheia"}
+              aria-label="Tela cheia"
+              type="button"
+            >
+              ⛶
+            </button>
           </div>
         </div>
       </header>
 
-      <aside className="sidebar">
-        <div className="sidebar__head">
-          <span className="sidebar__label">MÓDULOS DO SISTEMA</span>
-          <button
-            className="sidebar-toggle"
-            onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
-            aria-label={sidebarCollapsed ? "Expandir menu lateral" : "Recolher menu lateral"}
-            aria-expanded={!sidebarCollapsed}
-            title={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}
-          >
-            <span>{sidebarCollapsed ? "»" : "«"}</span>
-          </button>
-        </div>
-        <nav aria-label="Módulos principais">
-          {modules.map((module, index) => (
-            <button className={activeModule === module.id ? "active" : ""} onClick={() => { setModuleAction(null); setActiveModule(module.id); }} key={module.id} title={sidebarCollapsed ? module.label : undefined}>
-              <span>{String(index + 1).padStart(2, "0")}</span><i>{module.code}</i><strong>{module.label}</strong>
-            </button>
-          ))}
-        </nav>
-        <div className="sidebar__telemetry">
-          <span>SESSION</span><strong>LOCAL / SQLITE</strong>
-          <span>DATABASE</span><strong>{databaseInfo ? `SCHEMA ${databaseInfo.schemaVersion}` : "CONECTANDO"}</strong>
-          <span>AI CORE</span><strong>{aiStatus?.available ? "OLLAMA ONLINE" : "OFFLINE"}</strong>
-          <span>SECURITY</span><strong>SAFE ACTIONS</strong>
-        </div>
-      </aside>
+      {/* Main Holographic Canvas */}
+      <main className="stark-stage" key={activeModule}>
+        {content}
+      </main>
 
-      <main className="workspace" key={activeModule}>{renderModule()}</main>
-
-      <footer className="statusbar">
-        <span>AZRIEL // STUDIES · PROJECTS · INTELLIGENCE · AUTOMATION</span>
-        <span>{now.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }).toUpperCase()}</span>
-        <strong>{now.toLocaleTimeString("pt-BR", { hour12: false })}</strong>
+      {/* Holographic Bottom Stream */}
+      <footer className="stark-statusbar">
+        <div className="stark-statusbar__tag">
+          <span>MARK-IV // AZRIEL OPERATING SYSTEM</span>
+          <i>DIRECT TACTICAL LINK</i>
+        </div>
+        <div className="stark-statusbar__metrics">
+          <span>SQLITE CONECTADO</span>
+          <span>OLLAMA LOCAL DISPONÍVEL</span>
+          <span>TELEMETRIA CONTÍNUA</span>
+        </div>
+        <div className="stark-statusbar__date">
+          <strong>{now.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }).toUpperCase()}</strong>
+        </div>
       </footer>
-      <RoutineConfirmationDialog key={pendingRoutine?.historyId ?? "routine-none"} />
     </div>
   );
 }

@@ -23,8 +23,16 @@ sysinfo = { version = "0.39.6", default-features = false, features = ["system", 
 tauri-plugin-dialog = "2"
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10"
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time", "sync", "macros"] }
 sha2 = "0.10"
 infer = "0.19"
 lopdf = "0.38"
 tauri-plugin-opener = "2"
+tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+flate2 = "1"
+hmac = "0.12"
+zeroize = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Credentials", "Win32_Graphics_Gdi"] }

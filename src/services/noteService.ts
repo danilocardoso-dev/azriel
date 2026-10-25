@@ -11,12 +11,13 @@ export const noteService = {
   list: noteRepository.list,
   get: noteRepository.get,
   save: (input: NoteInput) => noteRepository.save(validate(input)),
-  createQuick: (content: string) => noteRepository.save(validate({ id: crypto.randomUUID(), title: null, content, status: "active", projectId: null, knowledgeAreaId: null })),
+  createQuick: (content: string) => noteRepository.save(validate({ id: crypto.randomUUID(), title: null, content, status: "active" })),
   archive: noteRepository.archive,
   restore: async (id: string) => {
     const note = await noteRepository.get(id);
     if (!note) throw new Error("Nota não encontrada.");
-    return noteRepository.save(validate({ id: note.id, title: note.title, content: note.content, status: "active", projectId: note.projectId, knowledgeAreaId: note.knowledgeAreaId }));
+    return noteRepository.save(validate({ id: note.id, title: note.title, content: note.content, status: "active" }));
   },
   remove: noteRepository.remove,
 };
+

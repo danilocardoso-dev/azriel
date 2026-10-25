@@ -6,3 +6,4 @@ export function useAI() {
   if (!context) throw new Error("useAI deve ser utilizado dentro de AIProvider");
   return context;
 }
+

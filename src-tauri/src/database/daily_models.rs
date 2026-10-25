@@ -9,8 +9,6 @@ pub struct Task {
     pub status: String,
     pub priority: String,
     pub due_date: Option<String>,
-    pub project_id: Option<String>,
-    pub knowledge_area_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     pub completed_at: Option<String>,
@@ -26,8 +24,6 @@ pub struct TaskInput {
     pub status: String,
     pub priority: String,
     pub due_date: Option<String>,
-    pub project_id: Option<String>,
-    pub knowledge_area_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -37,8 +33,6 @@ pub struct Note {
     pub title: Option<String>,
     pub content: String,
     pub status: String,
-    pub project_id: Option<String>,
-    pub knowledge_area_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -50,8 +44,6 @@ pub struct NoteInput {
     pub title: Option<String>,
     pub content: String,
     pub status: String,
-    pub project_id: Option<String>,
-    pub knowledge_area_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

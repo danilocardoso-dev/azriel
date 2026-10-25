@@ -9,3 +9,4 @@ export async function invokeDatabase<T>(command: string, args?: Record<string, u
       : message, { cause: error });
   }
 }
+

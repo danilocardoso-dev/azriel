@@ -20,7 +20,7 @@ export const taskService = {
   list: taskRepository.list,
   get: taskRepository.get,
   save: (input: TaskInput) => taskRepository.save(validate(input)),
-  createQuick: (title: string) => taskRepository.save(validate({ id: crypto.randomUUID(), title, description: "", status: "inbox", priority: "medium", dueDate: null, projectId: null, knowledgeAreaId: null })),
+  createQuick: (title: string) => taskRepository.save(validate({ id: crypto.randomUUID(), title, description: "", status: "inbox", priority: "medium", dueDate: null })),
   complete: taskRepository.complete,
   completeReferenced: async (conversationId: string, position: number) => {
     const task = await taskRepository.completeReferenced(conversationId, position);
@@ -37,3 +37,4 @@ export const taskService = {
   completed: taskRepository.completed,
   counters: () => taskRepository.counters(localDateKey()),
 };
+

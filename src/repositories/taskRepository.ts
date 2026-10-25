@@ -14,3 +14,4 @@ export const taskRepository = {
   completed: () => invokeDatabase<Task[]>("list_completed_tasks"),
   counters: (today: string) => invokeDatabase<DailyCounters>("daily_counters", { today }),
 };
+

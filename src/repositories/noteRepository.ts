@@ -8,3 +8,4 @@ export const noteRepository = {
   archive: (id: string) => invokeDatabase<Note>("archive_note", { id }),
   remove: (id: string) => invokeDatabase<void>("delete_note", { id }),
 };
+

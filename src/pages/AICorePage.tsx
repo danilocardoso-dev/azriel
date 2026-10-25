@@ -6,7 +6,12 @@ import { useAI } from "../contexts/useAI";
 import { formatTimestamp } from "../services/dateService";
 import type { Conversation } from "../types";
 
-const suggestions = ["Azriel, situação.", "O que tenho para hoje?", "Qual minha maior lacuna?", "Como está minha formação?"];
+const suggestions = [
+  "Azriel, relatório do sistema.",
+  "O que tenho agendado para hoje?",
+  "Quais são as tarefas prioritárias?",
+  "Resuma minhas notas recentes.",
+];
 
 export function AICorePage() {
   const { settings, status, conversations, selectedConversation, messages, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, send } = useAI();
@@ -72,3 +77,4 @@ export function AICorePage() {
     {conversationToDelete && <DeleteConfirmationDialog kind="conversa" title={conversationToDelete.title} description="A conversa e todas as mensagens dela serão removidas definitivamente do banco local. Esta ação não poderá ser desfeita." busy={deleting} onCancel={() => setConversationToDelete(null)} onConfirm={() => void removeConversation()} />}
   </>;
 }
+

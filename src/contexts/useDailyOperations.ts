@@ -6,3 +6,4 @@ export function useDailyOperations() {
   if (!context) throw new Error("useDailyOperations precisa estar dentro de DailyOperationsProvider");
   return context;
 }
+

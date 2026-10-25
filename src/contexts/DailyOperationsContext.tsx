@@ -62,3 +62,4 @@ export function DailyOperationsProvider({ children }: { children: ReactNode }) {
 
   return <DailyContext.Provider value={value}>{children}</DailyContext.Provider>;
 }
+
