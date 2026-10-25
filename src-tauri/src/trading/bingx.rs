@@ -20,6 +20,14 @@ pub struct ContractRules {
 }
 
 #[derive(Debug, Clone)]
+pub struct Ticker {
+    pub last_price: f64,
+    pub change_pct: f64,
+    pub high: f64,
+    pub low: f64,
+}
+
+#[derive(Debug, Clone)]
 pub struct Balance {
     pub equity: f64,
     pub balance: f64,
@@ -44,6 +52,32 @@ impl BingxClient {
             .build()
             .map_err(|_| "Não foi possível preparar o cliente da BingX".to_string())?;
         Ok(Self { http, api_key: api_key.trim().into(), secret: secret.trim().into(), time_offset_ms: 0 })
+    }
+
+    /// Cliente só para dados de mercado públicos (gráfico), sem chaves.
+    pub fn public_only() -> Result<Self, String> {
+        let http = Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|_| "Não foi possível preparar o cliente da BingX".to_string())?;
+        Ok(Self { http, api_key: String::new(), secret: String::new(), time_offset_ms: 0 })
+    }
+
+    /// Candles para o gráfico, incluindo o candle em formação.
+    pub async fn live_klines(&self, symbol: &str, interval: &str, limit: u32) -> Result<Vec<Candle>, String> {
+        let data = self
+            .public("/openApi/swap/v3/quote/klines", &[("symbol", symbol.into()), ("interval", interval.into()), ("limit", limit.to_string())])
+            .await?;
+        parse_klines(&data, 0, i64::MAX)
+    }
+
+    pub async fn ticker(&self, symbol: &str) -> Result<Ticker, String> {
+        parse_ticker(&self.public("/openApi/swap/v2/quote/ticker", &[("symbol", symbol.into())]).await?, symbol)
+    }
+
+    /// Pares perpétuos USDT ativos, em ordem alfabética.
+    pub async fn symbols(&self) -> Result<Vec<String>, String> {
+        Ok(parse_symbols(&self.public("/openApi/swap/v2/quote/contracts", &[]).await?))
     }
 
     /// Alinha o relógio local ao da BingX; requisições assinadas são recusadas com mais de 5 s de diferença.
@@ -74,6 +108,12 @@ impl BingxClient {
     pub async fn position(&self, symbol: &str) -> Result<Option<OpenPosition>, String> {
         let data = self.signed(Method::GET, "/openApi/swap/v2/user/positions", &[("symbol", symbol.into())]).await?;
         Ok(parse_position(&data))
+    }
+
+    /// Preços de stop loss e take profit das ordens pendentes do par (para desenhar no gráfico).
+    pub async fn protection_orders(&self, symbol: &str) -> Result<(Option<f64>, Option<f64>), String> {
+        let data = self.signed(Method::GET, "/openApi/swap/v2/trade/openOrders", &[("symbol", symbol.into())]).await?;
+        Ok(parse_protection(&data))
     }
 
     pub async fn hedge_mode(&self) -> Result<bool, String> {
@@ -124,7 +164,14 @@ impl BingxClient {
     async fn public(&self, path: &str, params: &[(&str, String)]) -> Result<Value, String> {
         let query = params.iter().map(|(key, value)| format!("{key}={}", encode(value))).collect::<Vec<_>>().join("&");
         let url = if query.is_empty() { format!("{VST_BASE_URL}{path}") } else { format!("{VST_BASE_URL}{path}?{query}") };
-        self.send(self.http.get(url)).await
+        // Endpoints públicos aceitam 1 req/s por IP; o gráfico e o motor podem colidir, então tenta de novo uma vez.
+        match self.send(self.http.get(&url)).await {
+            Ok(data) => Ok(data),
+            Err(_) => {
+                tokio::time::sleep(Duration::from_millis(1_100)).await;
+                self.send(self.http.get(&url)).await
+            }
+        }
     }
 
     async fn signed(&self, method: Method, path: &str, params: &[(&str, String)]) -> Result<Value, String> {
@@ -247,6 +294,46 @@ fn parse_contract(data: &Value, symbol: &str) -> Result<ContractRules, String> {
     })
 }
 
+fn parse_ticker(data: &Value, symbol: &str) -> Result<Ticker, String> {
+    let entry = match data {
+        Value::Array(rows) => rows.iter().find(|row| row["symbol"].as_str() == Some(symbol)).or_else(|| rows.first()),
+        Value::Object(_) => Some(data),
+        _ => None,
+    }
+    .ok_or("Cotação não encontrada na BingX")?;
+    let percent = |value: &Value| number(value).or_else(|| value.as_str().and_then(|text| text.trim_end_matches('%').trim().parse().ok()));
+    let last_price = number(&entry["lastPrice"]).ok_or("Cotação inválida recebida da BingX")?;
+    Ok(Ticker {
+        last_price,
+        change_pct: percent(&entry["priceChangePercent"]).unwrap_or(0.0),
+        high: number(&entry["highPrice"]).unwrap_or(last_price),
+        low: number(&entry["lowPrice"]).unwrap_or(last_price),
+    })
+}
+
+fn parse_protection(data: &Value) -> (Option<f64>, Option<f64>) {
+    let orders = data["orders"].as_array().or_else(|| data.as_array()).cloned().unwrap_or_default();
+    let price_of = |types: &[&str]| orders.iter().find(|order| order["type"].as_str().is_some_and(|kind| types.contains(&kind))).and_then(|order| number(&order["stopPrice"]));
+    (price_of(&["STOP_MARKET", "STOP"]), price_of(&["TAKE_PROFIT_MARKET", "TAKE_PROFIT"]))
+}
+
+fn parse_symbols(data: &Value) -> Vec<String> {
+    let mut symbols: Vec<String> = data
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .filter(|row| number(&row["status"]).is_none_or(|status| status == 1.0))
+                .filter_map(|row| row["symbol"].as_str())
+                .filter(|symbol| symbol.ends_with("-USDT"))
+                .map(String::from)
+                .collect()
+        })
+        .unwrap_or_default();
+    symbols.sort();
+    symbols.dedup();
+    symbols
+}
+
 fn parse_balance(data: &Value) -> Result<Balance, String> {
     let entry = match data {
         Value::Array(rows) => rows.iter().find(|row| row["asset"].as_str() == Some("USDT")).or_else(|| rows.first()),
@@ -319,6 +406,7 @@ mod tests {
         assert_eq!(candles[0].close, 2.0);
         let open = json!([[now, "1", "2", "0.5", "1.5", "3"]]);
         assert!(parse_klines(&open, 60_000, now).is_err());
+        assert_eq!(parse_klines(&open, 0, i64::MAX).unwrap().len(), 1, "o gráfico mostra o candle em formação");
         let arrays = json!([[0, 1.0, 2.0, 0.5, 1.5, 3.0, 59_999]]);
         assert_eq!(parse_klines(&arrays, 60_000, now).unwrap()[0].high, 2.0);
     }
@@ -331,6 +419,11 @@ mod tests {
         let position = parse_position(&json!([{"positionSide":"SHORT","positionAmt":"0.20","avgPrice":"246.43","unrealizedProfit":"-0.06","leverage":5}])).unwrap();
         assert_eq!((position.side, position.quantity, position.leverage), (Side::Short, 0.2, 5));
         assert!(parse_position(&json!([{"positionSide":"LONG","positionAmt":"0"}])).is_none());
+        assert_eq!(parse_protection(&json!({"orders":[{"type":"TAKE_PROFIT_MARKET","stopPrice":"82000"},{"type":"STOP_MARKET","stopPrice":"79000"}]})), (Some(79000.0), Some(82000.0)));
+        assert_eq!(parse_protection(&json!([])), (None, None));
+        let ticker = parse_ticker(&json!({"symbol":"BTC-USDT","lastPrice":"80633.2","priceChangePercent":"-1.25%","highPrice":"81900","lowPrice":"79800"}), "BTC-USDT").unwrap();
+        assert_eq!((ticker.last_price, ticker.change_pct, ticker.high), (80633.2, -1.25, 81900.0));
+        assert_eq!(parse_symbols(&json!([{"symbol":"SOL-USDT","status":1},{"symbol":"BTC-USDT","status":1},{"symbol":"OLD-USDT","status":0},{"symbol":"BTC-USDC","status":1}])), vec!["BTC-USDT", "SOL-USDT"]);
         let rules = parse_contract(&json!([{"symbol":"BTC-USDT","quantityPrecision":4,"pricePrecision":1,"tradeMinQuantity":0.0001,"tradeMinUSDT":2}]), "BTC-USDT").unwrap();
         assert_eq!((rules.quantity_precision, rules.price_precision), (4, 1));
         assert_eq!(interval_ms("15m"), 900_000);

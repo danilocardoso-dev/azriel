@@ -31,10 +31,7 @@ pub fn get_settings(connection: &Connection) -> Result<TradingSettings, String> 
 }
 
 pub fn validate_settings(input: &TradingSettingsInput) -> Result<(), String> {
-    let symbol = input.symbol.trim();
-    if !symbol.ends_with("-USDT") || symbol.len() > 24 || !symbol.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '-') {
-        return Err("Par inválido. Use o formato BTC-USDT.".into());
-    }
+    validate_symbol(input.symbol.trim())?;
     if !INTERVALS.contains(&input.candle_interval.as_str()) {
         return Err("Intervalo de candle inválido".into());
     }
@@ -69,6 +66,21 @@ pub fn update_settings(connection: &Connection, input: &TradingSettingsInput) ->
             "UPDATE trading_settings SET symbol=?1,candle_interval=?2,cycle_minutes=?3,margin_usdt=?4,leverage=?5,stop_loss_pct=?6,take_profit_pct=?7,max_daily_loss_pct=?8,min_confidence=?9,engine=?10,updated_at=CURRENT_TIMESTAMP WHERE id=1",
             params![input.symbol.trim(), input.candle_interval, input.cycle_minutes, input.margin_usdt, input.leverage, input.stop_loss_pct, input.take_profit_pct, input.max_daily_loss_pct, input.min_confidence, input.engine],
         )
+        .map_err(err)?;
+    get_settings(connection)
+}
+
+pub fn validate_symbol(symbol: &str) -> Result<(), String> {
+    if !symbol.ends_with("-USDT") || symbol.len() > 24 || !symbol.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '-') {
+        return Err("Par inválido. Use o formato BTC-USDT.".into());
+    }
+    Ok(())
+}
+
+pub fn update_symbol(connection: &Connection, symbol: &str) -> Result<TradingSettings, String> {
+    validate_symbol(symbol)?;
+    connection
+        .execute("UPDATE trading_settings SET symbol=?1,updated_at=CURRENT_TIMESTAMP WHERE id=1", [symbol])
         .map_err(err)?;
     get_settings(connection)
 }

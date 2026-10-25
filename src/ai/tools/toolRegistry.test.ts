@@ -13,7 +13,7 @@ const overview: TradingOverview = {
 
 describe("ferramenta de trading do Az", () => {
   it("resume o trading com resultado pronto e sem dados sensíveis", async () => {
-    const status = await tradingStatus({ overview: async () => overview, live: async () => ({ equity: 1012.5, balance: 1000, unrealized: 12.5, availableMargin: 980, position: { side: "LONG", quantity: 0.002, entryPrice: 67000, unrealized: 12.5, leverage: 5 } }) });
+    const status = await tradingStatus({ overview: async () => overview, live: async () => ({ equity: 1012.5, balance: 1000, unrealized: 12.5, availableMargin: 980, position: { side: "LONG", quantity: 0.002, entryPrice: 67000, unrealized: 12.5, leverage: 5, stopLoss: 66330, takeProfit: 68340 } }) });
     expect(status.resultadoHoje).toEqual({ usdt: 12.5, pct: 1.25 });
     expect(status.posicao?.side).toBe("LONG");
     expect(status.ultimasDecisoes[0].acao).toBe("OPEN_LONG");

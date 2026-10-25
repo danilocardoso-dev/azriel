@@ -98,6 +98,9 @@ pub fn run() {
             trading_commands::stop_trading,
             trading_commands::run_trading_cycle_now,
             trading_commands::close_trading_position,
+            trading_commands::get_market_snapshot,
+            trading_commands::list_market_symbols,
+            trading_commands::set_trading_symbol,
             system_commands::system_snapshot,
             system_commands::list_processes,
         ])

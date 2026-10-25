@@ -25,7 +25,10 @@ export interface TradingEngineInfo { running:boolean; cycleInProgress:boolean; l
 export interface TradingDecision { id:number; createdAt:string; symbol:string; price:number; positionBefore:string; proposedAction:TradingAction; finalAction:TradingAction; confidence:number; reason:string; riskNote:string; engine:string; model:string; orderStatus:"NONE"|"FILLED"|"FAILED"; orderDetail:string; equity:number|null }
 export interface EquityPoint { createdAt:string; equity:number; balance:number; unrealized:number }
 export interface TradingOverview { settings:TradingSettings; engine:TradingEngineInfo; decisions:TradingDecision[]; equity:EquityPoint[]; firstEquity:number|null; dayStartEquity:number|null }
-export interface TradingLive { equity:number; balance:number; unrealized:number; availableMargin:number; position:{ side:"LONG"|"SHORT"; quantity:number; entryPrice:number; unrealized:number; leverage:number }|null }
+export interface LivePosition { side:"LONG"|"SHORT"; quantity:number; entryPrice:number; unrealized:number; leverage:number; stopLoss:number|null; takeProfit:number|null }
+export interface TradingLive { equity:number; balance:number; unrealized:number; availableMargin:number; position:LivePosition|null }
+export interface MarketCandle { time:number; open:number; high:number; low:number; close:number; volume:number }
+export interface MarketSnapshot { symbol:string; interval:string; candles:MarketCandle[]; lastPrice:number; changePct:number; high24h:number; low24h:number }
 export interface Conversation { id:string; title:string; createdAt:string; updatedAt:string }
 export type ConversationRole="user"|"assistant"|"system";
 export interface ConversationMessage { id:string; conversationId:string; role:ConversationRole; content:string; createdAt:string }

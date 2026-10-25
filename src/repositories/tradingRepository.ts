@@ -1,4 +1,4 @@
-import type { TradingLive, TradingOverview, TradingSettings, TradingSettingsInput } from "../types";
+import type { MarketSnapshot, TradingLive, TradingOverview, TradingSettings, TradingSettingsInput } from "../types";
 import { invokeDatabase } from "./tauri";
 
 export const TRADING_UPDATE_EVENT = "trading-update";
@@ -12,4 +12,7 @@ export const tradingRepository = {
   stop: () => invokeDatabase<void>("stop_trading"),
   runCycleNow: () => invokeDatabase<void>("run_trading_cycle_now"),
   closePosition: () => invokeDatabase<void>("close_trading_position"),
+  market: (symbol: string, interval: string) => invokeDatabase<MarketSnapshot>("get_market_snapshot", { symbol, interval }),
+  symbols: () => invokeDatabase<string[]>("list_market_symbols"),
+  setSymbol: (symbol: string) => invokeDatabase<TradingSettings>("set_trading_symbol", { symbol }),
 };

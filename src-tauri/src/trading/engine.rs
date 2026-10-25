@@ -15,7 +15,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Notify;
 
-const SYSTEM_PROMPT: &str = include_str!("../../prompts/trading-agent-v1.txt");
+const SYSTEM_PROMPT: &str = include_str!("../../prompts/trading-agent-v2.txt");
 const MAX_ENTRIES_PER_DAY: i64 = 12;
 pub const UPDATE_EVENT: &str = "trading-update";
 
@@ -283,5 +283,7 @@ mod tests {
     fn trading_prompt_demands_a_single_json_decision() {
         assert!(SYSTEM_PROMPT.contains("DEMO"));
         assert!(SYSTEM_PROMPT.contains("\"action\""));
+        assert!(SYSTEM_PROMPT.contains("igualmente válidas"), "o prompt precisa tratar compra e venda de forma simétrica");
+        assert!(SYSTEM_PROMPT.contains("alignment"));
     }
 }

@@ -184,6 +184,31 @@ fn round(value: f64, digits: i32) -> f64 {
     (value * factor).round() / factor
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Alignment {
+    pub short_term: &'static str,
+    pub trend_1h: &'static str,
+    pub signal: &'static str,
+}
+
+/// Direção do mercado calculada no código, igual para os dois lados:
+/// curto prazo pelas EMAs 9/21 e pelo preço contra a EMA21; tendência pelas EMAs 21/50 do 1h.
+pub fn alignment(closes: &[f64], hourly_closes: &[f64]) -> Alignment {
+    let price = closes.last().copied().unwrap_or_default();
+    let short_term = match (ema(closes, 9), ema(closes, 21)) {
+        (Some(fast), Some(slow)) if fast > slow && price > slow => "ALTA",
+        (Some(fast), Some(slow)) if fast < slow && price < slow => "BAIXA",
+        _ => "NEUTRO",
+    };
+    let trend_1h = match (ema(hourly_closes, 21), ema(hourly_closes, 50)) {
+        (Some(fast), Some(slow)) if fast > slow => "ALTA",
+        (Some(fast), Some(slow)) if fast < slow => "BAIXA",
+        _ => "NEUTRO",
+    };
+    let signal = if short_term == trend_1h && short_term != "NEUTRO" { short_term } else { "MISTO" };
+    Alignment { short_term, trend_1h, signal }
+}
+
 /// Snapshot compacto do mercado e da conta: indicadores já calculados para o modelo não fazer conta.
 pub fn build_context(input: &ContextInput) -> Result<Value, String> {
     let closes: Vec<f64> = input.candles.iter().map(|c| c.close).collect();
@@ -211,10 +236,16 @@ pub fn build_context(input: &ContextInput) -> Result<Value, String> {
             "leverage": position.leverage,
         }),
     };
+    let direction = alignment(&closes, &hourly_closes);
     Ok(json!({
         "symbol": input.symbol,
         "interval": input.interval,
         "price": round(price, digits),
+        "alignment": {
+            "signal": direction.signal,
+            "shortTerm": direction.short_term,
+            "trend1h": direction.trend_1h,
+        },
         "indicators": {
             "priceVsEma9Pct": pct(ema(&closes, 9)),
             "priceVsEma21Pct": pct(ema(&closes, 21)),
@@ -300,6 +331,16 @@ mod tests {
     }
 
     #[test]
+    fn alignment_is_symmetric_for_up_and_down_markets() {
+        let rising: Vec<f64> = (0..80).map(|i| 100.0 + i as f64).collect();
+        let falling: Vec<f64> = rising.iter().rev().copied().collect();
+        assert_eq!(alignment(&rising, &rising), Alignment { short_term: "ALTA", trend_1h: "ALTA", signal: "ALTA" });
+        assert_eq!(alignment(&falling, &falling), Alignment { short_term: "BAIXA", trend_1h: "BAIXA", signal: "BAIXA" });
+        assert_eq!(alignment(&rising, &falling).signal, "MISTO");
+        assert_eq!(alignment(&rising[..10], &rising).short_term, "NEUTRO");
+    }
+
+    #[test]
     fn context_has_precomputed_indicators_and_position() {
         let candles: Vec<Candle> = (0..80).map(|i| Candle { open_time: i, open: 100.0 + i as f64, high: 101.0 + i as f64, low: 99.0 + i as f64, close: 100.5 + i as f64, volume: 10.0 }).collect();
         let position = OpenPosition { side: Side::Long, quantity: 1.0, entry_price: 170.0, unrealized: 9.5, leverage: 5 };
@@ -308,6 +349,7 @@ mod tests {
             equity: 1000.0, stop_loss_pct: 1.0, take_profit_pct: 2.0, leverage: 5, margin_usdt: 20.0, recent_decisions: &[],
         }).unwrap();
         assert_eq!(context["indicators"]["ema9AboveEma21"], true);
+        assert_eq!(context["alignment"]["signal"], "ALTA");
         assert_eq!(context["position"]["state"], "LONG");
         assert_eq!(context["lastCandlesOHLCV"].as_array().unwrap().len(), 12);
         assert!(build_context(&ContextInput { candles: &candles[..10], ..ContextInput {
