@@ -44,6 +44,18 @@ describe("agent loop", () => {
     expect(second.find((message) => message.tool_name === "get_today_tasks")?.content).toContain("Revisar contrato");
   });
 
+  it("repassa os argumentos do modelo para a busca na web e expõe o parâmetro", async () => {
+    const searched: string[] = [];
+    const registry = new ToolRegistry({ ...deps, web: { search: async (query) => { searched.push(query); return { answer: "BTC perto de 80 mil", sources: [{ title: "Fonte", url: "https://exemplo.com" }], queries: [query] }; } } });
+    const provider = new ScriptedProvider([{ toolCalls: [{ function: { name: "search_web", arguments: { query: "preço do bitcoin hoje" } } }] }, { content: "O BTC está perto de 80 mil. Fontes: Fonte https://exemplo.com" }]);
+    const result = await runAgent({ ...base(provider), registry });
+    expect(searched).toEqual(["preço do bitcoin hoje"]);
+    expect(result.toolsUsed).toEqual(["search_web"]);
+    const schema = provider.requests[0].tools.find((tool) => tool.function.name === "search_web");
+    expect(schema?.function.parameters).toMatchObject({ required: ["query"] });
+    expect(provider.requests[1].messages.find((message) => message.tool_name === "search_web")?.content).toContain("exemplo.com");
+  });
+
   it("nunca expõe nem executa ferramentas de escrita", async () => {
     completed = 0;
     const provider = new ScriptedProvider([{ toolCalls: [call("complete_task"), call("rm_rf")] }, { content: "ok" }]);

@@ -1,0 +1,72 @@
+/* ==========================================================================
+   SHELL — campo escuro, trilha de módulos à esquerda, topo mínimo, sem caixas
+   ========================================================================== */
+.jv-shell {
+  --rail: 78px;
+  --top: 64px;
+  position: relative; width: 100vw; height: 100vh; overflow: hidden;
+  display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); grid-template-rows: var(--top) minmax(0, 1fr);
+}
+.jv-backdrop { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.jv-backdrop::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 54% 48%, rgba(70, 233, 255, 0.10), transparent 32%),
+    radial-gradient(circle at 54% 48%, rgba(0, 168, 199, 0.06), transparent 62%),
+    radial-gradient(circle, rgba(70, 233, 255, 0.07) 1px, transparent 1.4px) 0 0 / 26px 26px;
+  mask-image: radial-gradient(circle at 54% 48%, #000 25%, transparent 75%);
+}
+.jv-backdrop::after {
+  content: ""; position: absolute; left: 54%; top: 48%; width: 140vmin; aspect-ratio: 1; transform: translate(-50%, -50%);
+  border-radius: 50%; border: 1px solid rgba(70, 233, 255, 0.05);
+  box-shadow: 0 0 0 9vmin rgba(1, 5, 8, 0), inset 0 0 0 18vmin rgba(1, 5, 8, 0), 0 0 0 1px rgba(70, 233, 255, 0.03);
+  background: radial-gradient(circle, transparent 54%, rgba(70, 233, 255, 0.035) 54.2%, transparent 54.6%, transparent 70%, rgba(70, 233, 255, 0.03) 70.2%, transparent 70.6%);
+}
+.jv-shell--offline .jv-backdrop { filter: grayscale(0.6); }
+.jv-shell > :not(.jv-backdrop) { position: relative; z-index: 1; }
+
+/* Topo */
+.jv-top { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 22px; }
+.jv-brand { display: flex; align-items: center; gap: 12px; justify-self: start; }
+.jv-brand__mark { position: relative; width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--cyan-border); display: grid; place-items: center; }
+.jv-brand__mark::before { content: ""; position: absolute; inset: 4px; border-radius: 50%; border: 1px dashed var(--cyan-dim); animation: reactor-spin 12s linear infinite; }
+.jv-brand__mark i { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 12px var(--cyan); }
+.jv-brand strong { color: var(--text-main); font: 300 15px var(--sans); letter-spacing: 0.5em; }
+.jv-clock { display: grid; justify-items: center; line-height: 1; }
+.jv-clock strong { color: var(--text-main); font: 200 26px var(--sans); letter-spacing: 0.08em; }
+.jv-clock strong small { margin-left: 4px; color: var(--cyan-dim); font: 11px var(--mono); }
+.jv-clock span { margin-top: 5px; color: var(--text-muted); font: 9px var(--mono); letter-spacing: 0.22em; text-transform: uppercase; }
+.jv-top__right { display: flex; align-items: center; gap: 10px; justify-self: end; }
+.jv-status { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font: 9px var(--mono); letter-spacing: 0.18em; }
+.jv-status i { width: 6px; height: 6px; border-radius: 50%; background: var(--red-critical); box-shadow: 0 0 8px var(--red-glow); }
+.jv-status[data-online="true"] i { background: var(--green-online); box-shadow: 0 0 8px var(--green-glow); }
+.jv-icon { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line-soft); color: var(--text-muted); font-size: 14px; transition: all 0.2s; }
+.jv-icon:hover, .jv-icon[data-active="true"] { color: var(--cyan); border-color: var(--cyan-border); }
+
+/* Trilha de módulos */
+.jv-rail { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding-bottom: var(--top); }
+.jv-rail::before { content: ""; position: absolute; top: 12%; bottom: 18%; left: 50%; width: 1px; background: linear-gradient(transparent, var(--line), transparent); }
+.jv-rail__node { position: relative; display: grid; place-items: center; }
+.jv-rail__glyph {
+  position: relative; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+  border: 1px solid var(--line); background: #020b10; color: var(--text-muted); font-size: 16px; transition: all 0.25s;
+}
+.jv-rail__node:hover .jv-rail__glyph { color: var(--cyan); border-color: var(--cyan-border); }
+.jv-rail__node[data-active="true"] .jv-rail__glyph { color: #01080c; background: var(--cyan); border-color: var(--cyan); box-shadow: 0 0 18px var(--cyan-glow), 0 0 0 5px rgba(70, 233, 255, 0.08); }
+.jv-rail__label {
+  position: absolute; left: 54px; display: grid; gap: 2px; padding: 6px 12px; white-space: nowrap; text-align: left;
+  border-left: 1px solid var(--cyan); background: linear-gradient(90deg, rgba(2, 14, 20, 0.95), transparent);
+  opacity: 0; transform: translateX(-6px); pointer-events: none; transition: all 0.2s;
+}
+.jv-rail__label b { color: var(--text-main); font: 500 12px var(--sans); letter-spacing: 0.06em; }
+.jv-rail__label small { color: var(--cyan-dim); font: 9px var(--mono); letter-spacing: 0.2em; }
+.jv-rail__node:hover .jv-rail__label, .jv-rail__node:focus-visible .jv-rail__label { opacity: 1; transform: none; }
+.jv-rail__node--voice .jv-rail__glyph { border-color: var(--cyan-border); }
+.jv-rail__node--voice .jv-rail__glyph i { width: 10px; height: 10px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 12px var(--cyan); animation: reactor-breathe 2.4s ease-in-out infinite; }
+
+/* Palco */
+.jv-stage { min-width: 0; min-height: 0; overflow-y: auto; padding: 8px 32px 24px 12px; animation: jv-enter 0.35s ease-out; }
+@keyframes jv-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.jv-shell[data-module="command"] .jv-stage { overflow: hidden; padding: 0 24px 18px 0; }
+
+@media (prefers-reduced-motion: reduce) { .jv-stage, .jv-brand__mark::before { animation: none !important; } }

@@ -122,6 +122,87 @@ pub async fn list_models(api_key: &str, timeout_seconds: u64) -> Result<Vec<Stri
     Ok(chat_models(payload.data.into_iter().map(|entry| entry.id)))
 }
 
+const INTERACTIONS_URL: &str = "https://generativelanguage.googleapis.com/v1beta/interactions";
+/// Modelo usado na busca quando o AI Core não tem um Gemini selecionado (a busca exige Gemini 3+).
+pub const SEARCH_FALLBACK_MODEL: &str = "gemini-3.8-flash";
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct WebSource {
+    pub title: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct WebSearchResult {
+    pub answer: String,
+    pub sources: Vec<WebSource>,
+    pub queries: Vec<String>,
+}
+
+/// Uma pergunta respondida com a busca do Google (grounding), em uma única chamada.
+pub async fn web_search(api_key: &str, model: &str, query: &str, timeout_seconds: u64) -> Result<WebSearchResult, String> {
+    validate_model(model)?;
+    let query = query.trim();
+    if query.is_empty() || query.chars().count() > 500 {
+        return Err("Informe uma busca de até 500 caracteres".into());
+    }
+    let started = std::time::Instant::now();
+    let response = client(timeout_seconds)?
+        .post(INTERACTIONS_URL)
+        .header("x-goog-api-key", api_key)
+        .json(&json!({"model": model.trim(), "input": query, "tools": [{"type": "google_search"}]}))
+        .send()
+        .await
+        .map_err(|error| request_error(&error))?;
+    let status = response.status();
+    if !status.is_success() {
+        let detail = provider_detail(&response.text().await.unwrap_or_default());
+        eprintln!("[AI_CORE] provider=GEMINI action=web_search status=http_{} latency_ms={}", status.as_u16(), started.elapsed().as_millis());
+        return Err(with_detail(status_error(status.as_u16()), detail));
+    }
+    let payload = response.json::<Value>().await.map_err(|_| "Resposta inválida da busca do Gemini".to_string())?;
+    let result = parse_search(&payload)?;
+    eprintln!("[AI_CORE] provider=GEMINI action=web_search status=success latency_ms={} sources={}", started.elapsed().as_millis(), result.sources.len());
+    Ok(result)
+}
+
+/// Lê a resposta da Interactions API: texto em `steps[type=model_output].content[]`, fontes nas
+/// anotações `url_citation` e consultas em `google_search_call`. Aceita também o formato `outputs`.
+fn parse_search(payload: &Value) -> Result<WebSearchResult, String> {
+    let mut answer = String::new();
+    let mut sources: Vec<WebSource> = Vec::new();
+    let mut queries: Vec<String> = Vec::new();
+    let mut read_block = |block: &Value| {
+        if block["type"].as_str().is_some_and(|kind| kind != "text") {
+            return;
+        }
+        if let Some(text) = block["text"].as_str() {
+            answer.push_str(text);
+        }
+        for annotation in block["annotations"].as_array().into_iter().flatten() {
+            if let Some(url) = annotation["url"].as_str() {
+                if !sources.iter().any(|source| source.url == url) {
+                    sources.push(WebSource { title: annotation["title"].as_str().unwrap_or(url).into(), url: url.into() });
+                }
+            }
+        }
+    };
+    for step in payload["steps"].as_array().into_iter().flatten() {
+        match step["type"].as_str() {
+            Some("model_output") => step["content"].as_array().into_iter().flatten().for_each(&mut read_block),
+            Some("google_search_call") => queries.extend(step["arguments"]["queries"].as_array().into_iter().flatten().filter_map(|q| q.as_str().map(String::from))),
+            _ => {}
+        }
+    }
+    payload["outputs"].as_array().into_iter().flatten().for_each(&mut read_block);
+    let answer = answer.trim().to_string();
+    if answer.is_empty() {
+        return Err("A busca do Gemini não retornou resposta".into());
+    }
+    sources.truncate(8);
+    Ok(WebSearchResult { answer, sources, queries })
+}
+
 /// O Gemini rejeita (400) parâmetros do tipo objeto sem propriedades; ferramentas
 /// sem argumentos são enviadas sem o campo `parameters`.
 fn gemini_tool(mut tool: Value) -> Value {
@@ -310,6 +391,25 @@ mod tests {
 
         let empty: CompletionResponse = serde_json::from_str(r#"{"choices":[{"message":{"content":"  "},"finish_reason":"stop"}]}"#).unwrap();
         assert!(parse_completion(empty, "gemini-2.5-flash").is_err());
+    }
+
+    #[test]
+    fn search_answers_and_sources_are_extracted() {
+        let payload = json!({"steps": [
+            {"type": "google_search_call", "arguments": {"queries": ["bitcoin hoje"]}},
+            {"type": "google_search_result", "call_id": "x", "result": [{"search_suggestions": "<div/>"}]},
+            {"type": "model_output", "content": [{"type": "text", "text": "O BTC está perto de 80 mil.", "annotations": [
+                {"type": "url_citation", "url": "https://exemplo.com/a", "title": "Exemplo A", "start_index": 0, "end_index": 10},
+                {"type": "url_citation", "url": "https://exemplo.com/a", "title": "Exemplo A"},
+                {"type": "url_citation", "url": "https://exemplo.com/b", "title": "Exemplo B"}
+            ]}]}
+        ]});
+        let result = parse_search(&payload).unwrap();
+        assert_eq!(result.answer, "O BTC está perto de 80 mil.");
+        assert_eq!(result.queries, vec!["bitcoin hoje"]);
+        assert_eq!(result.sources.iter().map(|s| s.title.as_str()).collect::<Vec<_>>(), vec!["Exemplo A", "Exemplo B"]);
+        assert_eq!(parse_search(&json!({"outputs": [{"type": "text", "text": "ok"}]})).unwrap().answer, "ok");
+        assert!(parse_search(&json!({"steps": []})).is_err());
     }
 
     #[test]

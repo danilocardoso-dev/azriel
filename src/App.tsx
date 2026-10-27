@@ -1,20 +1,26 @@
 import { useCallback, useEffect, useState } from "react";
 import { getCurrentWindow, Window } from "@tauri-apps/api/window";
-import { modules } from "./data/system";
-import { CommandCenter } from "./pages/CommandCenter";
+import { azrielStates, modules } from "./data/system";
+import { NucleoPage } from "./pages/NucleoPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { DailyOperationsPage } from "./pages/DailyOperationsPage";
 import { AICorePage } from "./pages/AICorePage";
 import { TradingPage } from "./pages/TradingPage";
 import type { ModuleId } from "./types";
 import { useAI } from "./contexts/useAI";
+import { VoiceCall } from "./voice/VoiceCall";
+import { useVoiceCall } from "./voice/useVoiceCall";
+import "./styles/jarvis.css";
 
 function App() {
-  const { coreState } = useAI();
+  const { coreState, engine, engineAvailable } = useAI();
   const [activeModule, setActiveModule] = useState<ModuleId>("command");
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [moduleAction, setModuleAction] = useState<"new-task" | "new-note" | null>(null);
   const [now, setNow] = useState(() => new Date());
+  const voice = useVoiceCall();
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const { start: startVoice } = voice;
+  const openVoice = useCallback(() => { setVoiceOpen(true); void startVoice(); }, [startVoice]);
 
   const changeFullscreen = useCallback(async (forcedState?: boolean) => {
     const window = getCurrentWindow();
@@ -47,6 +53,9 @@ function App() {
       if (event.key === "F11") {
         event.preventDefault();
         void changeFullscreen();
+      } else if (event.ctrlKey && event.code === "Space" && !voiceOpen) {
+        event.preventDefault();
+        openVoice();
       } else if (event.key === "Escape" && isFullscreen) {
         void changeFullscreen(false);
       }
@@ -56,122 +65,66 @@ function App() {
       active = false;
       globalThis.window.removeEventListener("keydown", shortcut);
     };
-  }, [changeFullscreen, isFullscreen]);
-
-  const openDaily = (action: "new-task" | "new-note" | null = null) => {
-    setModuleAction(action);
-    setActiveModule("daily");
-  };
+  }, [changeFullscreen, isFullscreen, openVoice, voiceOpen]);
 
   const content =
-    activeModule === "ai" ? (
-      <AICorePage />
-    ) : activeModule === "daily" ? (
-      <DailyOperationsPage
-        initialCapture={moduleAction === "new-task" ? "task" : moduleAction === "new-note" ? "note" : undefined}
-      />
-    ) : activeModule === "trading" ? (
-      <TradingPage />
-    ) : activeModule === "settings" ? (
-      <SettingsPage />
-    ) : (
-      <CommandCenter
-        coreState={coreState}
-        onOpenAI={() => setActiveModule("ai")}
-        onOpenDaily={() => openDaily()}
-        onNewTask={() => openDaily("new-task")}
-        onNewNote={() => openDaily("new-note")}
-      />
-    );
+    activeModule === "ai" ? <AICorePage />
+    : activeModule === "daily" ? <DailyOperationsPage />
+    : activeModule === "trading" ? <TradingPage />
+    : activeModule === "settings" ? <SettingsPage />
+    : <NucleoPage
+      coreState={coreState}
+      onOpenAI={() => setActiveModule("ai")}
+      onOpenDaily={() => setActiveModule("daily")}
+      onOpenTrading={() => setActiveModule("trading")}
+      onVoice={openVoice}
+    />;
 
   return (
-    <div className={`stark-shell stark-shell--${coreState}`}>
-      {/* Top Holographic Navigation Bar */}
-      <header className="stark-topbar">
-        <button
-          className="stark-brand"
-          onClick={() => {
-            setModuleAction(null);
-            setActiveModule("command");
-          }}
-          aria-label="Voltar ao Reator Central"
-          type="button"
-        >
-          <span className="brand__mark"><i /></span>
-          <div>
-            <strong>AZRIEL</strong>
-            <small>TACTICAL INTELLIGENCE</small>
-          </div>
+    <div className={`jv-shell jv-shell--${coreState}`} data-module={activeModule}>
+      <div className="jv-backdrop" aria-hidden="true" />
+
+      <header className="jv-top">
+        <button type="button" className="jv-brand" onClick={() => setActiveModule("command")} aria-label="Voltar ao núcleo">
+          <span className="jv-brand__mark"><i /></span>
+          <strong>AZRIEL</strong>
         </button>
-
-        {/* Central HUD Mode Switcher */}
-        <nav className="stark-nav" aria-label="Deck tático">
-          {modules.map((module) => (
-            <button
-              key={module.id}
-              type="button"
-              className={`stark-nav__pill ${activeModule === module.id ? "active" : ""}`}
-              onClick={() => {
-                setModuleAction(null);
-                setActiveModule(module.id);
-              }}
-            >
-              <span>{module.code}</span>
-              <strong>{module.label}</strong>
-            </button>
-          ))}
-        </nav>
-
-        {/* Right Status Telemetry */}
-        <div className="stark-telemetry-head">
-          <div className="stark-status-beacon">
-            <span className="live-dot" />
-            <span>NÚCLEO {coreState.toUpperCase()}</span>
-          </div>
-          <div className="stark-time">{now.toLocaleTimeString("pt-BR")}</div>
-          <div className="stark-window-controls">
-            <button
-              className="stark-btn-control"
-              onClick={() => void enterOrbMode()}
-              title="Minimizar para o Orbe"
-              aria-label="Minimizar para o Orbe"
-              type="button"
-            >
-              −
-            </button>
-            <button
-              className={`stark-btn-control ${isFullscreen ? "active" : ""}`}
-              onClick={() => void changeFullscreen()}
-              title={isFullscreen ? "Sair da tela cheia" : "Tela cheia"}
-              aria-label="Tela cheia"
-              type="button"
-            >
-              ⛶
-            </button>
-          </div>
+        <div className="jv-clock">
+          <strong>{now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}<small>{now.toLocaleTimeString("pt-BR", { second: "2-digit" }).padStart(2, "0")}</small></strong>
+          <span>{now.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}</span>
+        </div>
+        <div className="jv-top__right">
+          <span className="jv-status" data-online={engineAvailable}><i />{engine === "gemini" ? "GEMINI" : "LOCAL"} · {azrielStates[coreState].label}</span>
+          <button type="button" className="jv-icon" onClick={() => void enterOrbMode()} title="Minimizar para o orbe" aria-label="Minimizar para o orbe">−</button>
+          <button type="button" className="jv-icon" data-active={isFullscreen} onClick={() => void changeFullscreen()} title={isFullscreen ? "Sair da tela cheia" : "Tela cheia"} aria-label="Tela cheia">⛶</button>
         </div>
       </header>
 
-      {/* Main Holographic Canvas */}
-      <main className="stark-stage" key={activeModule}>
+      <nav className="jv-rail" aria-label="Módulos">
+        {modules.map((module) => (
+          <button
+            key={module.id}
+            type="button"
+            className="jv-rail__node"
+            data-active={activeModule === module.id}
+            onClick={() => setActiveModule(module.id)}
+            aria-label={module.label}
+          >
+            <span className="jv-rail__glyph" aria-hidden="true">{module.glyph}</span>
+            <span className="jv-rail__label"><b>{module.label}</b><small>{module.code}</small></span>
+          </button>
+        ))}
+        <button type="button" className="jv-rail__node jv-rail__node--voice" onClick={openVoice} aria-label="Falar com o Azriel">
+          <span className="jv-rail__glyph" aria-hidden="true"><i /></span>
+          <span className="jv-rail__label"><b>Falar</b><small>CTRL + ESPAÇO</small></span>
+        </button>
+      </nav>
+
+      <main className="jv-stage" key={activeModule}>
         {content}
       </main>
 
-      {/* Holographic Bottom Stream */}
-      <footer className="stark-statusbar">
-        <div className="stark-statusbar__tag">
-          <span>MARK-IV // AZRIEL OPERATING SYSTEM</span>
-          <i>DIRECT TACTICAL LINK</i>
-        </div>
-        <div className="stark-statusbar__metrics">
-          <span>SQLITE CONECTADO</span>
-          <span>OLLAMA LOCAL DISPONÍVEL</span>
-          <span>TELEMETRIA CONTÍNUA</span>
-        </div>
-        <div className="stark-statusbar__date">
-          <strong>{now.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" }).toUpperCase()}</strong>
-        </div>
-      </footer>
+      {voiceOpen && <VoiceCall call={voice} onClose={() => setVoiceOpen(false)} />}
     </div>
   );
 }

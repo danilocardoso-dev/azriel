@@ -1,0 +1,54 @@
+/* ==========================================================================
+   CHAMADA DE VOZ — núcleo reativo estilo reator
+   ========================================================================== */
+.voice-call {
+  --accent: var(--cyan);
+  --accent-glow: var(--cyan-glow);
+  position: fixed; inset: 0; z-index: 1000;
+  display: grid; grid-template-rows: auto 1fr auto auto auto; justify-items: center;
+  padding: 22px 28px 16px;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(70, 233, 255, 0.10), transparent 42%),
+    radial-gradient(circle at 50% 42%, rgba(0, 168, 199, 0.08), transparent 70%),
+    #010508f2;
+  backdrop-filter: blur(6px);
+  animation: voice-fade-in 0.35s ease-out;
+}
+.voice-call[data-phase="listening"] { --accent: #dff9ff; --accent-glow: rgba(223, 249, 255, 0.25); }
+.voice-call[data-phase="tool"] { --accent: var(--amber-alert); --accent-glow: var(--amber-glow); }
+.voice-call[data-phase="ended"] { --accent: var(--text-dim); --accent-glow: transparent; }
+@keyframes voice-fade-in { from { opacity: 0; transform: scale(1.02); } to { opacity: 1; transform: none; } }
+
+.voice-call__top { width: 100%; display: flex; justify-content: space-between; color: var(--text-muted); font: 10px var(--mono); letter-spacing: 0.16em; }
+
+.voice-stage { align-self: center; width: min(62vh, 82vw); }
+.voice-call[data-phase="connecting"] .reactor__core { animation: reactor-breathe 1.4s ease-in-out infinite; }
+.voice-call[data-phase="tool"] .reactor__ring--segments { animation-duration: 2.5s; }
+
+.voice-stage__status { position: absolute; bottom: -6%; display: grid; justify-items: center; gap: 6px; }
+.voice-stage__status strong { color: var(--accent); font: 700 13px var(--mono); letter-spacing: 0.32em; text-shadow: 0 0 14px var(--accent-glow); }
+.voice-stage__status small { color: var(--amber-alert); font: 10px var(--mono); letter-spacing: 0.2em; }
+
+.voice-captions { width: min(760px, 100%); min-height: 118px; display: flex; flex-direction: column; justify-content: flex-end; gap: 8px; margin-top: 28px; }
+.voice-captions p { margin: 0; color: var(--text-main); font: 17px/1.45 var(--sans); text-align: center; animation: voice-fade-in 0.25s ease-out; }
+.voice-captions p:not(:last-child) { opacity: 0.45; font-size: 14px; }
+.voice-captions p b { display: block; margin-bottom: 2px; color: var(--text-muted); font: 700 9px var(--mono); letter-spacing: 0.2em; }
+.voice-captions p[data-who="az"] b { color: var(--cyan); }
+.voice-captions__hint { color: var(--text-muted) !important; font-size: 14px !important; }
+.voice-captions__notice { color: var(--amber-alert) !important; font: 12px var(--mono) !important; }
+
+.voice-call__controls { display: flex; gap: 14px; margin: 18px 0 8px; }
+.voice-btn {
+  min-width: 150px; padding: 12px 20px; border: 1px solid var(--line); border-radius: 999px;
+  background: rgba(70, 233, 255, 0.05); color: var(--cyan); font: 700 11px var(--mono); letter-spacing: 0.14em; cursor: pointer; transition: all 0.2s;
+}
+.voice-btn:hover:not(:disabled) { border-color: var(--cyan); background: rgba(70, 233, 255, 0.14); box-shadow: 0 0 16px var(--cyan-glow); }
+.voice-btn[data-active="true"] { border-color: var(--amber-alert); color: var(--amber-alert); }
+.voice-btn--end { border-color: rgba(255, 90, 107, 0.6); background: rgba(255, 90, 107, 0.12); color: var(--red-critical); }
+.voice-btn--end:hover:not(:disabled) { border-color: var(--red-critical); background: rgba(255, 90, 107, 0.24); box-shadow: 0 0 16px var(--red-glow); }
+.voice-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.voice-call__privacy { color: var(--text-dim); font: 9px var(--mono); letter-spacing: 0.1em; }
+
+@media (prefers-reduced-motion: reduce) {
+  .reactor__ring, .voice-call, .voice-captions p { animation: none !important; }
+}

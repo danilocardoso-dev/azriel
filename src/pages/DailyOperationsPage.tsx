@@ -6,6 +6,8 @@ import type { DailyView, TaskPriority } from "../types";
 
 const views: Array<[DailyView, string]> = [
   ["today", "HOJE"],
+  // Única aba com todas as tarefas abertas: sem ela, tarefas sem prazo e sem prioridade alta somem da tela.
+  ["pending", "PENDENTES"],
   ["priority", "PRIORIDADE"],
   ["inbox", "ENTRADA"],
   ["upcoming", "PRÓXIMAS"],
@@ -66,6 +68,7 @@ export function DailyOperationsPage({ initialCapture }: { initialCapture?: "task
           >
             {label}
             {id === "today" && counters.today > 0 ? ` (${counters.today})` : ""}
+            {id === "pending" && counters.pending > 0 ? ` (${counters.pending})` : ""}
             {id === "priority" && counters.priority > 0 ? ` (${counters.priority})` : ""}
           </button>
         ))}

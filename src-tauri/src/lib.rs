@@ -8,6 +8,7 @@ mod system_commands;
 mod system_monitor;
 mod trading;
 mod trading_commands;
+mod voice;
 
 use database::DatabaseState;
 use tauri::Manager;
@@ -21,6 +22,7 @@ pub fn run() {
             system_monitor::SystemMonitor::new(),
         )))
         .manage(trading::engine::TradingState::default())
+        .manage(voice::VoiceState::default())
         .setup(|app| {
             let database_path = app.path().app_data_dir()?.join("azriel.db");
             let connection = database::open(&database_path)
@@ -90,6 +92,7 @@ pub fn run() {
             ai_commands::update_remote_ai_settings,
             ai_commands::list_remote_ai_models,
             ai_commands::remote_agent_chat,
+            ai_commands::web_search,
             trading_commands::get_trading_overview,
             trading_commands::update_trading_settings,
             trading_commands::update_trading_keys,
@@ -101,6 +104,10 @@ pub fn run() {
             trading_commands::get_market_snapshot,
             trading_commands::list_market_symbols,
             trading_commands::set_trading_symbol,
+            voice::voice_start,
+            voice::voice_send_audio,
+            voice::voice_tool_response,
+            voice::voice_stop,
             system_commands::system_snapshot,
             system_commands::list_processes,
         ])

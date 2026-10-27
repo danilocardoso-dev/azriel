@@ -1,0 +1,30 @@
+/* Núcleo do Azriel — usado na tela inicial e na chamada de voz.
+   A cor vem de --accent / --accent-glow de quem o contém (padrão: ciano). */
+.reactor {
+  --az: 0; --you: 0;
+  --rx: var(--accent, var(--cyan));
+  --rx-glow: var(--accent-glow, var(--cyan-glow));
+  position: relative; display: grid; place-items: center; aspect-ratio: 1;
+}
+.reactor__svg { width: 100%; height: 100%; overflow: visible; }
+.reactor__halo { fill: none; stroke: var(--rx-glow); stroke-width: 1; opacity: calc(0.4 + var(--az) * 0.6); }
+.reactor__ring { fill: none; transform-origin: 0 0; }
+.reactor__ring circle { fill: none; stroke: var(--rx); }
+.reactor__ring--outer circle { stroke-width: 1; stroke-dasharray: 2 10; opacity: 0.55; }
+.reactor__ring--outer { animation: reactor-spin 40s linear infinite; }
+.reactor__ring--ticks line { stroke: var(--rx); stroke-width: 1.2; opacity: 0.45; }
+.reactor__ring--ticks { animation: reactor-spin 90s linear infinite reverse; }
+.reactor__ring--segments circle { stroke-width: 6; stroke-dasharray: 60 22; opacity: 0.35; }
+.reactor__ring--segments { animation: reactor-spin 14s linear infinite; }
+.reactor__ring--inner circle { stroke-width: 1.5; stroke-dasharray: 140 40 20 40; opacity: 0.8; }
+.reactor__ring--inner { animation: reactor-spin 9s linear infinite reverse; }
+.reactor__bars line { stroke: var(--rx); stroke-width: 3; stroke-linecap: round; opacity: 0.85; }
+.reactor__core-glow { fill: var(--rx-glow); transform: scale(calc(1 + var(--az) * 0.55 + var(--you) * 0.35)); transform-origin: 0 0; filter: blur(14px); }
+.reactor__core {
+  fill: var(--rx); transform-origin: 0 0;
+  transform: scale(calc(0.92 + var(--az) * 0.28 + var(--you) * 0.18));
+  filter: drop-shadow(0 0 18px var(--rx));
+}
+@keyframes reactor-spin { to { transform: rotate(360deg); } }
+@keyframes reactor-breathe { 50% { opacity: 0.45; transform: scale(0.8); } }
+@media (prefers-reduced-motion: reduce) { .reactor__ring { animation: none !important; } }

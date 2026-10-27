@@ -18,6 +18,8 @@ export type AISettingsInput=Pick<AISettings,"endpoint"|"model"|"contextMessageLi
 export interface RemoteAISettings { provider:"gemini"; enabled:boolean; model:string; apiKeyConfigured:boolean; updatedAt:string }
 export interface RemoteAISettingsInput { enabled:boolean; model:string; apiKey?:string|null }
 export type AIEngine="ollama"|"gemini";
+export interface WebSource { title:string; url:string }
+export interface WebSearchResult { answer:string; sources:WebSource[]; queries:string[] }
 export type TradingAction="OPEN_LONG"|"OPEN_SHORT"|"CLOSE"|"HOLD"|"ERROR"|"MANUAL_CLOSE";
 export interface TradingSettings { apiKeyConfigured:boolean; symbol:string; candleInterval:string; cycleMinutes:number; marginUsdt:number; leverage:number; stopLossPct:number; takeProfitPct:number; maxDailyLossPct:number; minConfidence:number; engine:AIEngine; running:boolean; updatedAt:string }
 export type TradingSettingsInput=Omit<TradingSettings,"apiKeyConfigured"|"running"|"updatedAt">;
@@ -56,7 +58,7 @@ export interface NetworkSnapshot { interfaceName:string; receivedBytes:number; t
 export interface ProcessSnapshot { pid:number; name:string; cpuPercent:number; memoryBytes:number }
 export interface SystemSnapshot { collectedAt:number; details:SystemDetails; cpu:CpuSnapshot; memory:MemorySnapshot; storage:StorageSnapshot[]; network:NetworkSnapshot[]; errors:string[] }
 
-export type AIToolName="get_today_tasks"|"get_overdue_tasks"|"get_upcoming_tasks"|"get_critical_tasks"|"get_priority_tasks"|"complete_task"|"get_recent_notes"|"get_daily_operations_summary"|"get_system_status"|"get_cpu_status"|"get_memory_status"|"get_storage_status"|"get_network_status"|"get_process_summary"|"get_ollama_status"|"get_azriel_status"|"get_azriel_version"|"get_trading_status";
-export interface AIToolInput { query:string; term?:string; conversationId?:string; referencePosition?:number; factor?:number; delta?:number }
+export type AIToolName="get_today_tasks"|"get_overdue_tasks"|"get_upcoming_tasks"|"get_critical_tasks"|"get_priority_tasks"|"complete_task"|"get_recent_notes"|"get_daily_operations_summary"|"get_system_status"|"get_cpu_status"|"get_memory_status"|"get_storage_status"|"get_network_status"|"get_process_summary"|"get_ollama_status"|"get_azriel_status"|"get_azriel_version"|"get_trading_status"|"search_web";
+export interface AIToolInput { query:string; args?:Record<string,unknown>; term?:string; conversationId?:string; referencePosition?:number; factor?:number; delta?:number }
 export interface AIToolResult { name:AIToolName; domain:string; data:unknown; empty:boolean }
 export interface RoutedIntent { intent:string; scope:"azriel"|"general"; tools:AIToolName[]; term?:string; referencePosition?:number; factor?:number; delta?:number }

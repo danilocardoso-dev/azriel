@@ -5,10 +5,10 @@ import { localDateKey } from "../../services/dateService";
 import { systemService } from "../../services/systemService";
 import { aiRepository } from "../../repositories/aiRepository";
 import { tradingRepository } from "../../repositories/tradingRepository";
-import type { TradingLive, TradingOverview } from "../../types";
+import type { TradingLive, TradingOverview, WebSearchResult } from "../../types";
 import type { AgentToolSchema, AISettings, AIToolInput, AIToolName, AIToolPermission, AIToolResult, DailyCounters, MemorySnapshot, Note, OllamaStatus, ProcessSnapshot, StorageSnapshot, SystemSnapshot, Task } from "../../types";
 
-export interface AzrielTool { name: AIToolName; description: string; domain: string; readonly: boolean; permission?: AIToolPermission; execute(input: AIToolInput): Promise<unknown> | unknown }
+export interface AzrielTool { name: AIToolName; description: string; domain: string; readonly: boolean; permission?: AIToolPermission; parameters?: Record<string, unknown>; execute(input: AIToolInput): Promise<unknown> | unknown }
 export interface ToolDependencies {
   tasks: { list(): Promise<Task[]>; today(): Promise<Task[]>; upcoming(): Promise<Task[]>; counters(): Promise<DailyCounters>; completeReferenced(conversationId: string, position: number): Promise<Task> };
   notes: { list(includeArchived?: boolean): Promise<Note[]> };
@@ -16,8 +16,9 @@ export interface ToolDependencies {
   system: { snapshot(): Promise<SystemSnapshot>; processes(): Promise<ProcessSnapshot[]> };
   ollama: { settings(): Promise<AISettings>; status(endpoint: string, timeoutSeconds: number): Promise<OllamaStatus> };
   trading?: { overview(): Promise<TradingOverview>; live(): Promise<TradingLive> };
+  web?: { search(query: string): Promise<WebSearchResult> };
 }
-const production: ToolDependencies = { tasks: taskService, notes: noteService, databaseInfo: getDatabaseInfo, system: systemService, ollama: { settings: aiRepository.getSettings, status: aiRepository.status }, trading: tradingRepository };
+const production: ToolDependencies = { tasks: taskService, notes: noteService, databaseInfo: getDatabaseInfo, system: systemService, ollama: { settings: aiRepository.getSettings, status: aiRepository.status }, trading: tradingRepository, web: { search: aiRepository.webSearch } };
 
 /** Resumo do trading para o agente: números prontos, sem chaves nem detalhes internos. */
 export async function tradingStatus(trading: NonNullable<ToolDependencies["trading"]>) {
@@ -63,6 +64,9 @@ function tools(deps: ToolDependencies): AzrielTool[] {
     { name:"get_ollama_status", domain:"AI Core", description:"Estado do Ollama local", readonly:true, execute:async()=>{const s=await deps.ollama.settings();return deps.ollama.status(s.endpoint,Math.min(s.timeoutSeconds,8));} },
     { name:"get_azriel_status", domain:"Azriel", description:"Resumo dos serviços ativos", readonly:true, execute:async()=>({database:{schemaVersion:(await deps.databaseInfo()).schemaVersion},daily:await deps.tasks.counters(),ollama:await (async()=>{const s=await deps.ollama.settings();return deps.ollama.status(s.endpoint,Math.min(s.timeoutSeconds,8));})()}) },
     { name:"get_trading_status", domain:"Trading", description:"Situação do agente de trading na conta demo: motor, patrimônio, resultado de hoje e total, posição e últimas decisões", readonly:true, execute:()=> deps.trading ? tradingStatus(deps.trading) : { error:"Trading indisponível" } },
+    { name:"search_web", domain:"Web", description:"Busca na internet com o Google: notícias, cotações, clima, eventos e qualquer fato atual ou externo. Devolve um resumo e as fontes", readonly:true,
+      parameters:{ type:"object", properties:{ query:{ type:"string", description:"O que buscar, em linguagem natural" } }, required:["query"] },
+      execute:(input)=>{ const query=String(input.args?.query ?? input.term ?? input.query ?? "").trim(); if(!query) return { error:"Busca vazia" }; return deps.web ? deps.web.search(query) : { error:"Busca na web indisponível" }; } },
     { name:"get_azriel_version", domain:"Azriel", description:"Versão do núcleo atual", readonly:true, execute:()=>({version:"core-only"}) },
   ];
 }
@@ -72,7 +76,7 @@ export class ToolRegistry {
   has(name: string): name is AIToolName { return this.indexed.has(name as AIToolName); }
   /** Ferramentas expostas ao loop de agente: somente leitura. Escritas seguem pelos comandos explícitos. */
   agentTools(): AgentToolSchema[] {
-    return this.list().filter((tool)=>tool.readonly).map((tool)=>({ type:"function", function:{ name:tool.name, description:`${tool.description} (${tool.domain})`, parameters:{ type:"object", properties:{} } } }));
+    return this.list().filter((tool)=>tool.readonly).map((tool)=>({ type:"function", function:{ name:tool.name, description:`${tool.description} (${tool.domain})`, parameters:tool.parameters ?? { type:"object", properties:{} } } }));
   }
   get(name: AIToolName) { const tool=this.indexed.get(name); if(!tool) throw new Error(`Ferramenta indisponível: ${name}`); return tool; }
   async execute(name: AIToolName,input:AIToolInput):Promise<AIToolResult>{const tool=this.get(name);const data=await tool.execute(input);return {name,domain:tool.domain,data,empty:Array.isArray(data)?data.length===0:data==null};}

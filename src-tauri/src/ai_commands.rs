@@ -171,6 +171,17 @@ pub async fn list_remote_ai_models(state: State<'_, DatabaseState>) -> Result<Ve
     gemini::list_models(&api_key, 15).await
 }
 
+/// Busca na web pelo Gemini; serve a qualquer motor do AI Core, inclusive o local.
+#[tauri::command]
+pub async fn web_search(state: State<'_, DatabaseState>, query: String) -> Result<gemini::WebSearchResult, String> {
+    let (api_key, model) = {
+        let connection = lock(&state)?;
+        ai_repository::remote_credentials(&connection).map_err(|_| "A busca na web usa o Gemini: cadastre a chave em Configurações".to_string())?
+    };
+    let model = if model.trim().is_empty() { gemini::SEARCH_FALLBACK_MODEL.to_string() } else { model };
+    gemini::web_search(&api_key, &model, &query, 60).await
+}
+
 #[tauri::command]
 pub async fn remote_agent_chat(
     state: State<'_, DatabaseState>,

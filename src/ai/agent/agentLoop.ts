@@ -49,7 +49,7 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
       const tool = input.registry.get(name);
       input.onTool?.(tool.domain, tool.permission ?? "read");
       try {
-        const result = await input.registry.execute(name, { query: input.query, conversationId: input.conversationId });
+        const result = await input.registry.execute(name, { query: input.query, conversationId: input.conversationId, args: call.function.arguments });
         toolsUsed.push(name);
         messages.push({ role: "tool", tool_name: name, content: serialize(result.empty ? { empty: true, data: result.data } : result.data) });
       } catch (error) {
