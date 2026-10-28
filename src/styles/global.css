@@ -620,6 +620,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border-color: var(--line);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
 }
+.daily-page__item {
+  cursor: pointer;
+}
+.daily-page__item:focus-visible {
+  outline: 1px solid var(--cyan);
+  outline-offset: 2px;
+}
 .daily-page__list article h3,
 .daily-page__list article b {
   display: block;

@@ -60,6 +60,17 @@ pub struct RiskState {
     pub equity: f64,
     pub day_start_equity: Option<f64>,
     pub trades_today: i64,
+    /// Direção da tendência de 1h (EMA21 x EMA50); `None` quando neutra.
+    pub trend_1h: Option<Side>,
+}
+
+/// Tendência de 1h no formato do alinhamento (ALTA/BAIXA/NEUTRO) → lado que ela favorece.
+pub fn trend_side(trend_1h: &str) -> Option<Side> {
+    match trend_1h {
+        "ALTA" => Some(Side::Long),
+        "BAIXA" => Some(Side::Short),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -87,10 +98,18 @@ pub fn apply_risk(decision: &Decision, state: &RiskState, config: &RiskConfig) -
             halt: true,
         };
     }
+    // Saída só quando a tendência de 1h deixa de favorecer a posição. No 5m as EMAs curtas
+    // oscilam o tempo todo; fechar a cada virada fazia o agente sair no repique, com perda e taxa.
+    let trend_still_favors = |side: Side| state.trend_1h == Some(side);
+    let hold_exit = "Saída bloqueada: a tendência de 1h ainda favorece a posição; oscilação de curto prazo não fecha. Stop e alvo seguem ativos.";
     match (decision.action, state.position) {
         (Action::Hold, _) => outcome(Action::Hold, ""),
         (Action::Close, None) => outcome(Action::Hold, "Sem posição aberta para fechar."),
+        (Action::Close, Some(side)) if trend_still_favors(side) => outcome(Action::Hold, hold_exit),
         (Action::Close, Some(_)) => outcome(Action::Close, ""),
+        (Action::OpenLong, Some(Side::Short)) | (Action::OpenShort, Some(Side::Long)) if trend_still_favors(state.position.unwrap_or(Side::Long)) => {
+            outcome(Action::Hold, hold_exit)
+        }
         (Action::OpenLong, Some(Side::Short)) | (Action::OpenShort, Some(Side::Long)) => {
             outcome(Action::Close, "Sinal contrário à posição: apenas fecha, sem inverter no mesmo ciclo.")
         }
@@ -280,7 +299,7 @@ mod tests {
     const RISK: RiskConfig = RiskConfig { min_confidence: 60, max_daily_loss_pct: 5.0, max_trades_per_day: 10 };
 
     fn state(position: Option<Side>) -> RiskState {
-        RiskState { position, equity: 1000.0, day_start_equity: Some(1000.0), trades_today: 0 }
+        RiskState { position, equity: 1000.0, day_start_equity: Some(1000.0), trades_today: 0, trend_1h: None }
     }
     fn decision(action: Action, confidence: i64) -> Decision {
         Decision { action, confidence, reason: "x".into() }
@@ -297,6 +316,26 @@ mod tests {
         let mut busy = state(None);
         busy.trades_today = 10;
         assert_eq!(apply_risk(&decision(Action::OpenShort, 95), &busy, &RISK).action, Action::Hold);
+    }
+
+    #[test]
+    fn exits_only_when_the_1h_trend_stops_favoring_the_position() {
+        // Caso real de 26/10: SHORT com 1h em BAIXA e o 5m repicando — o agente fechava no repique.
+        let short_with_trend = RiskState { trend_1h: trend_side("BAIXA"), ..state(Some(Side::Short)) };
+        let blocked = apply_risk(&decision(Action::Close, 75), &short_with_trend, &RISK);
+        assert_eq!(blocked.action, Action::Hold);
+        assert!(blocked.note.contains("tendência de 1h"));
+        assert_eq!(apply_risk(&decision(Action::OpenLong, 90), &short_with_trend, &RISK).action, Action::Hold);
+
+        let short_trend_flipped = RiskState { trend_1h: trend_side("ALTA"), ..state(Some(Side::Short)) };
+        assert_eq!(apply_risk(&decision(Action::Close, 75), &short_trend_flipped, &RISK).action, Action::Close);
+        let long_trend_neutral = RiskState { trend_1h: trend_side("NEUTRO"), ..state(Some(Side::Long)) };
+        assert_eq!(apply_risk(&decision(Action::Close, 75), &long_trend_neutral, &RISK).action, Action::Close);
+
+        // A perda diária fecha mesmo com a tendência a favor.
+        let losing = RiskState { equity: 940.0, ..short_with_trend };
+        let halted = apply_risk(&decision(Action::Hold, 50), &losing, &RISK);
+        assert_eq!((halted.action, halted.halt), (Action::Close, true));
     }
 
     #[test]

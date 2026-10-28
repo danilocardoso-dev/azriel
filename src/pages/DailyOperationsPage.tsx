@@ -1,7 +1,10 @@
 import { useState } from "react";
+import { NoteDialog } from "../components/daily/NoteDialog";
 import { QuickCapture } from "../components/daily/QuickCapture";
+import { TaskDialog } from "../components/daily/TaskDialog";
 import { ModuleIntro } from "../components/layout/ModuleIntro";
 import { useDailyOperations } from "../contexts/useDailyOperations";
+import { formatLocalDate, localDateKey } from "../services/dateService";
 import type { DailyView, TaskPriority } from "../types";
 
 const views: Array<[DailyView, string]> = [
@@ -13,6 +16,7 @@ const views: Array<[DailyView, string]> = [
   ["upcoming", "PRÓXIMAS"],
   ["completed", "CONCLUÍDAS"],
   ["notes", "NOTAS"],
+  ["archived_notes", "ARQUIVADAS"],
 ];
 
 const priorityLabels: Record<TaskPriority, string> = {
@@ -23,18 +27,13 @@ const priorityLabels: Record<TaskPriority, string> = {
 };
 
 export function DailyOperationsPage({ initialCapture }: { initialCapture?: "task" | "note" }) {
-  const { view, setView, tasks, notes, counters, loading, error, completeTask, deleteTask, deleteNote } =
-    useDailyOperations();
+  const { view, setView, tasks, notes, counters, loading, error, completeTask } = useDailyOperations();
   const [busy, setBusy] = useState<string | null>(null);
-
-  const removeTask = async (id: string) => {
-    setBusy(id);
-    try {
-      await deleteTask(id);
-    } finally {
-      setBusy(null);
-    }
-  };
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+  const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
+  const selectedNote = notes.find((note) => note.id === selectedNoteId) ?? null;
+  const today = localDateKey();
 
   const finish = async (id: string) => {
     setBusy(id);
@@ -45,14 +44,14 @@ export function DailyOperationsPage({ initialCapture }: { initialCapture?: "task
     }
   };
 
-  const isNotesView = view === "notes";
+  const isNotesView = view === "notes" || view === "archived_notes";
 
   return (
     <section className="module-page daily-page">
       <ModuleIntro
         code="OPS-09"
         title="Operações Diárias"
-        description="Gestão tática de tarefas, prioridades e anotações rápidas com persistência local."
+        description="Clique em uma tarefa ou nota para ver os detalhes, editar, definir prazo ou excluir."
         metric={`${counters.pending} PENDENTES // ${counters.today} HOJE`}
       />
 
@@ -84,32 +83,26 @@ export function DailyOperationsPage({ initialCapture }: { initialCapture?: "task
         notes.length ? (
           <div className="daily-page__list">
             {notes.map((note) => (
-              <article key={note.id}>
+              <article key={note.id} className="daily-page__item" role="button" tabIndex={0} onClick={() => setSelectedNoteId(note.id)} onKeyDown={(event) => { if (event.key === "Enter") setSelectedNoteId(note.id); }}>
                 <div>
                   <h3>{note.title || "NOTA RÁPIDA"}</h3>
                   <p>{note.content}</p>
                 </div>
                 <div>
-                  <button
-                    type="button"
-                    disabled={busy === note.id}
-                    onClick={() => void deleteNote(note.id)}
-                  >
-                    EXCLUIR
-                  </button>
+                  <button type="button" onClick={(event) => { event.stopPropagation(); setSelectedNoteId(note.id); }}>ABRIR</button>
                 </div>
               </article>
             ))}
           </div>
         ) : (
           <p style={{ color: "var(--text-dim)", font: "11px var(--mono)", padding: "16px 0" }}>
-            NENHUMA ANOTAÇÃO ATIVA ENCONTRADA.
+            {view === "archived_notes" ? "NENHUMA ANOTAÇÃO ARQUIVADA." : "NENHUMA ANOTAÇÃO ATIVA ENCONTRADA."}
           </p>
         )
       ) : tasks.length ? (
         <div className="daily-page__list">
           {tasks.map((task) => (
-            <article key={task.id}>
+            <article key={task.id} className="daily-page__item" role="button" tabIndex={0} onClick={() => setSelectedTaskId(task.id)} onKeyDown={(event) => { if (event.key === "Enter") setSelectedTaskId(task.id); }}>
               <div>
                 <b>{task.title}</b>
                 <small>
@@ -127,7 +120,9 @@ export function DailyOperationsPage({ initialCapture }: { initialCapture?: "task
                     {priorityLabels[task.priority]}
                   </span>
                   {" · "}
-                  {task.dueDate ? `PRAZO: ${task.dueDate}` : "SEM PRAZO"}
+                  {task.dueDate
+                    ? `PRAZO: ${formatLocalDate(task.dueDate)}${task.dueDate < today && task.status !== "completed" ? " · ATRASADA" : ""}`
+                    : "SEM PRAZO"}
                 </small>
                 {task.description && <p>{task.description}</p>}
               </div>
@@ -136,27 +131,24 @@ export function DailyOperationsPage({ initialCapture }: { initialCapture?: "task
                   <button
                     type="button"
                     disabled={busy === task.id}
-                    onClick={() => void finish(task.id)}
+                    onClick={(event) => { event.stopPropagation(); void finish(task.id); }}
                   >
                     CONCLUIR
                   </button>
                 )}
-                <button
-                  type="button"
-                  disabled={busy === task.id}
-                  onClick={() => void removeTask(task.id)}
-                >
-                  EXCLUIR
-                </button>
+                <button type="button" onClick={(event) => { event.stopPropagation(); setSelectedTaskId(task.id); }}>ABRIR</button>
               </div>
             </article>
           ))}
         </div>
       ) : (
         <p style={{ color: "var(--text-dim)", font: "11px var(--mono)", padding: "16px 0" }}>
-          NENHUMA TAREFA PENDENTE NESTE FILTRO.
+          NENHUMA TAREFA NESTE FILTRO.
         </p>
       )}
+
+      {selectedTask && <TaskDialog key={selectedTask.id} task={selectedTask} onClose={() => setSelectedTaskId(null)} />}
+      {selectedNote && <NoteDialog key={selectedNote.id} note={selectedNote} onClose={() => setSelectedNoteId(null)} />}
     </section>
   );
 }

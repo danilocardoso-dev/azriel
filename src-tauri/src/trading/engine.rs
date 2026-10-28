@@ -15,7 +15,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Notify;
 
-const SYSTEM_PROMPT: &str = include_str!("../../prompts/trading-agent-v2.txt");
+const SYSTEM_PROMPT: &str = include_str!("../../prompts/trading-agent-v3.txt");
 const MAX_ENTRIES_PER_DAY: i64 = 12;
 pub const UPDATE_EVENT: &str = "trading-update";
 
@@ -183,7 +183,14 @@ async fn cycle(app: &AppHandle) -> Result<(), String> {
     let (decision, model) = ask_ai(app, &settings.engine, &context.to_string()).await?;
     let risk = strategy::apply_risk(
         &decision,
-        &RiskState { position: position.as_ref().map(|p| p.side), equity: balance.equity, day_start_equity: day_start, trades_today: entries_today },
+        &RiskState {
+            position: position.as_ref().map(|p| p.side),
+            equity: balance.equity,
+            day_start_equity: day_start,
+            trades_today: entries_today,
+            // A mesma leitura de tendência que a IA recebeu no snapshot.
+            trend_1h: strategy::trend_side(context["alignment"]["trend1h"].as_str().unwrap_or("NEUTRO")),
+        },
         &RiskConfig { min_confidence: settings.min_confidence, max_daily_loss_pct: settings.max_daily_loss_pct, max_trades_per_day: MAX_ENTRIES_PER_DAY },
     );
 
@@ -285,5 +292,6 @@ mod tests {
         assert!(SYSTEM_PROMPT.contains("\"action\""));
         assert!(SYSTEM_PROMPT.contains("igualmente válidas"), "o prompt precisa tratar compra e venda de forma simétrica");
         assert!(SYSTEM_PROMPT.contains("alignment"));
+        assert!(SYSTEM_PROMPT.contains("só quando o trend1h deixar de favorecer"), "a saída é pela tendência de 1h, não pelo curto prazo");
     }
 }
