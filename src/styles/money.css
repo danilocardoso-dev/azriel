@@ -1,0 +1,48 @@
+/* Finanças — mesmo idioma do Núcleo: vidro escuro, cantos suaves, ciano. */
+.money-page { gap: 16px; }
+.money-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.money-head span { color: var(--cyan-dim); font: 10px var(--mono); letter-spacing: 0.2em; }
+.money-head h1 { margin: 4px 0 0; color: var(--text-main); font: 200 32px var(--sans); letter-spacing: 0.06em; }
+.money-month { display: flex; align-items: center; gap: 10px; }
+.money-month strong { min-width: 170px; text-align: center; color: var(--text-main); font: 300 16px var(--sans); }
+.money-month strong::first-letter { text-transform: uppercase; }
+.money-month button { padding: 6px 12px; border: 1px solid var(--line-soft); border-radius: 999px; color: var(--cyan); font: 700 13px var(--mono); }
+.money-month button:hover { border-color: var(--cyan); }
+.money-month .money-month__today { font-size: 9px; letter-spacing: 0.12em; color: var(--text-muted); }
+.money-error { margin: 0; padding: 10px 14px; border: 1px solid rgba(255, 90, 107, 0.4); border-radius: 12px; background: rgba(255, 90, 107, 0.08); color: var(--red-critical); font-size: 13px; }
+
+.money-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.money-totals article { display: grid; gap: 4px; padding: 16px 18px; border: 1px solid var(--cyan-border); border-radius: 16px; background: rgba(2, 12, 18, 0.7); }
+.money-totals span { color: var(--cyan-dim); font: 9px var(--mono); letter-spacing: 0.18em; }
+.money-totals strong { color: var(--text-main); font: 300 26px var(--sans); }
+.money-totals small { color: var(--text-muted); font: 11px var(--mono); }
+.money-totals article[data-negative="true"] strong { color: var(--red-critical); }
+
+.money-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.money-panel { display: grid; gap: 10px; padding: 16px 18px; border: 1px solid var(--line-soft); border-radius: 16px; background: rgba(2, 12, 18, 0.55); }
+.money-panel > header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.money-panel h2 { margin: 0; color: var(--text-main); font: 300 18px var(--sans); }
+.money-panel > header small { color: var(--text-dim); font: 10px var(--mono); text-align: right; }
+.money-panel > header button { padding: 6px 12px; border: 1px solid var(--cyan); border-radius: 999px; background: rgba(70, 233, 255, 0.1); color: var(--cyan); font: 700 9px var(--mono); letter-spacing: 0.12em; }
+.money-panel ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.money-empty { margin: 0; padding: 8px 0; color: var(--text-muted); font: 11px var(--mono); }
+
+.money-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 8px 10px; border: 1px solid transparent; border-radius: 12px; }
+.money-row:hover { border-color: var(--line-soft); background: rgba(70, 233, 255, 0.04); }
+.money-row__check { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; color: var(--green-online); font-size: 13px; }
+.money-row__check[aria-pressed="true"] { border-color: var(--green-online); background: rgba(66, 255, 160, 0.12); }
+.money-row__body { display: grid; gap: 2px; min-width: 0; text-align: left; }
+.money-row__body strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-main); font-weight: 400; font-size: 14px; }
+.money-row__body small { color: var(--text-muted); font: 10px var(--mono); }
+.money-row__body em { color: var(--red-critical); font-style: normal; font-weight: 700; }
+.money-row b { color: var(--text-main); font: 400 14px var(--mono); white-space: nowrap; }
+.money-row[data-paid="true"] .money-row__body strong, .money-row[data-paid="true"] b { color: var(--text-muted); text-decoration: line-through; }
+
+.money-projects table { width: 100%; border-collapse: collapse; }
+.money-projects th { padding: 6px 8px; color: var(--cyan-dim); font: 9px var(--mono); letter-spacing: 0.14em; text-align: right; text-transform: uppercase; }
+.money-projects td { padding: 9px 8px; border-top: 1px solid var(--line-soft); color: var(--text-main); font: 13px var(--mono); text-align: right; }
+.money-projects th:first-child, .money-projects td:first-child { text-align: left; font-family: var(--sans); }
+
+@media (max-width: 900px) {
+  .money-totals, .money-columns { grid-template-columns: 1fr; }
+}

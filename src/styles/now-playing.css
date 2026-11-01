@@ -1,0 +1,25 @@
+/* Tocando agora — cápsula fina sob o núcleo, no mesmo idioma da linha de comando. */
+.now-playing {
+  width: min(680px, 92%); display: flex; align-items: center; gap: 14px; margin-bottom: 12px; padding: 8px 10px;
+  border: 1px solid var(--line-soft); border-radius: 18px; background: rgba(2, 12, 18, 0.55); backdrop-filter: blur(8px);
+}
+.now-playing[data-playing="true"] { border-color: var(--cyan-border); box-shadow: 0 0 24px rgba(0, 168, 199, 0.08); }
+.now-playing__art { flex: none; width: 48px; height: 48px; border-radius: 10px; overflow: hidden; display: grid; place-items: center; background: #020e14; border: 1px solid var(--line-soft); }
+.now-playing__art img { width: 100%; height: 100%; object-fit: cover; }
+.now-playing__art i { color: var(--cyan-dim); font-style: normal; font-size: 20px; }
+.now-playing[data-playing="true"] .now-playing__art { box-shadow: 0 0 14px var(--cyan-glow); }
+.now-playing__info { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.now-playing__info span { color: var(--cyan-dim); font: 9px var(--mono); letter-spacing: 0.18em; }
+.now-playing__info strong { color: var(--text-main); font: 500 13px var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.now-playing__info small { color: var(--text-muted); font: 11px var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.now-playing__progress { height: 2px; margin-top: 4px; border-radius: 2px; background: var(--line-soft); overflow: hidden; }
+.now-playing__progress i { display: block; height: 100%; background: var(--cyan); box-shadow: 0 0 6px var(--cyan); transition: width 1.8s linear; }
+.now-playing__controls { display: flex; align-items: center; gap: 6px; }
+.now-playing__controls button { width: 32px; height: 32px; border-radius: 50%; color: var(--text-muted); font-size: 12px; transition: all 0.2s; }
+.now-playing__controls button:hover { color: var(--cyan); background: rgba(70, 233, 255, 0.08); }
+.now-playing__controls .now-playing__toggle { width: 38px; height: 38px; border: 1px solid var(--cyan-border); color: var(--cyan); background: rgba(70, 233, 255, 0.08); }
+.now-playing__idle { flex: 1; padding-left: 8px; }
+.now-playing__idle span { color: var(--text-dim); font: 10px var(--mono); letter-spacing: 0.2em; }
+.now-playing__sources { display: flex; gap: 6px; padding-left: 10px; border-left: 1px solid var(--line-soft); }
+.now-playing__sources button { padding: 6px 10px; border: 1px solid var(--line-soft); border-radius: 999px; color: var(--text-muted); font: 700 9px var(--mono); letter-spacing: 0.12em; transition: all 0.2s; }
+.now-playing__sources button:hover { color: var(--cyan); border-color: var(--cyan-border); }

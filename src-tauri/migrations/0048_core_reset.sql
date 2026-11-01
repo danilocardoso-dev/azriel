@@ -71,6 +71,15 @@ CREATE TABLE IF NOT EXISTS ai_remote_settings (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 INSERT OR IGNORE INTO ai_remote_settings(id) VALUES (1);
+CREATE TABLE IF NOT EXISTS spotify_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  client_id TEXT NOT NULL DEFAULT '',
+  access_token TEXT NOT NULL DEFAULT '',
+  refresh_token TEXT NOT NULL DEFAULT '',
+  expires_at INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+INSERT OR IGNORE INTO spotify_settings(id) VALUES (1);
 CREATE TABLE IF NOT EXISTS trading_settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   api_key TEXT NOT NULL DEFAULT '',
@@ -155,3 +164,24 @@ CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_entity_references_conversation ON ai_entity_references(conversation_id, entity_type, source_message_id, position);
 PRAGMA user_version = 48;
+
+-- Finanças pessoais. O prefixo é money_ porque finance_ é apagado na limpeza do esquema antigo.
+-- Cada linha é uma regra (única, parcelada ou permanente); os meses são calculados, não gravados.
+CREATE TABLE IF NOT EXISTS money_items (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('expense','income')),
+  title TEXT NOT NULL,
+  amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+  first_date TEXT NOT NULL,
+  recurrence TEXT NOT NULL CHECK (recurrence IN ('once','monthly','installments')),
+  installments INTEGER,
+  project TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+-- Presença da linha = ocorrência daquele mês paga/recebida.
+CREATE TABLE IF NOT EXISTS money_marks (
+  item_id TEXT NOT NULL,
+  month TEXT NOT NULL,
+  PRIMARY KEY (item_id, month)
+);

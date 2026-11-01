@@ -6,8 +6,13 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { DailyOperationsPage } from "./pages/DailyOperationsPage";
 import { AICorePage } from "./pages/AICorePage";
 import { TradingPage } from "./pages/TradingPage";
+import { MusicPage } from "./pages/MusicPage";
+import { MoneyPage } from "./pages/MoneyPage";
+import { useSpotifyWebPlayer } from "./music/useSpotifyWebPlayer";
+import { spotifyRepository } from "./repositories/spotifyRepository";
 import type { ModuleId } from "./types";
 import { useAI } from "./contexts/useAI";
+import { MiniPlayer } from "./components/media/MiniPlayer";
 import { VoiceCall } from "./voice/VoiceCall";
 import { useVoiceCall } from "./voice/useVoiceCall";
 import "./styles/jarvis.css";
@@ -18,7 +23,15 @@ function App() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const voice = useVoiceCall();
+  const webPlayer = useSpotifyWebPlayer();
+  const { start: startWebPlayer } = webPlayer;
+  // Com o Spotify conectado, o player do Azriel sobe junto com o app: ele já é a saída padrão quando você tocar algo.
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void spotifyRepository.status().then((status) => { if (status.connected) void startWebPlayer(); }).catch(() => undefined); }, 1_500);
+    return () => window.clearTimeout(timer);
+  }, [startWebPlayer]);
   const [voiceOpen, setVoiceOpen] = useState(false);
+  const [playerOpen, setPlayerOpen] = useState(false);
   const { start: startVoice } = voice;
   const openVoice = useCallback(() => { setVoiceOpen(true); void startVoice(); }, [startVoice]);
 
@@ -71,6 +84,8 @@ function App() {
     activeModule === "ai" ? <AICorePage />
     : activeModule === "daily" ? <DailyOperationsPage />
     : activeModule === "trading" ? <TradingPage />
+    : activeModule === "music" ? <MusicPage webPlayer={webPlayer} />
+    : activeModule === "money" ? <MoneyPage />
     : activeModule === "settings" ? <SettingsPage />
     : <NucleoPage
       coreState={coreState}
@@ -78,6 +93,10 @@ function App() {
       onOpenDaily={() => setActiveModule("daily")}
       onOpenTrading={() => setActiveModule("trading")}
       onVoice={openVoice}
+      onOpenYouTube={() => setPlayerOpen(true)}
+      onOpenMusic={() => setActiveModule("music")}
+      azrielDeviceId={webPlayer.status === "ready" ? webPlayer.deviceId : null}
+      azrielState={webPlayer.state}
     />;
 
   return (
@@ -124,6 +143,7 @@ function App() {
         {content}
       </main>
 
+      {playerOpen && <MiniPlayer onClose={() => setPlayerOpen(false)} />}
       {voiceOpen && <VoiceCall call={voice} onClose={() => setVoiceOpen(false)} />}
     </div>
   );

@@ -1,0 +1,29 @@
+/* Mini player: vidro escuro no canto, por cima das telas e abaixo dos modais (140) e da chamada (1000). */
+.mini-player {
+  position: fixed; z-index: 120; overflow: hidden;
+  border: 1px solid var(--cyan-border); border-radius: 14px;
+  background: rgba(2, 12, 18, 0.92); backdrop-filter: blur(10px);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55), 0 0 30px rgba(0, 168, 199, 0.1);
+  animation: delete-dialog-enter 0.22s ease-out;
+}
+.mini-player header {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px 6px 12px;
+  cursor: grab; user-select: none; touch-action: none;
+}
+.mini-player[data-dragging="true"] header { cursor: grabbing; }
+.mini-player header span { display: flex; align-items: center; gap: 8px; color: var(--cyan-dim); font: 700 9px var(--mono); letter-spacing: 0.2em; }
+.mini-player header span i { width: 7px; height: 7px; border-radius: 50%; background: var(--red-critical); box-shadow: 0 0 8px var(--red-glow); }
+.mini-player header div { display: flex; gap: 2px; }
+.mini-player header button { min-width: 26px; height: 24px; padding: 0 6px; border-radius: 6px; color: var(--text-muted); font: 700 10px var(--mono); }
+.mini-player header button:hover, .mini-player header button[data-active="true"] { color: var(--cyan); background: rgba(70, 233, 255, 0.1); }
+.mini-player__frame { aspect-ratio: 16 / 9; }
+.mini-player__frame iframe { display: block; width: 100%; height: 100%; border: 0; }
+/* Durante o arraste o iframe não pode engolir o ponteiro. */
+.mini-player[data-dragging="true"] iframe { pointer-events: none; }
+/* Recolhido: a imagem some, mas o iframe segue montado e o áudio continua. */
+.mini-player[data-collapsed="true"] .mini-player__frame { height: 0; aspect-ratio: auto; overflow: hidden; }
+.mini-player__form { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 4px 10px 12px; }
+.mini-player__form input { min-width: 0; padding: 9px 12px; border: 1px solid var(--line); border-radius: 999px; background: #020e14; color: var(--text-main); font: 13px var(--sans); outline: none; }
+.mini-player__form input:focus { border-color: var(--cyan); box-shadow: 0 0 10px var(--cyan-glow); }
+.mini-player__form button { padding: 0 14px; border: 1px solid var(--cyan); border-radius: 999px; color: var(--cyan); background: rgba(70, 233, 255, 0.12); font: 700 10px var(--mono); letter-spacing: 0.1em; }
+.mini-player__form small { grid-column: 1 / -1; color: var(--amber-alert); font: 10px var(--mono); }

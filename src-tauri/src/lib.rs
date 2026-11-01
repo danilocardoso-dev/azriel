@@ -3,7 +3,10 @@ mod commands;
 mod daily_commands;
 pub mod database;
 mod gemini;
+mod media;
+mod money_commands;
 mod ollama;
+mod spotify;
 mod system_commands;
 mod system_monitor;
 mod trading;
@@ -104,6 +107,26 @@ pub fn run() {
             trading_commands::get_market_snapshot,
             trading_commands::list_market_symbols,
             trading_commands::set_trading_symbol,
+            money_commands::money_month,
+            money_commands::money_save_item,
+            money_commands::money_delete_item,
+            money_commands::money_set_paid,
+            money_commands::money_projects,
+            media::media_now_playing,
+            media::media_control,
+            spotify::spotify_status,
+            spotify::spotify_set_client_id,
+            spotify::spotify_connect,
+            spotify::spotify_disconnect,
+            spotify::spotify_token,
+            spotify::spotify_transfer,
+            spotify::spotify_player,
+            spotify::spotify_control,
+            spotify::spotify_search,
+            spotify::spotify_queue,
+            spotify::spotify_tracks,
+            spotify::spotify_playlists,
+            spotify::spotify_play,
             voice::voice_start,
             voice::voice_send_audio,
             voice::voice_tool_response,

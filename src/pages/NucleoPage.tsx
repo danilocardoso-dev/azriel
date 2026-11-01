@@ -1,4 +1,6 @@
+import type { SpotifyPlayer } from "../repositories/spotifyRepository";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { NowPlayingBar } from "../components/azriel/NowPlayingBar";
 import { Reactor } from "../components/azriel/Reactor";
 import { signedUsd, usd } from "../components/trading/tradingMath";
 import { useAI } from "../contexts/useAI";
@@ -15,6 +17,10 @@ interface NucleoProps {
   onOpenDaily: () => void;
   onOpenTrading: () => void;
   onVoice: () => void;
+  onOpenYouTube: () => void;
+  onOpenMusic: () => void;
+  azrielDeviceId: string | null;
+  azrielState: SpotifyPlayer | null;
 }
 
 /** Medidor em arco: o anel inteiro é 100%. */
@@ -44,7 +50,7 @@ function Node({ position, code, title, onOpen, children }: { position: "tl" | "t
   </section>;
 }
 
-export function NucleoPage({ coreState, onOpenAI, onOpenDaily, onOpenTrading, onVoice }: NucleoProps) {
+export function NucleoPage({ coreState, onOpenAI, onOpenDaily, onOpenTrading, onVoice, onOpenYouTube, onOpenMusic, azrielDeviceId, azrielState }: NucleoProps) {
   const { counters, tasks } = useDailyOperations();
   const { send, engine, settings, remoteSettings, engineAvailable } = useAI();
   const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(null);
@@ -122,6 +128,8 @@ export function NucleoPage({ coreState, onOpenAI, onOpenDaily, onOpenTrading, on
     </div>
 
     <p className="nucleo__message">{state.message}</p>
+
+    <NowPlayingBar onOpenYouTube={onOpenYouTube} onOpenMusic={onOpenMusic} azrielDeviceId={azrielDeviceId} azrielState={azrielState} />
 
     <form className="nucleo-command" onSubmit={submit}>
       <span aria-hidden="true">›</span>

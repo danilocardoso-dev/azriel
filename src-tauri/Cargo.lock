@@ -232,6 +232,7 @@ dependencies = [
  "chrono-tz",
  "flate2",
  "futures-util",
+ "getrandom 0.3.4",
  "hmac",
  "infer",
  "lopdf",
@@ -247,6 +248,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tokio",
  "tokio-tungstenite",
+ "windows 0.61.3",
  "windows-sys 0.61.2",
  "zeroize",
 ]

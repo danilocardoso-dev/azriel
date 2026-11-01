@@ -1,4 +1,4 @@
-export type ModuleId = "command" | "ai" | "daily" | "trading" | "settings";
+export type ModuleId = "command" | "ai" | "daily" | "trading" | "music" | "money" | "settings";
 export type AzrielState = "idle" | "processing" | "tool" | "executing" | "engineering" | "routine" | "alert" | "offline";
 export type AIToolPermission = "read" | "safe_write" | "confirm_write" | "visual_action";
 export interface DatabaseInfo { path: string; schemaVersion: number }
@@ -18,6 +18,8 @@ export type AISettingsInput=Pick<AISettings,"endpoint"|"model"|"contextMessageLi
 export interface RemoteAISettings { provider:"gemini"; enabled:boolean; model:string; apiKeyConfigured:boolean; updatedAt:string }
 export interface RemoteAISettingsInput { enabled:boolean; model:string; apiKey?:string|null }
 export type AIEngine="ollama"|"gemini";
+export interface NowPlaying { title:string; artist:string; album:string; source:string; playing:boolean; positionSeconds:number|null; durationSeconds:number|null; artwork:string|null }
+export type MediaAction="toggle"|"next"|"previous";
 export interface WebSource { title:string; url:string }
 export interface WebSearchResult { answer:string; sources:WebSource[]; queries:string[] }
 export type TradingAction="OPEN_LONG"|"OPEN_SHORT"|"CLOSE"|"HOLD"|"ERROR"|"MANUAL_CLOSE";
