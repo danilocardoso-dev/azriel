@@ -154,3 +154,34 @@
 @media (max-width: 1100px) {
   .trading-strip { grid-template-columns: 1fr 1fr; }
 }
+
+/* Autoajuste */
+.trading-tuning__body { display: grid; gap: 12px; padding: 4px 14px 14px; }
+.trading-tuning__controls { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.trading-tuning__switch { display: flex; align-items: center; gap: 8px; color: var(--text-main); font-size: 13px; cursor: pointer; }
+.trading-tuning__switch input { accent-color: var(--cyan); }
+.trading-tuning__controls button, .trading-review header button { padding: 7px 10px; border: 1px solid var(--line); background: transparent; color: var(--cyan); font: 700 9px var(--mono); letter-spacing: 0.08em; cursor: pointer; }
+.trading-tuning__controls button:disabled, .trading-review header button:disabled { opacity: 0.4; cursor: not-allowed; }
+.trading-tuning__note { margin: 0; color: var(--text-muted); font: 10px/1.5 var(--mono); }
+.trading-tuning__error { margin: 0; color: var(--red-critical); font: 11px var(--mono); }
+.trading-review { padding: 10px 12px; border: 1px solid var(--line-soft); border-left: 2px solid var(--cyan); }
+.trading-review[data-reverted="true"] { border-left-color: var(--text-dim); opacity: 0.7; }
+.trading-review header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font: 10px var(--mono); }
+.trading-review header b { color: var(--text-main); letter-spacing: 0.08em; }
+.trading-review header small { flex: 1; color: var(--text-muted); }
+.trading-review header em { color: var(--text-dim); font-style: normal; font-weight: 700; }
+.trading-review p { margin: 6px 0 0; color: var(--text-main); font-size: 13px; line-height: 1.45; }
+.trading-review__changes { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+.trading-review__changes li { padding: 3px 8px; border: 1px solid var(--cyan-border); color: var(--text-muted); font: 10px var(--mono); }
+.trading-review__changes b { color: var(--cyan); }
+.trading-review__muted { margin: 0; color: var(--text-muted); font: 11px var(--mono); }
+.trading-lessons span { color: var(--cyan-dim); font: 9px var(--mono); letter-spacing: 0.16em; }
+.trading-lessons ol { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 4px; color: var(--text-main); font-size: 13px; line-height: 1.4; }
+.trading-review__older summary { color: var(--text-muted); font: 10px var(--mono); cursor: pointer; }
+.trading-review__older .trading-review { margin-top: 8px; }
+.trading-trades { width: 100%; border-collapse: collapse; font: 11px var(--mono); }
+.trading-trades th { padding: 6px; color: var(--cyan-dim); font-size: 9px; letter-spacing: 0.12em; text-align: right; text-transform: uppercase; }
+.trading-trades td { padding: 6px; border-top: 1px solid var(--line-soft); color: var(--text-main); text-align: right; white-space: nowrap; }
+.trading-trades th:first-child, .trading-trades td:first-child { text-align: left; }
+.trading-trades td[data-tone="up"] { color: var(--green-online); }
+.trading-trades td[data-tone="down"] { color: var(--red-critical); }

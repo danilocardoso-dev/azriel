@@ -3,12 +3,17 @@ import type { TradingOverview } from "../../types";
 import { tradingStatus } from "./toolRegistry";
 
 const overview: TradingOverview = {
-  settings: { apiKeyConfigured: true, symbol: "BTC-USDT", candleInterval: "15m", cycleMinutes: 15, marginUsdt: 20, leverage: 5, stopLossPct: 1, takeProfitPct: 2, maxDailyLossPct: 5, minConfidence: 60, engine: "gemini", running: true, updatedAt: "" },
-  engine: { running: true, cycleInProgress: false, lastCycleAt: null, nextCycleAt: null, lastError: null },
+  settings: { apiKeyConfigured: true, symbol: "BTC-USDT", candleInterval: "15m", cycleMinutes: 15, marginUsdt: 20, leverage: 5, stopLossPct: 1, takeProfitPct: 2, maxDailyLossPct: 5, minConfidence: 60, engine: "gemini", profitLockPct: 0.25, maxHoldMinutes: 30, running: true, updatedAt: "" },
+  engine: { running: true, cycleInProgress: false, lastCycleAt: null, nextCycleAt: null, lastError: null, reviewInProgress: false, lastReviewError: null },
   decisions: [{ id: 1, createdAt: "2026-10-25 13:00:00", symbol: "BTC-USDT", price: 67000, positionBefore: "FLAT", proposedAction: "OPEN_LONG", finalAction: "OPEN_LONG", confidence: 74, reason: "Tendência alinhada", riskNote: "", engine: "gemini", model: "gemini-flash", orderStatus: "FILLED", orderDetail: "", equity: 1000 }],
   equity: [{ createdAt: "", equity: 1000, balance: 1000, unrealized: 0 }],
   firstEquity: 1000,
   dayStartEquity: 1000,
+  trades: [],
+  reviews: [],
+  lessons: [],
+  autoTune: true,
+  tradesUntilReview: 5,
 };
 
 describe("ferramenta de trading do Az", () => {

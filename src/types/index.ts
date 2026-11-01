@@ -23,12 +23,16 @@ export type MediaAction="toggle"|"next"|"previous";
 export interface WebSource { title:string; url:string }
 export interface WebSearchResult { answer:string; sources:WebSource[]; queries:string[] }
 export type TradingAction="OPEN_LONG"|"OPEN_SHORT"|"CLOSE"|"HOLD"|"ERROR"|"MANUAL_CLOSE";
-export interface TradingSettings { apiKeyConfigured:boolean; symbol:string; candleInterval:string; cycleMinutes:number; marginUsdt:number; leverage:number; stopLossPct:number; takeProfitPct:number; maxDailyLossPct:number; minConfidence:number; engine:AIEngine; running:boolean; updatedAt:string }
+export interface TradingSettings { apiKeyConfigured:boolean; symbol:string; candleInterval:string; cycleMinutes:number; marginUsdt:number; leverage:number; stopLossPct:number; takeProfitPct:number; maxDailyLossPct:number; minConfidence:number; engine:AIEngine; profitLockPct:number; maxHoldMinutes:number; running:boolean; updatedAt:string }
 export type TradingSettingsInput=Omit<TradingSettings,"apiKeyConfigured"|"running"|"updatedAt">;
-export interface TradingEngineInfo { running:boolean; cycleInProgress:boolean; lastCycleAt:string|null; nextCycleAt:string|null; lastError:string|null }
+export interface TradingEngineInfo { running:boolean; cycleInProgress:boolean; lastCycleAt:string|null; nextCycleAt:string|null; lastError:string|null; reviewInProgress:boolean; lastReviewError:string|null }
 export interface TradingDecision { id:number; createdAt:string; symbol:string; price:number; positionBefore:string; proposedAction:TradingAction; finalAction:TradingAction; confidence:number; reason:string; riskNote:string; engine:string; model:string; orderStatus:"NONE"|"FILLED"|"FAILED"; orderDetail:string; equity:number|null }
 export interface EquityPoint { createdAt:string; equity:number; balance:number; unrealized:number }
-export interface TradingOverview { settings:TradingSettings; engine:TradingEngineInfo; decisions:TradingDecision[]; equity:EquityPoint[]; firstEquity:number|null; dayStartEquity:number|null }
+export type TradeExitReason="STOP"|"TARGET"|"LOCK"|"TIMEOUT"|"AGENT"|"MANUAL"|"DAILY_LIMIT"|"EXCHANGE";
+export interface TradingTrade { id:number; symbol:string; side:"LONG"|"SHORT"; openedAt:string; closedAt:string|null; entryPrice:number; exitPrice:number|null; quantity:number; stopLossPct:number; takeProfitPct:number; candleInterval:string; balanceBefore:number; pnlUsdt:number|null; exitReason:TradeExitReason|null; confidence:number; entryReason:string; entryContext:string }
+export interface TuningChange { field:string; label:string; from:string; to:string }
+export interface TradingReview { id:number; createdAt:string; lastTradeId:number; tradesCount:number; pnlUsdt:number; winRate:number; diagnosis:string; lessons:string[]; changes:TuningChange[]; model:string; reverted:boolean }
+export interface TradingOverview { settings:TradingSettings; engine:TradingEngineInfo; decisions:TradingDecision[]; equity:EquityPoint[]; firstEquity:number|null; dayStartEquity:number|null; trades:TradingTrade[]; reviews:TradingReview[]; lessons:string[]; autoTune:boolean; tradesUntilReview:number }
 export interface LivePosition { side:"LONG"|"SHORT"; quantity:number; entryPrice:number; unrealized:number; leverage:number; stopLoss:number|null; takeProfit:number|null }
 export interface TradingLive { equity:number; balance:number; unrealized:number; availableMargin:number; position:LivePosition|null }
 export interface MarketCandle { time:number; open:number; high:number; low:number; close:number; volume:number }

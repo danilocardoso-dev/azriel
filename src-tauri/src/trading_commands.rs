@@ -3,6 +3,7 @@ use crate::{
     trading::{
         bingx::BingxClient,
         engine::{self, EngineInfo, TradingState},
+        review::REVIEW_EVERY,
         strategy::Side,
     },
 };
@@ -22,6 +23,11 @@ pub struct TradingOverview {
     equity: Vec<EquityPoint>,
     first_equity: Option<f64>,
     day_start_equity: Option<f64>,
+    trades: Vec<TradingTrade>,
+    reviews: Vec<TradingReview>,
+    lessons: Vec<String>,
+    auto_tune: bool,
+    trades_until_review: i64,
 }
 
 #[derive(Serialize)]
@@ -143,7 +149,35 @@ pub fn get_trading_overview(state: State<'_, DatabaseState>, trading: State<'_, 
         equity: trading_repository::list_equity(&connection, 1_000)?,
         first_equity: trading_repository::first_equity(&connection)?,
         day_start_equity: trading_repository::day_start_equity(&connection)?,
+        trades: trading_repository::list_trades(&connection, 30)?,
+        reviews: trading_repository::list_reviews(&connection, 10)?,
+        lessons: trading_repository::active_lessons(&connection)?,
+        auto_tune: trading_repository::auto_tune(&connection)?,
+        trades_until_review: (REVIEW_EVERY - trading_repository::closed_since_last_review(&connection)?).max(0),
     })
+}
+
+/// Revisão manual: não espera os próximos trades fecharem.
+#[tauri::command]
+pub async fn run_trading_review(app: AppHandle) -> Result<TradingReview, String> {
+    engine::run_review(&app).await
+}
+
+/// Volta os parâmetros e as lições de antes da última revisão.
+#[tauri::command]
+pub fn revert_trading_review(app: AppHandle, state: State<'_, DatabaseState>) -> Result<TradingSettings, String> {
+    let settings = {
+        let connection = lock(&state)?;
+        trading_repository::revert_last_review(&connection)?
+    };
+    let _ = app.emit(engine::UPDATE_EVENT, ());
+    Ok(settings)
+}
+
+#[tauri::command]
+pub fn set_trading_auto_tune(state: State<'_, DatabaseState>, enabled: bool) -> Result<(), String> {
+    let connection = lock(&state)?;
+    trading_repository::set_auto_tune(&connection, enabled)
 }
 
 #[tauri::command]
@@ -211,6 +245,14 @@ pub async fn close_trading_position(app: AppHandle, state: State<'_, DatabaseSta
     let mut client = BingxClient::new(&key, &secret)?;
     let _ = client.sync_time().await;
     let result = client.close_all(&settings.symbol).await;
+    if result.is_ok() {
+        if let Ok(after) = client.balance().await {
+            let price = client.klines(&settings.symbol, "1m", 1).await.ok().and_then(|candles| candles.last().map(|candle| candle.close)).unwrap_or(0.0);
+            if engine::close_journal(&app, &settings.symbol, after.balance, price, "MANUAL")? {
+                engine::review_if_due(&app);
+            }
+        }
+    }
     {
         let connection = lock(&state)?;
         trading_repository::insert_decision(&connection, &NewTradingDecision {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { CandleChart } from "../components/trading/CandleChart";
 import { EquityChart } from "../components/trading/EquityChart";
+import { TradingTuning } from "../components/trading/TradingTuning";
 import { actionLabels, change, price, shortTime, signedPct, signedUsd, trend, usd } from "../components/trading/tradingMath";
 import { TRADING_UPDATE_EVENT, tradingRepository } from "../repositories/tradingRepository";
 import type { MarketSnapshot, TradingLive, TradingOverview, TradingSettingsInput } from "../types";
@@ -132,6 +133,8 @@ export function TradingPage() {
       </div>
     </div>
 
+    <TradingTuning overview={overview} busy={busy} run={run} />
+
     <section className="trading-history">
       <button type="button" className="trading-history__toggle" onClick={() => setHistoryOpen((open) => !open)} aria-expanded={historyOpen}>
         {historyOpen ? "▾" : "▸"} HISTÓRICO <small>{decisions.length} decisões · {engine.running && engine.nextCycleAt ? `próxima análise ${new Date(engine.nextCycleAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : "agente desligado"}</small>
@@ -142,7 +145,8 @@ export function TradingPage() {
           <header>
             <time>{shortTime(decision.createdAt)}</time>
             <b>{actionLabels[decision.finalAction] ?? decision.finalAction}</b>
-            {decision.finalAction !== "ERROR" && decision.engine !== "manual" && <small>{decision.confidence}%</small>}
+            {decision.finalAction !== "ERROR" && decision.engine !== "manual" && decision.engine !== "vigia" && <small>{decision.confidence}%</small>}
+            {decision.engine === "vigia" && <small>VIGIA</small>}
             {decision.orderStatus !== "NONE" && <em data-status={decision.orderStatus}>{decision.orderStatus === "FILLED" ? "✓ EXECUTADA" : "✕ FALHOU"}</em>}
           </header>
           <p>{decision.reason}</p>
@@ -159,7 +163,7 @@ function TradingConfig({ overview, onSaved }: { overview: TradingOverview; onSav
   const [form, setForm] = useState<TradingSettingsInput>({
     symbol: settings.symbol, candleInterval: settings.candleInterval, cycleMinutes: settings.cycleMinutes, marginUsdt: settings.marginUsdt,
     leverage: settings.leverage, stopLossPct: settings.stopLossPct, takeProfitPct: settings.takeProfitPct, maxDailyLossPct: settings.maxDailyLossPct,
-    minConfidence: settings.minConfidence, engine: settings.engine,
+    minConfidence: settings.minConfidence, engine: settings.engine, profitLockPct: settings.profitLockPct, maxHoldMinutes: settings.maxHoldMinutes,
   });
   const [apiKey, setApiKey] = useState("");
   const [secretKey, setSecretKey] = useState("");
@@ -187,12 +191,14 @@ function TradingConfig({ overview, onSaved }: { overview: TradingOverview; onSav
       <label><span><strong>Análise a cada (min)</strong><small>Frequência das decisões</small></span><input type="number" min={5} max={240} value={form.cycleMinutes} onChange={number("cycleMinutes")} /></label>
       <label><span><strong>Margem por operação</strong><small>USDT · exposição {exposure.toLocaleString("pt-BR")} USDT</small></span><input type="number" min={1} step="any" value={form.marginUsdt} onChange={number("marginUsdt")} /></label>
       <label><span><strong>Alavancagem</strong><small>1x a 20x</small></span><input type="number" min={1} max={20} value={form.leverage} onChange={number("leverage")} /></label>
-      <label><span><strong>Stop loss %</strong><small>Do preço de entrada</small></span><input type="number" min={0.1} max={10} step={0.1} value={form.stopLossPct} onChange={number("stopLossPct")} /></label>
-      <label><span><strong>Take profit %</strong><small>Do preço de entrada</small></span><input type="number" min={0.1} max={30} step={0.1} value={form.takeProfitPct} onChange={number("takeProfitPct")} /></label>
+      <label><span><strong>Stop loss %</strong><small>Do preço de entrada</small></span><input type="number" min={0.1} max={10} step={0.05} value={form.stopLossPct} onChange={number("stopLossPct")} /></label>
+      <label><span><strong>Take profit %</strong><small>Do preço de entrada</small></span><input type="number" min={0.1} max={30} step={0.05} value={form.takeProfitPct} onChange={number("takeProfitPct")} /></label>
+      <label><span><strong>Trava de lucro %</strong><small>Chegou a esse ganho e voltou: fecha no positivo · 0 desliga</small></span><input type="number" min={0} max={5} step={0.05} value={form.profitLockPct} onChange={number("profitLockPct")} /></label>
+      <label><span><strong>Tempo máximo (min)</strong><small>Fecha o trade que não andou</small></span><input type="number" min={5} max={1440} value={form.maxHoldMinutes} onChange={number("maxHoldMinutes")} /></label>
       <label><span><strong>Perda diária máx. %</strong><small>Fecha tudo e desliga o agente</small></span><input type="number" min={0.5} max={50} step={0.5} value={form.maxDailyLossPct} onChange={number("maxDailyLossPct")} /></label>
       <label><span><strong>Confiança mínima</strong><small>Para abrir posição</small></span><input type="number" min={0} max={100} value={form.minConfidence} onChange={number("minConfidence")} /></label>
       <label><span><strong>Motor da IA</strong><small>Usa o modelo escolhido no AI Core</small></span><select value={form.engine} onChange={(event) => setForm({ ...form, engine: event.target.value as TradingSettingsInput["engine"] })}><option value="gemini">Gemini</option><option value="ollama">Ollama local</option></select></label>
-      <div className="ai-settings__actions"><button disabled={busy}>SALVAR PARÂMETROS</button><small>Risco por operação ≈ {(exposure * form.stopLossPct / 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} USDT no stop, sem taxas.</small></div>
+      <div className="ai-settings__actions"><button disabled={busy}>SALVAR PARÂMETROS</button><small>Risco por operação ≈ {(exposure * form.stopLossPct / 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} USDT no stop · taxa ≈ {(exposure * 0.001).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} USDT por trade.</small></div>
     </form>
     {message && <p className="trading-config__message" data-kind={message.kind}>{message.text}</p>}
   </section>;

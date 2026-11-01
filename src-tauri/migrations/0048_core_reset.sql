@@ -85,16 +85,18 @@ CREATE TABLE IF NOT EXISTS trading_settings (
   api_key TEXT NOT NULL DEFAULT '',
   secret_key TEXT NOT NULL DEFAULT '',
   symbol TEXT NOT NULL DEFAULT 'BTC-USDT',
-  candle_interval TEXT NOT NULL DEFAULT '15m',
-  cycle_minutes INTEGER NOT NULL DEFAULT 15,
+  candle_interval TEXT NOT NULL DEFAULT '5m',
+  cycle_minutes INTEGER NOT NULL DEFAULT 5,
   margin_usdt REAL NOT NULL DEFAULT 20,
   leverage INTEGER NOT NULL DEFAULT 5,
-  stop_loss_pct REAL NOT NULL DEFAULT 1.0,
-  take_profit_pct REAL NOT NULL DEFAULT 2.0,
+  stop_loss_pct REAL NOT NULL DEFAULT 0.3,
+  take_profit_pct REAL NOT NULL DEFAULT 0.5,
   max_daily_loss_pct REAL NOT NULL DEFAULT 5.0,
   min_confidence INTEGER NOT NULL DEFAULT 60,
   engine TEXT NOT NULL DEFAULT 'gemini',
   running INTEGER NOT NULL DEFAULT 0,
+  profit_lock_pct REAL NOT NULL DEFAULT 0.25,
+  max_hold_minutes INTEGER NOT NULL DEFAULT 30,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 INSERT OR IGNORE INTO trading_settings(id) VALUES (1);
@@ -122,6 +124,46 @@ CREATE TABLE IF NOT EXISTS trading_equity (
   balance REAL NOT NULL,
   unrealized REAL NOT NULL
 );
+-- Diário de trades: cada entrada vira uma linha, fechada com o resultado realizado.
+CREATE TABLE IF NOT EXISTS trading_trades (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  symbol TEXT NOT NULL,
+  side TEXT NOT NULL CHECK (side IN ('LONG','SHORT')),
+  opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  closed_at TEXT,
+  entry_price REAL NOT NULL,
+  quantity REAL NOT NULL DEFAULT 0,
+  exit_price REAL,
+  stop_loss_pct REAL NOT NULL,
+  take_profit_pct REAL NOT NULL,
+  candle_interval TEXT NOT NULL,
+  balance_before REAL NOT NULL,
+  pnl_usdt REAL,
+  exit_reason TEXT,
+  confidence INTEGER NOT NULL DEFAULT 0,
+  entry_reason TEXT NOT NULL DEFAULT '',
+  entry_context TEXT NOT NULL DEFAULT '{}'
+);
+-- Revisões do agente: diagnóstico, lições e ajustes de parâmetros (com o antes para desfazer).
+CREATE TABLE IF NOT EXISTS trading_reviews (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_trade_id INTEGER NOT NULL,
+  trades_count INTEGER NOT NULL,
+  pnl_usdt REAL NOT NULL,
+  win_rate REAL NOT NULL,
+  diagnosis TEXT NOT NULL,
+  lessons TEXT NOT NULL DEFAULT '[]',
+  changes TEXT NOT NULL DEFAULT '[]',
+  settings_before TEXT NOT NULL,
+  model TEXT NOT NULL DEFAULT '',
+  reverted INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS trading_tuning (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  auto_tune INTEGER NOT NULL DEFAULT 1
+);
+INSERT OR IGNORE INTO trading_tuning(id) VALUES (1);
 CREATE INDEX IF NOT EXISTS idx_trading_decisions_created ON trading_decisions(created_at);
 CREATE INDEX IF NOT EXISTS idx_trading_equity_created ON trading_equity(created_at);
 CREATE TABLE IF NOT EXISTS conversations (

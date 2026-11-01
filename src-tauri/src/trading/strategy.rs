@@ -60,17 +60,51 @@ pub struct RiskState {
     pub equity: f64,
     pub day_start_equity: Option<f64>,
     pub trades_today: i64,
-    /// Direção da tendência de 1h (EMA21 x EMA50); `None` quando neutra.
-    pub trend_1h: Option<Side>,
 }
 
-/// Tendência de 1h no formato do alinhamento (ALTA/BAIXA/NEUTRO) → lado que ela favorece.
-pub fn trend_side(trend_1h: &str) -> Option<Side> {
-    match trend_1h {
-        "ALTA" => Some(Side::Long),
-        "BAIXA" => Some(Side::Short),
-        _ => None,
+/// Taxa de ida e volta (taker 0,05% na entrada e na saída), em % do preço.
+pub const FEES_PCT: f64 = 0.1;
+
+/// Regras de saída rápida, checadas pelo vigia a cada poucos segundos, sem esperar a IA.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ExitRules {
+    pub stop_loss_pct: f64,
+    pub take_profit_pct: f64,
+    /// Depois de o trade chegar a este ganho, ele não pode mais virar perda (0 desliga).
+    pub profit_lock_pct: f64,
+    pub max_hold_minutes: i64,
+}
+
+/// Quanto o preço andou a favor da posição, em %.
+pub fn move_pct(side: Side, entry: f64, price: f64) -> f64 {
+    if entry <= 0.0 {
+        return 0.0;
     }
+    match side {
+        Side::Long => (price - entry) / entry * 100.0,
+        Side::Short => (entry - price) / entry * 100.0,
+    }
+}
+
+/// Decide se o trade sai agora. `peak` é o melhor movimento já visto desde a entrada.
+/// Devolve o motivo (para o diário) e a explicação (para o histórico).
+pub fn quick_exit(moved: f64, peak: f64, minutes_open: i64, rules: &ExitRules) -> Option<(&'static str, String)> {
+    let fmt = |value: f64| format!("{value:+.2}%").replace('.', ",");
+    if moved >= rules.take_profit_pct {
+        return Some(("TARGET", format!("Alvo atingido: {} desde a entrada.", fmt(moved))));
+    }
+    if moved <= -rules.stop_loss_pct {
+        return Some(("STOP", format!("Stop atingido: {} desde a entrada.", fmt(moved))));
+    }
+    // A trava fecha ainda no positivo depois da taxa: o lucro que apareceu não vira perda.
+    let floor = FEES_PCT + 0.02;
+    if rules.profit_lock_pct > 0.0 && peak >= rules.profit_lock_pct && moved <= floor {
+        return Some(("LOCK", format!("Trava de lucro: chegou a {} e voltou para {}; fecha antes de virar perda.", fmt(peak), fmt(moved))));
+    }
+    if minutes_open >= rules.max_hold_minutes {
+        return Some(("TIMEOUT", format!("Tempo máximo de {} min: sai com {}.", rules.max_hold_minutes, fmt(moved))));
+    }
+    None
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -98,18 +132,11 @@ pub fn apply_risk(decision: &Decision, state: &RiskState, config: &RiskConfig) -
             halt: true,
         };
     }
-    // Saída só quando a tendência de 1h deixa de favorecer a posição. No 5m as EMAs curtas
-    // oscilam o tempo todo; fechar a cada virada fazia o agente sair no repique, com perda e taxa.
-    let trend_still_favors = |side: Side| state.trend_1h == Some(side);
-    let hold_exit = "Saída bloqueada: a tendência de 1h ainda favorece a posição; oscilação de curto prazo não fecha. Stop e alvo seguem ativos.";
+    // Operação rápida: a IA pode sair a qualquer momento; não existe trava de tendência longa.
     match (decision.action, state.position) {
         (Action::Hold, _) => outcome(Action::Hold, ""),
         (Action::Close, None) => outcome(Action::Hold, "Sem posição aberta para fechar."),
-        (Action::Close, Some(side)) if trend_still_favors(side) => outcome(Action::Hold, hold_exit),
         (Action::Close, Some(_)) => outcome(Action::Close, ""),
-        (Action::OpenLong, Some(Side::Short)) | (Action::OpenShort, Some(Side::Long)) if trend_still_favors(state.position.unwrap_or(Side::Long)) => {
-            outcome(Action::Hold, hold_exit)
-        }
         (Action::OpenLong, Some(Side::Short)) | (Action::OpenShort, Some(Side::Long)) => {
             outcome(Action::Close, "Sinal contrário à posição: apenas fecha, sem inverter no mesmo ciclo.")
         }
@@ -196,6 +223,11 @@ pub struct ContextInput<'a> {
     pub leverage: i64,
     pub margin_usdt: f64,
     pub recent_decisions: &'a [(String, String, String)],
+    /// Lições da última revisão dos trades (autoajuste).
+    pub lessons: &'a [String],
+    pub exit_rules: ExitRules,
+    /// Minutos desde a entrada da posição aberta, pelo diário.
+    pub minutes_open: Option<i64>,
 }
 
 fn round(value: f64, digits: i32) -> f64 {
@@ -253,6 +285,7 @@ pub fn build_context(input: &ContextInput) -> Result<Value, String> {
                 Side::Short => (position.entry_price - price) / position.entry_price * 100.0,
             }, 3),
             "leverage": position.leverage,
+            "minutesOpen": input.minutes_open,
         }),
     };
     let direction = alignment(&closes, &hourly_closes);
@@ -287,7 +320,11 @@ pub fn build_context(input: &ContextInput) -> Result<Value, String> {
             "leverage": input.leverage,
             "stopLossPct": input.stop_loss_pct,
             "takeProfitPct": input.take_profit_pct,
+            "profitLockPct": input.exit_rules.profit_lock_pct,
+            "maxHoldMinutes": input.exit_rules.max_hold_minutes,
+            "roundTripFeesPct": FEES_PCT,
         },
+        "lessons": input.lessons,
         "recentDecisions": input.recent_decisions.iter().map(|(at, action, reason)| json!({"at": at, "action": action, "reason": reason})).collect::<Vec<_>>(),
     }))
 }
@@ -299,7 +336,7 @@ mod tests {
     const RISK: RiskConfig = RiskConfig { min_confidence: 60, max_daily_loss_pct: 5.0, max_trades_per_day: 10 };
 
     fn state(position: Option<Side>) -> RiskState {
-        RiskState { position, equity: 1000.0, day_start_equity: Some(1000.0), trades_today: 0, trend_1h: None }
+        RiskState { position, equity: 1000.0, day_start_equity: Some(1000.0), trades_today: 0 }
     }
     fn decision(action: Action, confidence: i64) -> Decision {
         Decision { action, confidence, reason: "x".into() }
@@ -319,23 +356,32 @@ mod tests {
     }
 
     #[test]
-    fn exits_only_when_the_1h_trend_stops_favoring_the_position() {
-        // Caso real de 26/10: SHORT com 1h em BAIXA e o 5m repicando — o agente fechava no repique.
-        let short_with_trend = RiskState { trend_1h: trend_side("BAIXA"), ..state(Some(Side::Short)) };
-        let blocked = apply_risk(&decision(Action::Close, 75), &short_with_trend, &RISK);
-        assert_eq!(blocked.action, Action::Hold);
-        assert!(blocked.note.contains("tendência de 1h"));
-        assert_eq!(apply_risk(&decision(Action::OpenLong, 90), &short_with_trend, &RISK).action, Action::Hold);
+    fn the_agent_may_close_at_any_time() {
+        // Operação rápida: virou contra no curto prazo, a IA fecha sem esperar a tendência de 1h.
+        assert_eq!(apply_risk(&decision(Action::Close, 60), &state(Some(Side::Short)), &RISK).action, Action::Close);
+        let reversal = apply_risk(&decision(Action::OpenLong, 90), &state(Some(Side::Short)), &RISK);
+        assert_eq!(reversal.action, Action::Close);
+        assert!(reversal.note.contains("sem inverter"));
+    }
 
-        let short_trend_flipped = RiskState { trend_1h: trend_side("ALTA"), ..state(Some(Side::Short)) };
-        assert_eq!(apply_risk(&decision(Action::Close, 75), &short_trend_flipped, &RISK).action, Action::Close);
-        let long_trend_neutral = RiskState { trend_1h: trend_side("NEUTRO"), ..state(Some(Side::Long)) };
-        assert_eq!(apply_risk(&decision(Action::Close, 75), &long_trend_neutral, &RISK).action, Action::Close);
+    const RULES: ExitRules = ExitRules { stop_loss_pct: 0.3, take_profit_pct: 0.5, profit_lock_pct: 0.25, max_hold_minutes: 30 };
 
-        // A perda diária fecha mesmo com a tendência a favor.
-        let losing = RiskState { equity: 940.0, ..short_with_trend };
-        let halted = apply_risk(&decision(Action::Hold, 50), &losing, &RISK);
-        assert_eq!((halted.action, halted.halt), (Action::Close, true));
+    #[test]
+    fn quick_exits_take_profit_cut_losses_and_lock_gains() {
+        assert!((move_pct(Side::Long, 100.0, 100.5) - 0.5).abs() < 1e-9);
+        assert!((move_pct(Side::Short, 100.0, 100.5) - -0.5).abs() < 1e-9);
+        assert_eq!(quick_exit(0.1, 0.1, 5, &RULES), None);
+        assert_eq!(quick_exit(0.5, 0.5, 5, &RULES).unwrap().0, "TARGET");
+        assert_eq!(quick_exit(-0.31, 0.0, 5, &RULES).unwrap().0, "STOP");
+        // Chegou a +0,3% e voltou para +0,1%: fecha ainda positivo depois da taxa.
+        let (reason, note) = quick_exit(0.1, 0.3, 8, &RULES).unwrap();
+        assert_eq!(reason, "LOCK");
+        assert!(note.contains("+0,30%"));
+        assert_eq!(quick_exit(0.2, 0.3, 8, &RULES), None, "ainda acima do piso da trava");
+        assert_eq!(quick_exit(0.05, 0.2, 8, &RULES), None, "nunca chegou ao gatilho da trava");
+        assert_eq!(quick_exit(0.05, 0.2, 30, &RULES).unwrap().0, "TIMEOUT");
+        let no_lock = ExitRules { profit_lock_pct: 0.0, ..RULES };
+        assert_eq!(quick_exit(0.0, 0.4, 8, &no_lock), None);
     }
 
     #[test]
@@ -385,7 +431,8 @@ mod tests {
         let position = OpenPosition { side: Side::Long, quantity: 1.0, entry_price: 170.0, unrealized: 9.5, leverage: 5 };
         let context = build_context(&ContextInput {
             symbol: "BTC-USDT", interval: "15m", candles: &candles, hourly: &candles, position: Some(&position),
-            equity: 1000.0, stop_loss_pct: 1.0, take_profit_pct: 2.0, leverage: 5, margin_usdt: 20.0, recent_decisions: &[],
+            equity: 1000.0, stop_loss_pct: 1.0, take_profit_pct: 2.0, leverage: 5, margin_usdt: 20.0, recent_decisions: &[], lessons: &[],
+            exit_rules: ExitRules { stop_loss_pct: 1.0, take_profit_pct: 2.0, profit_lock_pct: 0.25, max_hold_minutes: 30 }, minutes_open: Some(12),
         }).unwrap();
         assert_eq!(context["indicators"]["ema9AboveEma21"], true);
         assert_eq!(context["alignment"]["signal"], "ALTA");
@@ -393,7 +440,8 @@ mod tests {
         assert_eq!(context["lastCandlesOHLCV"].as_array().unwrap().len(), 12);
         assert!(build_context(&ContextInput { candles: &candles[..10], ..ContextInput {
             symbol: "BTC-USDT", interval: "15m", candles: &candles, hourly: &candles, position: None,
-            equity: 1000.0, stop_loss_pct: 1.0, take_profit_pct: 2.0, leverage: 5, margin_usdt: 20.0, recent_decisions: &[],
+            equity: 1000.0, stop_loss_pct: 1.0, take_profit_pct: 2.0, leverage: 5, margin_usdt: 20.0, recent_decisions: &[], lessons: &[],
+            exit_rules: ExitRules { stop_loss_pct: 1.0, take_profit_pct: 2.0, profit_lock_pct: 0.25, max_hold_minutes: 30 }, minutes_open: Some(12),
         } }).is_err());
     }
 }

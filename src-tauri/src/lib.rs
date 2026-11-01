@@ -30,6 +30,9 @@ pub fn run() {
             let database_path = app.path().app_data_dir()?.join("azriel.db");
             let connection = database::open(&database_path)
                 .map_err(|error| format!("erro ao iniciar o banco: {error}"))?;
+            if let Err(error) = database::trading_repository::backfill_trades(&connection) {
+                eprintln!("[TRADING] diário a partir do histórico falhou: {error}");
+            }
             let resume_trading = database::trading_repository::get_settings(&connection)
                 .map(|settings| settings.running)
                 .unwrap_or(false);
@@ -107,6 +110,9 @@ pub fn run() {
             trading_commands::get_market_snapshot,
             trading_commands::list_market_symbols,
             trading_commands::set_trading_symbol,
+            trading_commands::run_trading_review,
+            trading_commands::revert_trading_review,
+            trading_commands::set_trading_auto_tune,
             money_commands::money_month,
             money_commands::money_save_item,
             money_commands::money_delete_item,
