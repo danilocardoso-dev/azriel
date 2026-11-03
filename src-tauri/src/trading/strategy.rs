@@ -52,6 +52,8 @@ pub struct RiskConfig {
     pub min_confidence: i64,
     pub max_daily_loss_pct: f64,
     pub max_trades_per_day: i64,
+    pub stop_loss_pct: f64,
+    pub take_profit_pct: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -60,7 +62,39 @@ pub struct RiskState {
     pub equity: f64,
     pub day_start_equity: Option<f64>,
     pub trades_today: i64,
+    /// Lado que a tendência de 1h favorece; `None` quando neutra.
+    pub trend: Option<Side>,
+    /// ATR(14) da vela operada, em % do preço.
+    pub atr_pct: Option<f64>,
+    /// Distância do preço até a EMA21, em % (positivo = acima).
+    pub price_vs_ema21_pct: Option<f64>,
+    /// Quanto a posição aberta andou a favor, em %.
+    pub position_move_pct: Option<f64>,
+    /// EMA9 acima da EMA21 na vela operada (curto prazo virado para cima).
+    pub ema9_above_ema21: Option<bool>,
+    /// Menor e maior RSI(14) das últimas velas: mostra se o preço veio de sobrevenda/sobrecompra.
+    pub rsi_recent_low: Option<f64>,
+    pub rsi_recent_high: Option<f64>,
 }
+
+/// Tendência de 1h no formato do alinhamento (ALTA/BAIXA/NEUTRO) → lado que ela favorece.
+pub fn trend_side(trend_1h: &str) -> Option<Side> {
+    match trend_1h {
+        "ALTA" => Some(Side::Long),
+        "BAIXA" => Some(Side::Short),
+        _ => None,
+    }
+}
+
+/// Contra a tendência de 1h só com convicção alta e sinal de reversão.
+pub const COUNTER_TREND_MIN_CONFIDENCE: i64 = 85;
+/// Velas olhadas para dizer que o RSI "veio de" sobrevenda ou sobrecompra.
+pub const RSI_LOOKBACK: usize = 6;
+
+/// Entrada mais longe que isso (em ATRs) da EMA21 é perseguir preço: o repique costuma vir contra.
+pub const MAX_EXTENSION_ATR: f64 = 2.0;
+/// O alvo precisa caber em ~6 velas de ATR; abaixo disso o mercado está parado demais para pagar taxa.
+pub const TARGET_IN_ATRS: f64 = 6.0;
 
 /// Taxa de ida e volta (taker 0,05% na entrada e na saída), em % do preço.
 pub const FEES_PCT: f64 = 0.1;
@@ -132,10 +166,17 @@ pub fn apply_risk(decision: &Decision, state: &RiskState, config: &RiskConfig) -
             halt: true,
         };
     }
-    // Operação rápida: a IA pode sair a qualquer momento; não existe trava de tendência longa.
+    // Fechar no meio do ruído só paga taxa (dados de 01–02/11: seis saídas por "estagnação",
+    // todas com −0,1 a −0,2 USDT). Nessa faixa quem decide é o vigia: stop, trava e tempo máximo.
+    let small_wiggle = |moved: f64| moved > -config.stop_loss_pct / 2.0 && moved < FEES_PCT + 0.05;
+    let fmt = |value: f64| format!("{value:+.2}%").replace('.', ",");
     match (decision.action, state.position) {
         (Action::Hold, _) => outcome(Action::Hold, ""),
         (Action::Close, None) => outcome(Action::Hold, "Sem posição aberta para fechar."),
+        (Action::Close, Some(side)) if state.position_move_pct.is_some_and(small_wiggle) && state.trend != Some(opposite(side)) => outcome(
+            Action::Hold,
+            &format!("Saída bloqueada: o trade está em {} (oscilação pequena). Stop, trava de lucro e tempo máximo cuidam da saída.", fmt(state.position_move_pct.unwrap_or(0.0))),
+        ),
         (Action::Close, Some(_)) => outcome(Action::Close, ""),
         (Action::OpenLong, Some(Side::Short)) | (Action::OpenShort, Some(Side::Long)) => {
             outcome(Action::Close, "Sinal contrário à posição: apenas fecha, sem inverter no mesmo ciclo.")
@@ -147,8 +188,50 @@ pub fn apply_risk(decision: &Decision, state: &RiskState, config: &RiskConfig) -
         (Action::OpenLong | Action::OpenShort, None) if state.trades_today >= config.max_trades_per_day => {
             outcome(Action::Hold, &format!("Limite de {} entradas por dia atingido.", config.max_trades_per_day))
         }
-        (action, None) => outcome(action, ""),
+        (action @ (Action::OpenLong | Action::OpenShort), None) => {
+            let side = if action == Action::OpenLong { Side::Long } else { Side::Short };
+            match entry_block(side, decision.confidence, state, config) {
+                Some(note) => outcome(Action::Hold, &note),
+                None => outcome(action, ""),
+            }
+        }
     }
+}
+
+fn opposite(side: Side) -> Side {
+    if side == Side::Long { Side::Short } else { Side::Long }
+}
+
+/// Travas de entrada que não dependem da IA. Contra a tendência de 1h só passa uma reversão
+/// clara: confiança alta, RSI vindo do extremo e curto prazo já virado a favor. Em qualquer
+/// lado: sem perseguir preço esticado e só com volatilidade suficiente para o alvo pagar a taxa.
+pub fn entry_block(side: Side, confidence: i64, state: &RiskState, config: &RiskConfig) -> Option<String> {
+    let name = if side == Side::Long { "compra" } else { "venda" };
+    if state.trend == Some(opposite(side)) {
+        let (rsi_came_from_extreme, short_term_turned) = match side {
+            Side::Long => (state.rsi_recent_low.is_some_and(|low| low < 30.0), state.ema9_above_ema21 == Some(true)),
+            Side::Short => (state.rsi_recent_high.is_some_and(|high| high > 70.0), state.ema9_above_ema21 == Some(false)),
+        };
+        let extreme = if side == Side::Long { "sobrevenda (RSI abaixo de 30)" } else { "sobrecompra (RSI acima de 70)" };
+        if confidence < COUNTER_TREND_MIN_CONFIDENCE {
+            return Some(format!("Entrada bloqueada: {name} contra a tendência de 1h pede confiança de pelo menos {COUNTER_TREND_MIN_CONFIDENCE}% (veio {confidence}%)."));
+        }
+        if !rsi_came_from_extreme {
+            return Some(format!("Entrada bloqueada: {name} contra a tendência de 1h sem reversão; o RSI não veio de {extreme} nas últimas {RSI_LOOKBACK} velas."));
+        }
+        if !short_term_turned {
+            return Some(format!("Entrada bloqueada: {name} contra a tendência de 1h com o curto prazo ainda contra (EMA9 x EMA21)."));
+        }
+    }
+    let atr = state.atr_pct?;
+    if atr * TARGET_IN_ATRS < config.take_profit_pct {
+        return Some(format!("Entrada bloqueada: mercado parado (ATR {:.3}%); o alvo de {:.2}% não cabe no movimento atual.", atr, config.take_profit_pct));
+    }
+    let extension = state.price_vs_ema21_pct.map(|distance| if side == Side::Long { distance } else { -distance });
+    if extension.is_some_and(|distance| distance > MAX_EXTENSION_ATR * atr) {
+        return Some(format!("Entrada bloqueada: preço já esticado ({:.2}% da EMA21, mais de {MAX_EXTENSION_ATR} ATRs). Espere o respiro.", extension.unwrap_or(0.0)));
+    }
+    None
 }
 
 /// Lê a resposta da IA, tolerando cercas ```json e texto em volta do objeto.
@@ -243,7 +326,7 @@ pub struct Alignment {
 }
 
 /// Direção do mercado calculada no código, igual para os dois lados:
-/// curto prazo pelas EMAs 9/21 e pelo preço contra a EMA21; tendência pelas EMAs 21/50 do 1h.
+/// curto prazo pelas EMAs 9/21 e pelo preço contra a EMA21; tendência pelas EMAs 9/21 do 1h.
 pub fn alignment(closes: &[f64], hourly_closes: &[f64]) -> Alignment {
     let price = closes.last().copied().unwrap_or_default();
     let short_term = match (ema(closes, 9), ema(closes, 21)) {
@@ -251,13 +334,22 @@ pub fn alignment(closes: &[f64], hourly_closes: &[f64]) -> Alignment {
         (Some(fast), Some(slow)) if fast < slow && price < slow => "BAIXA",
         _ => "NEUTRO",
     };
-    let trend_1h = match (ema(hourly_closes, 21), ema(hourly_closes, 50)) {
+    // EMAs 9/21 no 1h: as 21/50 demoravam dias para virar e deixavam o agente comprando na queda.
+    let trend_1h = match (ema(hourly_closes, 9), ema(hourly_closes, 21)) {
         (Some(fast), Some(slow)) if fast > slow => "ALTA",
         (Some(fast), Some(slow)) if fast < slow => "BAIXA",
         _ => "NEUTRO",
     };
     let signal = if short_term == trend_1h && short_term != "NEUTRO" { short_term } else { "MISTO" };
     Alignment { short_term, trend_1h, signal }
+}
+
+/// Menor e maior RSI(14) nas últimas RSI_LOOKBACK velas fechadas.
+pub fn recent_rsi(closes: &[f64]) -> Option<(f64, f64)> {
+    let values: Vec<f64> = (0..RSI_LOOKBACK).filter_map(|back| closes.len().checked_sub(back).and_then(|end| rsi(&closes[..end], 14))).collect();
+    let low = values.iter().copied().reduce(f64::min)?;
+    let high = values.iter().copied().reduce(f64::max)?;
+    Some((low, high))
 }
 
 /// Snapshot compacto do mercado e da conta: indicadores já calculados para o modelo não fazer conta.
@@ -304,12 +396,14 @@ pub fn build_context(input: &ContextInput) -> Result<Value, String> {
             "priceVsEma50Pct": pct(ema(&closes, 50)),
             "ema9AboveEma21": ema(&closes, 9).zip(ema(&closes, 21)).map(|(fast, slow)| fast > slow),
             "rsi14": rsi(&closes, 14).map(|v| round(v, 1)),
+            "rsiRecentLow": recent_rsi(&closes).map(|(low, _)| round(low, 1)),
+            "rsiRecentHigh": recent_rsi(&closes).map(|(_, high)| round(high, 1)),
             "atr14Pct": atr(input.candles, 14).map(|v| round(v / price * 100.0, 3)),
             "relativeVolume": relative_volume(input.candles, 20).map(|v| round(v, 2)),
             "change1hPct": closes.len().checked_sub(5).map(|i| round((price - closes[i]) / closes[i] * 100.0, 3)),
         },
         "trend1h": {
-            "ema21AboveEma50": ema(&hourly_closes, 21).zip(ema(&hourly_closes, 50)).map(|(fast, slow)| fast > slow),
+            "ema9AboveEma21": ema(&hourly_closes, 9).zip(ema(&hourly_closes, 21)).map(|(fast, slow)| fast > slow),
             "rsi14": rsi(&hourly_closes, 14).map(|v| round(v, 1)),
         },
         "lastCandlesOHLCV": recent,
@@ -333,10 +427,13 @@ pub fn build_context(input: &ContextInput) -> Result<Value, String> {
 mod tests {
     use super::*;
 
-    const RISK: RiskConfig = RiskConfig { min_confidence: 60, max_daily_loss_pct: 5.0, max_trades_per_day: 10 };
+    const RISK: RiskConfig = RiskConfig { min_confidence: 60, max_daily_loss_pct: 5.0, max_trades_per_day: 10, stop_loss_pct: 0.3, take_profit_pct: 0.5 };
 
     fn state(position: Option<Side>) -> RiskState {
-        RiskState { position, equity: 1000.0, day_start_equity: Some(1000.0), trades_today: 0 }
+        RiskState {
+            position, equity: 1000.0, day_start_equity: Some(1000.0), trades_today: 0, trend: None, atr_pct: None, price_vs_ema21_pct: None,
+            position_move_pct: None, ema9_above_ema21: None, rsi_recent_low: None, rsi_recent_high: None,
+        }
     }
     fn decision(action: Action, confidence: i64) -> Decision {
         Decision { action, confidence, reason: "x".into() }
@@ -355,9 +452,76 @@ mod tests {
         assert_eq!(apply_risk(&decision(Action::OpenShort, 95), &busy, &RISK).action, Action::Hold);
     }
 
+    /// Snapshot de entrada como os do diário: tendência, ATR e distância da EMA21.
+    fn flat(trend: &str, atr: f64, vs_ema21: f64) -> RiskState {
+        RiskState { trend: trend_side(trend), atr_pct: Some(atr), price_vs_ema21_pct: Some(vs_ema21), ..state(None) }
+    }
+
     #[test]
-    fn the_agent_may_close_at_any_time() {
-        // Operação rápida: virou contra no curto prazo, a IA fecha sem esperar a tendência de 1h.
+    fn entries_follow_the_trend_and_skip_chasing_and_dead_markets() {
+        let long = decision(Action::OpenLong, 80);
+        let short = decision(Action::OpenShort, 80);
+        // Trade 14 (01/11 22:25): compra com 1h em BAIXA, sem reversão, perdeu.
+        let blocked = apply_risk(&long, &flat("BAIXA", 0.164, 0.1), &RISK);
+        assert_eq!(blocked.action, Action::Hold);
+        assert!(blocked.note.contains("pelo menos 85%"));
+        // A queda de 02/11 19h: venda a favor do 1h, com movimento e sem esticar.
+        assert_eq!(apply_risk(&short, &flat("BAIXA", 0.19, -0.116), &RISK).action, Action::OpenShort);
+        // Trade 12 (ATR 0,062%): mercado parado demais para o alvo de 0,5%.
+        assert!(apply_risk(&long, &flat("ALTA", 0.062, 0.112), &RISK).note.contains("mercado parado"));
+        // Trade 18: compra 0,427% acima da EMA21 com ATR 0,168% (2,5 ATRs) — perseguindo preço.
+        assert!(apply_risk(&long, &flat("ALTA", 0.168, 0.427), &RISK).note.contains("esticado"));
+        // O mesmo esticamento a favor de uma venda (abaixo da EMA21) também bloqueia; acima não.
+        assert!(apply_risk(&short, &flat("BAIXA", 0.168, -0.427), &RISK).note.contains("esticado"));
+        assert_eq!(apply_risk(&short, &flat("BAIXA", 0.168, 0.2), &RISK).action, Action::OpenShort);
+        // Tendência neutra libera os dois lados; sem ATR não há como medir, então não trava.
+        assert_eq!(apply_risk(&long, &flat("NEUTRO", 0.15, 0.1), &RISK).action, Action::OpenLong);
+        assert_eq!(apply_risk(&long, &state(None), &RISK).action, Action::OpenLong);
+    }
+
+    #[test]
+    fn counter_trend_entries_need_a_clear_reversal() {
+        // Compra na queda: RSI veio de 24, EMA9 voltou para cima da EMA21 e confiança 88 — passa.
+        let reversal = RiskState { ema9_above_ema21: Some(true), rsi_recent_low: Some(24.0), rsi_recent_high: Some(48.0), ..flat("BAIXA", 0.15, 0.05) };
+        assert_eq!(apply_risk(&decision(Action::OpenLong, 88), &reversal, &RISK).action, Action::OpenLong);
+        // Faltando qualquer peça, segura.
+        assert!(apply_risk(&decision(Action::OpenLong, 80), &reversal, &RISK).note.contains("85%"));
+        let no_oversold = RiskState { rsi_recent_low: Some(38.0), ..reversal.clone() };
+        assert!(apply_risk(&decision(Action::OpenLong, 90), &no_oversold, &RISK).note.contains("sobrevenda"));
+        let still_down = RiskState { ema9_above_ema21: Some(false), ..reversal.clone() };
+        assert!(apply_risk(&decision(Action::OpenLong, 90), &still_down, &RISK).note.contains("curto prazo"));
+        // O espelho para vender na alta.
+        let top = RiskState { ema9_above_ema21: Some(false), rsi_recent_low: Some(55.0), rsi_recent_high: Some(76.0), ..flat("ALTA", 0.15, -0.05) };
+        assert_eq!(apply_risk(&decision(Action::OpenShort, 86), &top, &RISK).action, Action::OpenShort);
+        // A favor da tendência, nada disso é exigido.
+        assert_eq!(apply_risk(&decision(Action::OpenShort, 65), &flat("BAIXA", 0.15, -0.05), &RISK).action, Action::OpenShort);
+    }
+
+    #[test]
+    fn recent_rsi_spans_the_last_candles() {
+        let mut closes: Vec<f64> = (0..60).map(|i| 100.0 - i as f64 * 0.5).collect();
+        closes.extend([71.0, 72.0, 73.0]);
+        let (low, high) = recent_rsi(&closes).unwrap();
+        assert!(low < 30.0 && high > low);
+        assert_eq!(recent_rsi(&closes[..10]), None);
+    }
+
+    #[test]
+    fn the_agent_cannot_close_on_small_wiggles() {
+        let close = decision(Action::Close, 70);
+        let at = |moved: f64, trend: &str| RiskState { position_move_pct: Some(moved), trend: trend_side(trend), ..state(Some(Side::Long)) };
+        // Trade 14 fechado por "estagnação" em −0,005%: agora segura, o vigia decide.
+        let held = apply_risk(&close, &at(-0.005, "ALTA"), &RISK);
+        assert_eq!(held.action, Action::Hold);
+        assert!(held.note.contains("oscilação pequena"));
+        assert_eq!(apply_risk(&close, &at(0.2, "ALTA"), &RISK).action, Action::Close, "lucro acima da taxa pode ser realizado");
+        assert_eq!(apply_risk(&close, &at(-0.2, "ALTA"), &RISK).action, Action::Close, "perda passando de meio stop pode ser cortada");
+        assert_eq!(apply_risk(&close, &at(-0.05, "BAIXA"), &RISK).action, Action::Close, "a tendência virou contra a compra");
+    }
+
+    #[test]
+    fn closing_is_free_without_measured_movement_and_reversals_only_close() {
+        // Sem o movimento medido (posição adotada), a IA pode fechar; sinal contrário só fecha, não inverte.
         assert_eq!(apply_risk(&decision(Action::Close, 60), &state(Some(Side::Short)), &RISK).action, Action::Close);
         let reversal = apply_risk(&decision(Action::OpenLong, 90), &state(Some(Side::Short)), &RISK);
         assert_eq!(reversal.action, Action::Close);

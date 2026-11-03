@@ -18,4 +18,5 @@ export const tradingRepository = {
   review: () => invokeDatabase<TradingReview>("run_trading_review"),
   revertReview: () => invokeDatabase<TradingSettings>("revert_trading_review"),
   setAutoTune: (enabled: boolean) => invokeDatabase<void>("set_trading_auto_tune", { enabled }),
+  removeLesson: (lesson: string) => invokeDatabase<string[]>("remove_trading_lesson", { lesson }),
 };

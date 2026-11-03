@@ -13,6 +13,9 @@ Como revisar:
 - Com poucos trades, seja prudente: uma perda isolada não é padrão. Diga quando a amostra não permite concluir.
 - Prefira poucos ajustes bem justificados. Se não houver evidência, não mude o parâmetro (use null).
 - Lições são regras curtas e acionáveis para o agente seguir nas próximas decisões, citando indicadores do snapshot (ex.: "Evite abrir SHORT com RSI abaixo de 35 depois de queda de mais de 1% na última hora"). Mantenha as lições atuais que continuam válidas, reescreva as que falharam e remova as que os dados contradizem. No máximo 6.
+- O sistema já impõe travas fixas: contra o trend1h só entra com confiança de 85%+, RSI vindo do extremo (abaixo de 30 para comprar, acima de 70 para vender) e curto prazo já virado a favor; não entra com preço a mais de 2 ATRs da EMA21 nem com ATR pequeno demais para o alvo, e bloqueia o fechamento pela IA em oscilações pequenas (o vigia cuida de stop, trava de lucro e tempo máximo). Não repita essas regras como lição.
+- Lições nunca podem impedir todas as entradas a favor da tendência. Proibido: mínimos absolutos de volume (ex.: "exija volume relativo de 1.0"), proibir vender com RSI baixo numa queda ou comprar com RSI alto numa alta (a não ser nos extremos, abaixo de 25 ou acima de 75), e mandar fechar por estagnação.
+- Remova das lições atuais qualquer uma que contrarie as regras acima.
 - Nunca invente dados, preços ou eventos. Use só o que está no JSON.
 
 Responda exatamente um objeto JSON, sem texto fora dele:

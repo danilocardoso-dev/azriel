@@ -316,6 +316,23 @@ pub fn active_lessons(connection: &Connection) -> Result<Vec<String>, String> {
         .unwrap_or_default())
 }
 
+/// Tira uma lição das que estão em vigor (a da revisão mais recente não desfeita).
+pub fn remove_lesson(connection: &Connection, lesson: &str) -> Result<Vec<String>, String> {
+    let (id, lessons): (i64, String) = connection
+        .query_row("SELECT id,lessons FROM trading_reviews WHERE reverted=0 ORDER BY id DESC LIMIT 1", [], |row| Ok((row.get(0)?, row.get(1)?)))
+        .optional()
+        .map_err(err)?
+        .ok_or("Não há lições em vigor")?;
+    let mut lessons: Vec<String> = serde_json::from_str(&lessons).unwrap_or_default();
+    let before = lessons.len();
+    lessons.retain(|item| item != lesson);
+    if lessons.len() == before {
+        return Err("Lição não encontrada".into());
+    }
+    connection.execute("UPDATE trading_reviews SET lessons=?2 WHERE id=?1", params![id, json(&lessons)]).map_err(err)?;
+    Ok(lessons)
+}
+
 pub fn apply_tunable(connection: &Connection, tunable: &Tunable) -> Result<TradingSettings, String> {
     let current = get_settings(connection)?;
     update_settings(connection, &TradingSettingsInput {
@@ -555,6 +572,9 @@ mod tests {
         assert_eq!(saved.lessons, vec!["l1".to_string()]);
         assert_eq!(Tunable::of(&get_settings(&connection).unwrap()), tuned);
         assert_eq!(active_lessons(&connection).unwrap(), vec!["l1".to_string()]);
+        assert!(remove_lesson(&connection, "outra").is_err());
+        assert!(remove_lesson(&connection, "l1").unwrap().is_empty());
+        assert!(active_lessons(&connection).unwrap().is_empty());
         assert_eq!(closed_since_last_review(&connection).unwrap(), 0);
 
         assert_eq!(Tunable::of(&revert_last_review(&connection).unwrap()), before);

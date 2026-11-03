@@ -185,3 +185,6 @@
 .trading-trades th:first-child, .trading-trades td:first-child { text-align: left; }
 .trading-trades td[data-tone="up"] { color: var(--green-online); }
 .trading-trades td[data-tone="down"] { color: var(--red-critical); }
+.trading-lessons li > span { margin-right: 6px; }
+.trading-lessons li > button { padding: 0 6px; border: 1px solid var(--line-soft); background: transparent; color: var(--text-muted); font: 12px var(--mono); cursor: pointer; }
+.trading-lessons li > button:hover { border-color: var(--red-critical); color: var(--red-critical); }

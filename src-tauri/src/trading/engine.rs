@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Notify;
 
-const SYSTEM_PROMPT: &str = include_str!("../../prompts/trading-agent-v5.txt");
+const SYSTEM_PROMPT: &str = include_str!("../../prompts/trading-agent-v6.txt");
 const REVIEW_PROMPT: &str = include_str!("../../prompts/trading-review-v1.txt");
 const MAX_ENTRIES_PER_DAY: i64 = 40;
 /// Entre as análises da IA, o vigia confere a posição neste intervalo.
@@ -220,8 +220,22 @@ async fn cycle(app: &AppHandle) -> Result<(), String> {
             equity: balance.equity,
             day_start_equity: day_start,
             trades_today: entries_today,
+            // As mesmas leituras que a IA recebeu no snapshot.
+            trend: strategy::trend_side(context["alignment"]["trend1h"].as_str().unwrap_or("NEUTRO")),
+            atr_pct: context["indicators"]["atr14Pct"].as_f64(),
+            price_vs_ema21_pct: context["indicators"]["priceVsEma21Pct"].as_f64(),
+            position_move_pct: context["position"]["movePct"].as_f64(),
+            ema9_above_ema21: context["indicators"]["ema9AboveEma21"].as_bool(),
+            rsi_recent_low: context["indicators"]["rsiRecentLow"].as_f64(),
+            rsi_recent_high: context["indicators"]["rsiRecentHigh"].as_f64(),
         },
-        &RiskConfig { min_confidence: settings.min_confidence, max_daily_loss_pct: settings.max_daily_loss_pct, max_trades_per_day: MAX_ENTRIES_PER_DAY },
+        &RiskConfig {
+            min_confidence: settings.min_confidence,
+            max_daily_loss_pct: settings.max_daily_loss_pct,
+            max_trades_per_day: MAX_ENTRIES_PER_DAY,
+            stop_loss_pct: settings.stop_loss_pct,
+            take_profit_pct: settings.take_profit_pct,
+        },
     );
 
     let (order_status, order_detail) = match risk.action {

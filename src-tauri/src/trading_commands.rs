@@ -174,6 +174,17 @@ pub fn revert_trading_review(app: AppHandle, state: State<'_, DatabaseState>) ->
     Ok(settings)
 }
 
+/// Apaga uma lição que você julgou errada; o agente deixa de recebê-la no próximo ciclo.
+#[tauri::command]
+pub fn remove_trading_lesson(app: AppHandle, state: State<'_, DatabaseState>, lesson: String) -> Result<Vec<String>, String> {
+    let lessons = {
+        let connection = lock(&state)?;
+        trading_repository::remove_lesson(&connection, &lesson)?
+    };
+    let _ = app.emit(engine::UPDATE_EVENT, ());
+    Ok(lessons)
+}
+
 #[tauri::command]
 pub fn set_trading_auto_tune(state: State<'_, DatabaseState>, enabled: bool) -> Result<(), String> {
     let connection = lock(&state)?;

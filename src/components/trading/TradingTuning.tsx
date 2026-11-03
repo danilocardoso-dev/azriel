@@ -33,7 +33,7 @@ export function TradingTuning({ overview, busy, run }: { overview: TradingOvervi
           {busy === "review" || engine.reviewInProgress ? "REVISANDO..." : "REVISAR AGORA"}
         </button>
       </div>
-      <p className="trading-tuning__note">O Gemini estuda os trades fechados e propõe lições e ajustes. O sistema só aceita stop entre 0,15% e 1%, alvo de pelo menos 1,5× o stop, confiança entre 55% e 90%, velas de 5m ou 15m e passos pequenos por revisão. Com menos de 5 trades, ele só escreve lições. Margem, alavancagem e perda diária nunca mudam.</p>
+      <p className="trading-tuning__note">O Gemini estuda os trades fechados e propõe lições e ajustes. Contra a tendência de 1h, só com reversão clara (confiança 85%+). Sem preço esticado nem mercado parado. O sistema só aceita stop entre 0,15% e 1%, alvo de pelo menos 1,5× o stop, confiança entre 55% e 90%, velas de 5m ou 15m e passos pequenos por revisão. Com menos de 5 trades, ele só escreve lições. Margem, alavancagem e perda diária nunca mudam.</p>
       {engine.lastReviewError && <p className="trading-tuning__error">Última revisão falhou: {engine.lastReviewError}</p>}
 
       {latest ? <article className="trading-review" data-reverted={latest.reverted}>
@@ -50,7 +50,7 @@ export function TradingTuning({ overview, busy, run }: { overview: TradingOvervi
 
       {lessons.length > 0 && <div className="trading-lessons">
         <span>LIÇÕES EM VIGOR</span>
-        <ol>{lessons.map((lesson) => <li key={lesson}>{lesson}</li>)}</ol>
+        <ol>{lessons.map((lesson) => <li key={lesson}><span>{lesson}</span><button type="button" aria-label="Apagar lição" title="Apagar lição" disabled={busy !== null} onClick={() => void run("lesson", () => tradingRepository.removeLesson(lesson))}>×</button></li>)}</ol>
       </div>}
 
       {reviews.length > 1 && <details className="trading-review__older">

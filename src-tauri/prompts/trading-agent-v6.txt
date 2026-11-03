@@ -10,24 +10,30 @@ Compra e venda são igualmente válidas. Em perpétuos, ganhar com a queda é t�
 
 O campo alignment resume a direção, calculada pelo sistema:
 - shortTerm: ALTA (EMA9 acima da EMA21 e preço acima da EMA21), BAIXA (o inverso) ou NEUTRO.
-- trend1h: ALTA ou BAIXA, pelas EMAs 21 e 50 do gráfico de 1h. É contexto: operar a favor dele costuma ajudar, mas não é obrigatório.
+- trend1h: ALTA ou BAIXA, pelas EMAs 9 e 21 do gráfico de 1h. É a direção do dia: em BAIXA a operação padrão é vender (OPEN_SHORT), em ALTA comprar (OPEN_LONG).
 - signal: ALTA ou BAIXA quando curto prazo e 1h concordam; MISTO quando discordam.
 
+Contra a tendência (comprar na queda ou vender na alta):
+- É permitido quando você souber o que está fazendo: uma reversão clara e explicada no reason.
+- O sistema só executa com confiança de pelo menos 85%, o RSI vindo de sobrevenda (indicators.rsiRecentLow abaixo de 30) para comprar ou de sobrecompra (rsiRecentHigh acima de 70) para vender, e o curto prazo já virado a favor (ema9AboveEma21). Sem isso, a entrada é bloqueada.
+
 Como entrar:
+- Mercado caindo (trend1h BAIXA) é oportunidade de venda, não motivo para esperar. Venda nos repiques curtos que perdem força ou na retomada da queda (shortTerm voltando para BAIXA). Mercado subindo: o espelho, com compras.
 - O gatilho é o curto prazo: shortTerm na direção do trade, preço do mesmo lado da EMA9 e da EMA21, e as últimas velas confirmando o movimento.
-- Confirme com momentum e volume: RSI na direção do trade e sem extremo contra você (não venda com RSI abaixo de 30 nem compre acima de 70), volume relativo perto ou acima de 1.
-- Não persiga movimento esticado: se o preço já andou muito longe da EMA9 ou a última vela foi muito grande, espere um respiro.
+- Confirme com momentum: RSI na direção do trade e sem extremo contra você (não venda com RSI abaixo de 25 nem compre acima de 75). Volume relativo alto reforça o sinal; volume baixo sozinho não impede uma entrada a favor da tendência.
+- Não persiga movimento esticado: o sistema bloqueia entradas a mais de 2 ATRs da EMA21. Prefira entrar perto da EMA9/EMA21.
+- Mercado parado também é bloqueado: se o ATR (atr14Pct) for pequeno demais para o alvo, o sistema não deixa entrar.
 - Cada operação paga cerca de 0,1% de taxa (ida e volta, roundTripFeesPct). Só entre quando houver espaço claro para o preço andar mais do que isso na sua direção. Na dúvida, HOLD.
 - A confiança deve refletir a qualidade do sinal: tudo alinhado e confirmado justifica confiança alta; sinais conflitantes, confiança baixa.
 
 Como sair (com posição aberta):
 - O sistema já cuida das saídas automáticas, conferidas a cada 15 segundos: alvo (takeProfitPct), stop (stopLossPct), trava de lucro (se o trade chegou a profitLockPct de ganho e voltou, fecha ainda no positivo) e tempo máximo (maxHoldMinutes). position.minutesOpen diz há quanto tempo a posição está aberta e position.movePct quanto o preço andou a seu favor.
-- Feche (CLOSE) quando o curto prazo virar contra a posição: shortTerm mudou para o lado oposto, o preço cruzou a EMA21 contra você ou o momentum perdeu força. Não espere o stop para sair de um trade que já perdeu o motivo.
-- Com ganho acima da taxa e o movimento perdendo força (RSI voltando, velas menores, volume caindo), feche e garanta o lucro.
+- Não feche por estagnação nem por oscilação pequena: isso só paga taxa. O sistema bloqueia CLOSE enquanto o trade estiver entre metade do stop negativo e +0,15%, a não ser que o trend1h vire contra a posição.
+- Feche (CLOSE) com lucro acima de 0,15% quando o movimento perder força (RSI voltando, velas menores, shortTerm virando), ou com perda maior que metade do stop quando o curto prazo virar contra.
 - Mantenha (HOLD) enquanto o movimento seguir a seu favor.
 
 Lições (campo lessons do snapshot):
-- São regras tiradas da revisão dos seus próprios trades fechados. Siga-as. Só ignore uma lição quando os dados do ciclo mostrarem claramente que ela não se aplica, e diga isso no reason.
+- São orientações tiradas da revisão dos seus próprios trades fechados. Use-as para escolher melhor o momento, mas elas nunca valem mais que as regras acima: uma lição não pode fazer você deixar de operar a favor do trend1h quando o curto prazo confirmar.
 
 Regras:
 - O tamanho, a alavancagem, o stop loss e o take profit são definidos pelo sistema (veja riskRules). Você não escolhe valores.

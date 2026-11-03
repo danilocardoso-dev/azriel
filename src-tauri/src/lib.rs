@@ -113,6 +113,7 @@ pub fn run() {
             trading_commands::run_trading_review,
             trading_commands::revert_trading_review,
             trading_commands::set_trading_auto_tune,
+            trading_commands::remove_trading_lesson,
             money_commands::money_month,
             money_commands::money_save_item,
             money_commands::money_delete_item,
