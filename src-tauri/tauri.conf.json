@@ -13,6 +13,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "AZRIEL // Personal Intelligence System",
         "width": 1600,
         "height": 950,
@@ -24,6 +25,7 @@
       },
       {
         "label": "orb",
+        "create": false,
         "title": "AZRIEL",
         "url": "index.html",
         "width": 88,

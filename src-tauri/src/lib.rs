@@ -40,6 +40,11 @@ pub fn run() {
                 connection: std::sync::Mutex::new(connection),
                 path: database_path,
             });
+            // As janelas só nascem depois do banco registrado: senão a interface chama
+            // comandos (get_ai_settings etc.) antes do DatabaseState existir.
+            for window_config in app.config().app.windows.clone() {
+                tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?.build()?;
+            }
             // O motor estava ligado quando o Azriel fechou: retoma de onde parou.
             if resume_trading {
                 if let Err(error) = trading::engine::start(app.handle().clone()) {
