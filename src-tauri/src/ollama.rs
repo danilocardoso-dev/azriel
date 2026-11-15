@@ -706,15 +706,6 @@ fn generation_options(generation_profile: &str) -> Result<serde_json::Value, Str
             "repeat_last_n": 160,
             "num_predict": 1400
         }),
-        "market-agent" => serde_json::json!({
-            "temperature": 0.1,
-            "top_p": 0.8,
-            "top_k": 20,
-            "repeat_penalty": 1.15,
-            "repeat_last_n": 96,
-            "num_predict": 120,
-            "seed": 42
-        }),
         "agent" => serde_json::json!({
             "temperature": 0.2,
             "top_p": 0.85,

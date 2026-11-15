@@ -82,7 +82,7 @@ export const spotifyRepository = {
   connect: () => invokeDatabase<SpotifyStatus>("spotify_connect"),
   disconnect: () => invokeDatabase<SpotifyStatus>("spotify_disconnect"),
   player: async () => mapPlayer(await invokeDatabase<Raw>("spotify_player")),
-  control: (action: SpotifyAction, value?: number) => invokeDatabase<void>("spotify_control", { action, value: value ?? null }),
+  control: (action: SpotifyAction, value?: number, deviceId?: string | null) => invokeDatabase<void>("spotify_control", { action, value: value ?? null, deviceId: deviceId ?? null }),
   search: async (query: string, kind: SearchKind = "all", offset = 0) => mapSearch(await invokeDatabase<Raw>("spotify_search", { query, kind, offset }), kind),
   tracks: async (item: SpotifyItem, offset = 0) => {
     const kind = uriKind(item.uri);

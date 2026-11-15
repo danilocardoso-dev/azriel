@@ -70,5 +70,9 @@
 .jv-stage { min-width: 0; min-height: 0; overflow-y: auto; padding: 8px 32px 24px 12px; animation: jv-enter 0.35s ease-out; }
 @keyframes jv-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .jv-shell[data-module="command"] .jv-stage { overflow: hidden; padding: 0 24px 18px 0; }
+/* AI Core ocupa a altura do palco: quem rola é a lista de mensagens, não a página. */
+.jv-shell[data-module="ai"] .jv-stage { overflow: hidden; display: flex; flex-direction: column; }
+.jv-shell[data-module="ai"] .jv-stage > * { flex-shrink: 0; }
+.jv-shell[data-module="ai"] .jv-stage > .ai-layout { flex: 1 1 0; min-height: 0; }
 
 @media (prefers-reduced-motion: reduce) { .jv-stage, .jv-brand__mark::before { animation: none !important; } }

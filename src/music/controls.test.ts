@@ -37,4 +37,12 @@ describe("Azriel como saída padrão", () => {
     expect(transfer).not.toHaveBeenCalled();
     expect(control).toHaveBeenCalledTimes(4);
   });
+
+  it("endereça os comandos ao Azriel quando ele toca, e não rouba outro aparelho", async () => {
+    await spotifyControl("pause", undefined, { active: true, activeDevice: "Azriel", deviceId: "dev1" });
+    await spotifyControl("volume", 40, { active: false, deviceId: "dev1" });
+    await spotifyControl("next", undefined, { active: true, activeDevice: "Celular", deviceId: "dev1" });
+    await spotifyControl("seek", 1000, { active: true, activeDevice: "Azriel", deviceId: null });
+    expect(control.mock.calls).toEqual([["pause", undefined, "dev1"], ["volume", 40, "dev1"], ["next", undefined, null], ["seek", 1000, null]]);
+  });
 });

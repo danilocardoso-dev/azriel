@@ -42,7 +42,12 @@ pub struct ToolCall {
 }
 
 /// Primeira mensagem da sessão: modelo, voz, persona, ferramentas e legendas.
-pub fn setup_message(tools: &[Value], date: &str) -> Value {
+/// Identidade e memórias montadas pela interface (as mesmas do chat), com teto de tamanho.
+const MAX_PERSONA_CHARS: usize = 30_000;
+
+pub fn setup_message(tools: &[Value], date: &str, persona: &str) -> Value {
+    let persona: String = persona.trim().chars().take(MAX_PERSONA_CHARS).collect();
+    let instruction = if persona.is_empty() { format!("{SYSTEM_PROMPT}\nData local atual: {date}.") } else { format!("{persona}\n\n{SYSTEM_PROMPT}\nData local atual: {date}.") };
     // A busca usa a ferramenta search_web (executada fora da sessão), e não o googleSearch nativo do Live:
     // com o nativo, estourar a cota de busca derrubava a chamada inteira (close 1011).
     let declarations: Vec<Value> = tools
@@ -63,7 +68,7 @@ pub fn setup_message(tools: &[Value], date: &str) -> Value {
                 "responseModalities": ["AUDIO"],
                 "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": VOICE_NAME}}}
             },
-            "systemInstruction": {"parts": [{"text": format!("{SYSTEM_PROMPT}\nData local atual: {date}.")}]},
+            "systemInstruction": {"parts": [{"text": instruction}]},
             "inputAudioTranscription": {},
             "outputAudioTranscription": {}
         }
@@ -135,7 +140,7 @@ fn close_reason(code: u16, reason: &str) -> String {
 }
 
 #[tauri::command]
-pub async fn voice_start(app: AppHandle, state: State<'_, DatabaseState>, tools: Vec<Value>, date: String, events: Channel<VoiceEvent>) -> Result<(), String> {
+pub async fn voice_start(app: AppHandle, state: State<'_, DatabaseState>, tools: Vec<Value>, date: String, persona: Option<String>, events: Channel<VoiceEvent>) -> Result<(), String> {
     let (api_key, _) = {
         let connection = state.connection.lock().map_err(|_| "O banco de dados está indisponível".to_string())?;
         ai_repository::remote_credentials(&connection)?
@@ -146,7 +151,7 @@ pub async fn voice_start(app: AppHandle, state: State<'_, DatabaseState>, tools:
         .map_err(|_| "Não foi possível conectar ao Gemini Live. Verifique a internet.".to_string())?;
     let (mut writer, mut reader) = socket.split();
     writer
-        .send(Message::text(setup_message(&tools, &date).to_string()))
+        .send(Message::text(setup_message(&tools, &date, persona.as_deref().unwrap_or_default()).to_string()))
         .await
         .map_err(|_| "Falha ao iniciar a sessão de voz".to_string())?;
 
@@ -234,7 +239,7 @@ mod tests {
             json!({"type":"function","function":{"name":"get_today_tasks","description":"Tarefas de hoje","parameters":{"type":"object","properties":{}}}}),
             json!({"type":"function","function":{"name":"search_web","description":"Busca","parameters":{"type":"object","properties":{"query":{"type":"string"}}}}}),
         ];
-        let setup = setup_message(&tools, "2026-10-26");
+        let setup = setup_message(&tools, "2026-10-26", "Sou o Azriel do Senhor Danilo.");
         let body = &setup["setup"];
         assert_eq!(body["model"], "models/gemini-3.8-live");
         assert_eq!(body["generationConfig"]["responseModalities"][0], "AUDIO");
@@ -243,8 +248,11 @@ mod tests {
         assert_eq!(body["tools"][0]["functionDeclarations"][1]["parameters"]["properties"]["query"]["type"], "string");
         assert!(body["tools"].as_array().unwrap().iter().all(|tool| tool.get("googleSearch").is_none()), "busca nativa derruba a chamada quando a cota estoura");
         assert!(body["inputAudioTranscription"].is_object() && body["outputAudioTranscription"].is_object());
-        assert!(body["systemInstruction"]["parts"][0]["text"].as_str().unwrap().contains("2026-10-26"));
-        assert!(setup_message(&[], "x")["setup"].get("tools").is_none());
+        let instruction = body["systemInstruction"]["parts"][0]["text"].as_str().unwrap();
+        assert!(instruction.contains("2026-10-26"));
+        assert!(instruction.starts_with("Sou o Azriel do Senhor Danilo."), "a identidade vem antes das regras de voz");
+        assert!(setup_message(&[], "x", "")["setup"].get("tools").is_none());
+        assert!(setup_message(&[], "x", "  ")["setup"]["systemInstruction"]["parts"][0]["text"].as_str().unwrap().starts_with(SYSTEM_PROMPT));
     }
 
     #[test]
@@ -253,8 +261,8 @@ mod tests {
         let turn = parse_server_message(r#"{"serverContent":{"modelTurn":{"parts":[{"inlineData":{"mimeType":"audio/pcm;rate=24000","data":"AAA="}}]},"outputTranscription":{"text":"Olá"},"turnComplete":true}}"#);
         assert_eq!(turn, vec![VoiceEvent::Audio { data: "AAA=".into() }, VoiceEvent::OutputText { text: "Olá".into() }, VoiceEvent::TurnComplete]);
         assert_eq!(parse_server_message(r#"{"serverContent":{"interrupted":true}}"#), vec![VoiceEvent::Interrupted]);
-        let tool = parse_server_message(r#"{"toolCall":{"functionCalls":[{"id":"c1","name":"get_trading_status","args":{}}]}}"#);
-        assert_eq!(tool, vec![VoiceEvent::ToolCall { calls: vec![ToolCall { id: "c1".into(), name: "get_trading_status".into(), args: json!({}) }] }]);
+        let tool = parse_server_message(r#"{"toolCall":{"functionCalls":[{"id":"c1","name":"get_today_tasks","args":{}}]}}"#);
+        assert_eq!(tool, vec![VoiceEvent::ToolCall { calls: vec![ToolCall { id: "c1".into(), name: "get_today_tasks".into(), args: json!({}) }] }]);
         assert!(matches!(parse_server_message(r#"{"goAway":{"timeLeft":"10s"}}"#)[0], VoiceEvent::Closed { .. }));
         assert!(parse_server_message("not json").is_empty());
         assert_eq!(parse_server_message(r#"{"error":{"message":"quota"}}"#), vec![VoiceEvent::Error { message: "quota".into() }]);

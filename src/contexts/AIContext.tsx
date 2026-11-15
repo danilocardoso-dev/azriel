@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { AICoreService } from "../ai/AICoreService";
 import { ContextBuilder } from "../ai/context/ContextBuilder";
+import { loadPersona } from "../ai/persona";
 import { GeminiProvider } from "../ai/providers/GeminiProvider";
 import { OllamaProvider } from "../ai/providers/OllamaProvider";
 import { ToolRegistry } from "../ai/tools/toolRegistry";
@@ -214,7 +215,8 @@ export function AIProvider({ children }: { children: ReactNode }) {
       }
       const provider = engine === "gemini" && remoteSettings ? new GeminiProvider(remoteSettings) : new OllamaProvider(settings);
       const effective = engine === "gemini" && remoteSettings ? { ...settings, model: remoteSettings.model } : settings;
-      const service = new AICoreService(provider, new ContextBuilder(new ToolRegistry()), conversationService, effective);
+      const registry = new ToolRegistry();
+      const service = new AICoreService(provider, new ContextBuilder(registry), conversationService, effective, () => loadPersona(registry));
       await service.send(query, conversation, (state, detail) => { setCoreState(state); if (detail) setPhase(detail); }, (message) => setMessages((current) => [...current, message]));
       setConversations(await conversationService.list());
     } catch (reason) {

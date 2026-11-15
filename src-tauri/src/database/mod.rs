@@ -2,10 +2,10 @@ pub mod ai_models;
 pub mod ai_repository;
 pub mod daily_models;
 pub mod daily_repository;
+pub mod memory_models;
+pub mod memory_repository;
 pub mod money_models;
 pub mod money_repository;
-pub mod trading_models;
-pub mod trading_repository;
 
 use rusqlite::Connection;
 use std::{
@@ -36,32 +36,11 @@ pub fn initialize(connection: &mut Connection) -> Result<(), String> {
     connection
         .execute_batch(include_str!("../../migrations/0048_core_reset.sql"))
         .map_err(|error| error.to_string())?;
-    // Operação rápida (scalp): bancos antigos ganham as colunas novas e, uma única vez,
-    // saem do stop/alvo de swing (1%/2%) para os de entradas e saídas curtas.
-    if add_column(connection, "trading_settings", "max_hold_minutes", "INTEGER NOT NULL DEFAULT 30")? {
-        connection
-            .execute_batch("UPDATE trading_settings SET stop_loss_pct=0.3,take_profit_pct=0.5,candle_interval='5m',cycle_minutes=5 WHERE id=1;")
-            .map_err(|error| error.to_string())?;
-    }
-    add_column(connection, "trading_settings", "profit_lock_pct", "REAL NOT NULL DEFAULT 0.25")?;
+    memory_repository::seed_identity(connection)?;
     connection
         .execute_batch("PRAGMA foreign_keys = ON;")
         .map_err(|error| error.to_string())?;
     Ok(())
-}
-
-/// Acrescenta a coluna se ela ainda não existe. Devolve true quando acrescentou.
-fn add_column(connection: &Connection, table: &str, column: &str, definition: &str) -> Result<bool, String> {
-    let exists: bool = connection
-        .query_row(&format!("SELECT EXISTS(SELECT 1 FROM pragma_table_info('{table}') WHERE name=?1)"), [column], |row| row.get(0))
-        .map_err(|error| error.to_string())?;
-    if exists {
-        return Ok(false);
-    }
-    connection
-        .execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {definition};"))
-        .map_err(|error| error.to_string())?;
-    Ok(true)
 }
 
 fn purge_retired_schema(connection: &Connection) -> Result<(), String> {
@@ -80,7 +59,7 @@ fn purge_retired_schema(connection: &Connection) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     for name in names {
         let retired = exact.contains(&name.as_str())
-            || ["market_", "finance_", "study_", "stark_", "routine_", "automation_"]
+            || ["market_", "trading_", "finance_", "study_", "stark_", "routine_", "automation_"]
                 .iter()
                 .any(|prefix| name.starts_with(prefix));
         if retired {

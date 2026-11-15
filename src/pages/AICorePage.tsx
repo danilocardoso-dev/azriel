@@ -22,12 +22,17 @@ export function AICorePage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyClearPending, setHistoryClearPending] = useState(false);
   const [clearingHistory, setClearingHistory] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, phase]);
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Rola só a lista de mensagens (scrollIntoView também arrastava a página inteira).
+  useEffect(() => { const list = messagesRef.current; if (list) list.scrollTo({ top: list.scrollHeight, behavior: "smooth" }); }, [messages, phase]);
+  // O campo fica sempre pronto para a próxima mensagem.
+  useEffect(() => { if (!sending) inputRef.current?.focus(); }, [sending, selectedConversation?.id]);
 
   async function submit(event: FormEvent) {
     event.preventDefault(); const query = input.trim(); if (!query || sending) return; setInput("");
     try { await send(query); } catch { /* O contexto exibe a falha sem rejeição solta. */ }
+    finally { inputRef.current?.focus(); }
   }
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }
   async function removeConversation() {
@@ -60,17 +65,16 @@ export function AICorePage() {
       </aside>
       <section className="ai-terminal">
         <header><div><span>AZRIEL // AI CORE</span><small>{selectedConversation ? selectedConversation.title : "NOVA SESSÃO"}</small></div><div className="ai-terminal__header-actions"><EngineSwitcher disabled={sending} /><button type="button" onClick={() => setHistoryOpen(true)} disabled={!selectedConversation || loading || sending}>CONTEXTO {messages.length}</button><i data-state={engineAvailable ? "online" : "offline"}>{engineAvailable ? "ONLINE" : "OFFLINE"}</i></div></header>
-        <div className="ai-terminal__messages" aria-live="polite">
-          {!selectedConversation && messages.length === 0 && <div className="ai-welcome"><span>AI CORE // READ ONLY</span><h2>Como posso consultar o sistema?</h2><p>Azriel utiliza ferramentas controladas para recuperar dados. Nenhuma alteração pode ser executada pela IA.</p><div>{suggestions.map((suggestion) => <button onClick={() => setInput(suggestion)} key={suggestion}>{suggestion}</button>)}</div></div>}
+        <div className="ai-terminal__messages" aria-live="polite" ref={messagesRef}>
+          {!selectedConversation && messages.length === 0 && <div className="ai-welcome"><span>AI CORE // READ ONLY</span><h2>Como posso consultar o sistema?</h2><p>Azriel utiliza ferramentas controladas para recuperar dados. Nenhuma alteração pode ser executada pela IA.</p><div>{suggestions.map((suggestion) => <button onClick={() => { setInput(suggestion); inputRef.current?.focus(); }} key={suggestion}>{suggestion}</button>)}</div></div>}
           {selectedConversation && messages.length === 0 && !loading && <div className="ai-welcome"><span>CONTEXTO LIMPO</span><h2>Esta conversa está pronta para recomeçar.</h2><p>A conversa foi preservada, mas nenhuma mensagem anterior será enviada ao modelo.</p></div>}
           {messages.map((message) => <article className={`ai-message ai-message--${message.role}`} key={message.id}><header><span>{message.role === "user" ? "AZ" : "AZRIEL"}</span><time>{formatTimestamp(message.createdAt)}</time></header><p>{message.content}</p></article>)}
           {sending && <div className="ai-phase"><span /><strong>{phase}</strong></div>}
           {loading && selectedConversation && <div className="ai-phase"><span /><strong>RECUPERANDO HISTÓRICO</strong></div>}
           {error && <div className="ai-terminal__error"><strong>AI CORE ALERT</strong><p>{error}</p></div>}
           {!engineAvailable && !loading && <div className="ai-terminal__offline"><strong>AI CORE OFFLINE</strong><p>{engine === "gemini" ? "Gemini sem chave ou sem modelo selecionado." : status?.error || "Ollama não encontrado no endpoint configurado."}</p><small>Os demais módulos permanecem operacionais. Troque o motor acima ou verifique em Configurações.</small></div>}
-          <div ref={endRef} />
         </div>
-        <form className="ai-composer" onSubmit={submit}><span>&gt;</span><textarea rows={5} placeholder="Digite um comando para o Azriel..." value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} disabled={!engineAvailable || sending} /><button disabled={!engineAvailable || sending || !input.trim()}>{sending ? "PROCESSANDO" : "ENVIAR"}</button></form>
+        <form className="ai-composer" onSubmit={submit}><span>&gt;</span><textarea ref={inputRef} autoFocus rows={5} placeholder="Digite um comando para o Azriel..." value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} disabled={!engineAvailable} aria-busy={sending} /><button disabled={!engineAvailable || sending || !input.trim()}>{sending ? "PROCESSANDO" : "ENVIAR"}</button></form>
       </section>
     </div>
     {historyOpen && selectedConversation && settings && <AIConversationHistoryDialog conversation={selectedConversation} messages={messages} contextMessageLimit={settings.contextMessageLimit} busy={clearingHistory} onClose={() => setHistoryOpen(false)} onRequestClear={() => { setHistoryOpen(false); setHistoryClearPending(true); }} />}

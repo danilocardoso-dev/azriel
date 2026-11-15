@@ -4,40 +4,47 @@ import { taskService } from "../../services/taskService";
 import { localDateKey } from "../../services/dateService";
 import { systemService } from "../../services/systemService";
 import { aiRepository } from "../../repositories/aiRepository";
-import { tradingRepository } from "../../repositories/tradingRepository";
-import type { TradingLive, TradingOverview, WebSearchResult } from "../../types";
+import { memoryRepository } from "../../repositories/memoryRepository";
+import type { Memory, MemoryCategory, MemoryInput, WebSearchResult } from "../../types";
 import type { AgentToolSchema, AISettings, AIToolInput, AIToolName, AIToolPermission, AIToolResult, DailyCounters, MemorySnapshot, Note, OllamaStatus, ProcessSnapshot, StorageSnapshot, SystemSnapshot, Task } from "../../types";
 
-export interface AzrielTool { name: AIToolName; description: string; domain: string; readonly: boolean; permission?: AIToolPermission; parameters?: Record<string, unknown>; execute(input: AIToolInput): Promise<unknown> | unknown }
+/** `autonomous`: escrita de baixo risco que o agente pode fazer sozinho (ex.: registrar memória). */
+export interface AzrielTool { name: AIToolName; description: string; domain: string; readonly: boolean; autonomous?: boolean; permission?: AIToolPermission; parameters?: Record<string, unknown>; execute(input: AIToolInput): Promise<unknown> | unknown }
 export interface ToolDependencies {
   tasks: { list(): Promise<Task[]>; today(): Promise<Task[]>; upcoming(): Promise<Task[]>; counters(): Promise<DailyCounters>; completeReferenced(conversationId: string, position: number): Promise<Task> };
   notes: { list(includeArchived?: boolean): Promise<Note[]> };
   databaseInfo(): Promise<{ schemaVersion: number }>;
   system: { snapshot(): Promise<SystemSnapshot>; processes(): Promise<ProcessSnapshot[]> };
   ollama: { settings(): Promise<AISettings>; status(endpoint: string, timeoutSeconds: number): Promise<OllamaStatus> };
-  trading?: { overview(): Promise<TradingOverview>; live(): Promise<TradingLive> };
   web?: { search(query: string): Promise<WebSearchResult> };
+  memory?: { list(): Promise<Memory[]>; search(query: string): Promise<Memory[]>; save(input: MemoryInput): Promise<Memory> };
 }
-const production: ToolDependencies = { tasks: taskService, notes: noteService, databaseInfo: getDatabaseInfo, system: systemService, ollama: { settings: aiRepository.getSettings, status: aiRepository.status }, trading: tradingRepository, web: { search: aiRepository.webSearch } };
+const production: ToolDependencies = { tasks: taskService, notes: noteService, databaseInfo: getDatabaseInfo, system: systemService, ollama: { settings: aiRepository.getSettings, status: aiRepository.status }, web: { search: aiRepository.webSearch }, memory: memoryRepository };
 
-/** Resumo do trading para o agente: números prontos, sem chaves nem detalhes internos. */
-export async function tradingStatus(trading: NonNullable<ToolDependencies["trading"]>) {
-  const overview = await trading.overview();
-  const live = await trading.live().catch(() => null);
-  const equity = live?.equity ?? overview.equity.at(-1)?.equity ?? null;
-  const delta = (base: number | null) => equity != null && base ? { usdt: Math.round((equity - base) * 100) / 100, pct: Math.round(((equity - base) / base) * 10_000) / 100 } : null;
-  return {
-    account: "BingX DEMO (dinheiro virtual)",
-    motorLigado: overview.engine.running,
-    par: overview.settings.symbol,
-    patrimonioUsdt: equity,
-    resultadoHoje: delta(overview.dayStartEquity),
-    resultadoTotal: delta(overview.firstEquity),
-    posicao: live?.position ?? null,
-    ultimoErro: overview.engine.lastError,
-    ultimasDecisoes: overview.decisions.slice(0, 5).map((d) => ({ quando: d.createdAt, acao: d.finalAction, confianca: d.confidence, motivo: d.reason, ordem: d.orderStatus })),
-  };
+export const MEMORY_CATEGORIES: MemoryCategory[] = ["operador", "preferencia", "projeto", "pessoa", "decisao", "fato"];
+const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
+const category = (value: unknown, fallback: MemoryCategory = "fato"): MemoryCategory => MEMORY_CATEGORIES.includes(value as MemoryCategory) ? value as MemoryCategory : fallback;
+const newId = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+const memoryItemView = (memory: Memory) => ({ id: memory.id, categoria: memory.category, conteudo: memory.content, atualizada: memory.updatedAt });
+
+/** Ferramentas de memória: o Azriel registra e corrige sozinho; apagar fica com o Senhor (tela de Configurações). */
+export function memoryTools(memory: NonNullable<ToolDependencies["memory"]>): AzrielTool[] {
+  return [
+    { name:"remember", domain:"Memória", readonly:false, autonomous:true, permission:"safe_write",
+      description:"Registra na memória de longo prazo algo duradouro sobre o Senhor ou a história de vocês: preferências, projetos, pessoas, datas, decisões. Uma ideia por memória, escrita em terceira pessoa",
+      parameters:{ type:"object", properties:{ content:{ type:"string", description:"A memória, curta e autossuficiente (ex.: 'O Senhor prefere respostas curtas pela manhã')" }, category:{ type:"string", enum:MEMORY_CATEGORIES, description:"operador (sobre ele), preferencia, projeto, pessoa, decisao ou fato" } }, required:["content","category"] },
+      execute:async(input)=>{ const content=text(input.args?.content); if(!content) return { error:"Memória vazia" }; const saved=await memory.save({ id:newId(), content, category:category(input.args?.category), source:"azriel", conversationId:input.conversationId ?? null }); return { salva:true, memoria:memoryItemView(saved) }; } },
+    { name:"update_memory", domain:"Memória", readonly:false, autonomous:true, permission:"safe_write",
+      description:"Corrige uma memória existente quando a informação mudou ou estava errada. Use o id que aparece nas memórias",
+      parameters:{ type:"object", properties:{ id:{ type:"string", description:"Id da memória" }, content:{ type:"string", description:"Novo texto completo da memória" }, category:{ type:"string", enum:MEMORY_CATEGORIES } }, required:["id","content"] },
+      execute:async(input)=>{ const id=text(input.args?.id); const content=text(input.args?.content); const current=(await memory.list()).find((item)=>item.id===id); if(!current) return { error:"Memória não encontrada" }; if(!content) return { error:"Memória vazia" }; const saved=await memory.save({ id, content, category:category(input.args?.category, current.category), source:current.source, conversationId:current.conversationId }); return { corrigida:true, memoria:memoryItemView(saved) }; } },
+    { name:"search_memories", domain:"Memória", readonly:true,
+      description:"Procura na memória de longo prazo o que o Azriel já sabe sobre um assunto, além das memórias que já estão no contexto",
+      parameters:{ type:"object", properties:{ query:{ type:"string", description:"Assunto ou palavras-chave" } }, required:["query"] },
+      execute:async(input)=> (await memory.search(text(input.args?.query) || input.query)).map(memoryItemView) },
+  ];
 }
+
 const unfinished = (task: Task) => !["completed", "cancelled"].includes(task.status);
 // Modelos pequenos erram conta com bytes: as ferramentas já entregam GB e percentuais.
 const gb = (bytes: number) => Math.round((bytes / 1024 ** 3) * 10) / 10;
@@ -63,20 +70,21 @@ function tools(deps: ToolDependencies): AzrielTool[] {
     { name:"get_process_summary", domain:"Sistema", description:"Processos que mais usam memória, em MB", readonly:true, execute:async()=> (await deps.system.processes()).sort((a,b)=>b.memoryBytes-a.memoryBytes).slice(0,10).map((p)=>({name:p.name,pid:p.pid,cpuPercent:Math.round(p.cpuPercent),memoryMb:Math.round(p.memoryBytes/1024**2)})) },
     { name:"get_ollama_status", domain:"AI Core", description:"Estado do Ollama local", readonly:true, execute:async()=>{const s=await deps.ollama.settings();return deps.ollama.status(s.endpoint,Math.min(s.timeoutSeconds,8));} },
     { name:"get_azriel_status", domain:"Azriel", description:"Resumo dos serviços ativos", readonly:true, execute:async()=>({database:{schemaVersion:(await deps.databaseInfo()).schemaVersion},daily:await deps.tasks.counters(),ollama:await (async()=>{const s=await deps.ollama.settings();return deps.ollama.status(s.endpoint,Math.min(s.timeoutSeconds,8));})()}) },
-    { name:"get_trading_status", domain:"Trading", description:"Situação do agente de trading na conta demo: motor, patrimônio, resultado de hoje e total, posição e últimas decisões", readonly:true, execute:()=> deps.trading ? tradingStatus(deps.trading) : { error:"Trading indisponível" } },
     { name:"search_web", domain:"Web", description:"Busca na internet com o Google: notícias, cotações, clima, eventos e qualquer fato atual ou externo. Devolve um resumo e as fontes", readonly:true,
       parameters:{ type:"object", properties:{ query:{ type:"string", description:"O que buscar, em linguagem natural" } }, required:["query"] },
       execute:(input)=>{ const query=String(input.args?.query ?? input.term ?? input.query ?? "").trim(); if(!query) return { error:"Busca vazia" }; return deps.web ? deps.web.search(query) : { error:"Busca na web indisponível" }; } },
     { name:"get_azriel_version", domain:"Azriel", description:"Versão do núcleo atual", readonly:true, execute:()=>({version:"core-only"}) },
+    ...(deps.memory ? memoryTools(deps.memory) : []),
   ];
 }
 export class ToolRegistry {
   private readonly indexed = new Map<AIToolName, AzrielTool>();
   constructor(dependencies: ToolDependencies = production) { tools(dependencies).forEach((tool)=>this.indexed.set(tool.name,tool)); }
   has(name: string): name is AIToolName { return this.indexed.has(name as AIToolName); }
-  /** Ferramentas expostas ao loop de agente: somente leitura. Escritas seguem pelos comandos explícitos. */
+  /** O agente roda sozinho leituras e escritas autônomas (memória). As demais escritas seguem pelos comandos explícitos. */
+  agentCanRun(name: string): name is AIToolName { return this.has(name) && (this.get(name).readonly || this.get(name).autonomous === true); }
   agentTools(): AgentToolSchema[] {
-    return this.list().filter((tool)=>tool.readonly).map((tool)=>({ type:"function", function:{ name:tool.name, description:`${tool.description} (${tool.domain})`, parameters:tool.parameters ?? { type:"object", properties:{} } } }));
+    return this.list().filter((tool)=>tool.readonly || tool.autonomous).map((tool)=>({ type:"function", function:{ name:tool.name, description:`${tool.description} (${tool.domain})`, parameters:tool.parameters ?? { type:"object", properties:{} } } }));
   }
   get(name: AIToolName) { const tool=this.indexed.get(name); if(!tool) throw new Error(`Ferramenta indisponível: ${name}`); return tool; }
   async execute(name: AIToolName,input:AIToolInput):Promise<AIToolResult>{const tool=this.get(name);const data=await tool.execute(input);return {name,domain:tool.domain,data,empty:Array.isArray(data)?data.length===0:data==null};}

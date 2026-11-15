@@ -68,6 +68,17 @@ export function hasPathologicalRepetition(value: string): boolean {
   return words.length >= 60 && new Set(words).size / words.length < 0.28;
 }
 
+/**
+ * Junta todas as mensagens de sistema numa só, no topo. A API do Gemini compatível com OpenAI
+ * aproveita apenas uma mensagem de sistema: com várias, a identidade era descartada.
+ */
+export function withSingleSystem<T extends { role: string; content: string }>(messages: T[]): T[] {
+  const system = messages.filter((message) => message.role === "system");
+  if (system.length <= 1 && (system.length === 0 || messages[0].role === "system")) return messages;
+  const merged = { ...system[0], content: system.map((message) => message.content.trim()).filter(Boolean).join("\n\n") };
+  return [merged, ...messages.filter((message) => message.role !== "system")];
+}
+
 export function selectConversationHistory(messages: ConversationMessage[], limit: number, characterBudget = AI_HISTORY_CHARACTER_BUDGET) {
   const eligible = messages
     .filter((message) => message.role !== "assistant" || !hasPathologicalRepetition(message.content))
@@ -96,7 +107,14 @@ export class AICoreService {
     private readonly contextBuilder: ContextBuilder,
     private readonly conversations: ConversationGateway,
     private readonly settings: AISettings,
+    /** Identidade + memórias do Azriel; abre toda conversa. */
+    private readonly persona: () => Promise<string> = async () => "",
   ) {}
+
+  private async personaMessages(): Promise<Array<{ role: "system"; content: string }>> {
+    const persona = (await this.persona().catch(() => "")).trim();
+    return persona ? [{ role: "system", content: persona }] : [];
+  }
 
   async send(query: string, currentConversation: Conversation | null, onPhase?: (state: AzrielState, detail?: string) => void, onMessage?: (message: ConversationMessage) => void): Promise<AIExchange> {
     const cleanQuery = query.trim();
@@ -147,11 +165,12 @@ export class AICoreService {
         return { conversation, userMessage, assistantMessage };
       }
       systemMessages = [
+        ...await this.personaMessages(),
         { role: "system", content: systemPrompt },
         { role: "system", content: `DADOS ESTRUTURADOS DA CONSULTA ATUAL:\n${context.text}` },
       ];
     } else {
-      systemMessages = [{ role: "system", content: generalPrompt }];
+      systemMessages = [...await this.personaMessages(), { role: "system", content: generalPrompt }];
     }
     onPhase?.("processing", "FORMULANDO RESPOSTA");
     const history = selectConversationHistory(await this.conversations.messages(conversation.id), this.settings.contextMessageLimit)
@@ -159,7 +178,7 @@ export class AICoreService {
     const request: AIRequest = {
       model: this.settings.model,
       timeoutSeconds: this.settings.timeoutSeconds,
-      messages: [...systemMessages, ...history],
+      messages: withSingleSystem([...systemMessages, ...history]),
     };
     let response = await this.provider.chat(request);
     answer = response.content.trim();
@@ -171,11 +190,11 @@ export class AICoreService {
       response = await this.provider.chat({
         ...request,
         generationProfile: "repetition-retry",
-        messages: [
+        messages: withSingleSystem([
           ...systemMessages,
           { role: "system", content: retryReason },
           ...history,
-        ],
+        ]),
       });
       answer = response.content.trim();
       if (hasPathologicalRepetition(answer) || response.truncated) answer = repetitionFallback;
@@ -195,7 +214,7 @@ export class AICoreService {
       registry: this.contextBuilder.registry,
       model: this.settings.model,
       timeoutSeconds: this.settings.timeoutSeconds,
-      messages: [{ role: "system", content: `${agentPrompt}\nData local atual: ${localDateKey()}.` }, ...history],
+      messages: withSingleSystem([...await this.personaMessages(), { role: "system" as const, content: `${agentPrompt}\nData local atual: ${localDateKey()}.` }, ...history]),
       query,
       conversationId,
       onTool: (domain) => onPhase?.("tool", `CONSULTANDO ${domain.toUpperCase()}`),

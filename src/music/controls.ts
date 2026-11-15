@@ -16,5 +16,7 @@ export function shouldAdoptAzriel(player: SpotifyPlayer | null, loaded: boolean,
  */
 export async function spotifyControl(action: SpotifyAction, value: number | undefined, context: { active: boolean; activeDevice?: string | null; deviceId: string | null }) {
   if (action === "play" && context.deviceId && (!context.active || context.activeDevice !== AZRIEL_DEVICE)) return spotifyRepository.transfer(context.deviceId, true);
-  return spotifyRepository.control(action, value);
+  // Tocando no Azriel (ou sem aparelho ativo conhecido), o comando vai endereçado a ele; em outro aparelho, segue o ativo.
+  const target = context.deviceId && (!context.active || context.activeDevice === AZRIEL_DEVICE) ? context.deviceId : null;
+  return spotifyRepository.control(action, value, target);
 }

@@ -399,8 +399,8 @@ pub async fn spotify_player(app: AppHandle) -> Result<Option<Value>, String> {
 }
 
 #[tauri::command]
-pub async fn spotify_control(app: AppHandle, action: String, value: Option<f64>) -> Result<(), String> {
-    let (method, path) = match action.as_str() {
+pub async fn spotify_control(app: AppHandle, action: String, value: Option<f64>, device_id: Option<String>) -> Result<(), String> {
+    let (method, mut path) = match action.as_str() {
         "play" => (Method::PUT, "/me/player/play".to_string()),
         "pause" => (Method::PUT, "/me/player/pause".to_string()),
         "next" => (Method::POST, "/me/player/next".to_string()),
@@ -410,6 +410,12 @@ pub async fn spotify_control(app: AppHandle, action: String, value: Option<f64>)
         "seek" => (Method::PUT, format!("/me/player/seek?position_ms={}", value.unwrap_or(0.0).max(0.0).round())),
         _ => return Err("Comando do Spotify inválido".into()),
     };
+    // O player embutido (Web Playback SDK) muitas vezes não conta como "ativo" para comandos
+    // sem device_id e o Spotify responde 404 NO_ACTIVE_DEVICE mesmo tocando. Indicar o aparelho resolve.
+    if let Some(id) = device_id.filter(|id| valid_device(id)) {
+        path.push(if path.contains('?') { '&' } else { '?' });
+        path.push_str(&format!("device_id={id}"));
+    }
     api(&app, method, &path, None).await.map(|_| ())
 }
 

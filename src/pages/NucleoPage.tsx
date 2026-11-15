@@ -2,20 +2,17 @@ import type { SpotifyPlayer } from "../repositories/spotifyRepository";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { NowPlayingBar } from "../components/azriel/NowPlayingBar";
 import { Reactor } from "../components/azriel/Reactor";
-import { signedUsd, usd } from "../components/trading/tradingMath";
 import { useAI } from "../contexts/useAI";
 import { useDailyOperations } from "../contexts/useDailyOperations";
 import { azrielStates } from "../data/system";
-import { tradingRepository } from "../repositories/tradingRepository";
 import { formatUptime, systemService } from "../services/systemService";
-import type { AzrielState, SystemSnapshot, TradingLive, TradingOverview } from "../types";
+import type { AzrielState, SystemSnapshot } from "../types";
 import "../styles/nucleo.css";
 
 interface NucleoProps {
   coreState: AzrielState;
   onOpenAI: () => void;
   onOpenDaily: () => void;
-  onOpenTrading: () => void;
   onVoice: () => void;
   onOpenYouTube: () => void;
   onOpenMusic: () => void;
@@ -50,19 +47,16 @@ function Node({ position, code, title, onOpen, children }: { position: "tl" | "t
   </section>;
 }
 
-export function NucleoPage({ coreState, onOpenAI, onOpenDaily, onOpenTrading, onVoice, onOpenYouTube, onOpenMusic, azrielDeviceId, azrielState }: NucleoProps) {
+export function NucleoPage({ coreState, onOpenAI, onOpenDaily, onVoice, onOpenYouTube, onOpenMusic, azrielDeviceId, azrielState }: NucleoProps) {
   const { counters, tasks } = useDailyOperations();
   const { send, engine, settings, remoteSettings, engineAvailable } = useAI();
   const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(null);
-  const [trading, setTrading] = useState<{ overview: TradingOverview | null; live: TradingLive | null }>({ overview: null, live: null });
   const [command, setCommand] = useState("");
 
   useEffect(() => {
     let active = true;
     const load = () => {
       void systemService.snapshot().then((next) => { if (active) setSnapshot(next); }).catch(() => undefined);
-      void Promise.all([tradingRepository.overview().catch(() => null), tradingRepository.live().catch(() => null)])
-        .then(([overview, live]) => { if (active) setTrading({ overview, live }); });
     };
     const first = window.setTimeout(load, 0);
     const timer = window.setInterval(load, 15_000);
@@ -71,9 +65,6 @@ export function NucleoPage({ coreState, onOpenAI, onOpenDaily, onOpenTrading, on
 
   const memory = snapshot && snapshot.memory.totalBytes > 0 ? (snapshot.memory.usedBytes / snapshot.memory.totalBytes) * 100 : 0;
   const nextTasks = useMemo(() => tasks.filter((task) => !["completed", "cancelled"].includes(task.status)).slice(0, 3), [tasks]);
-  const equity = trading.live?.equity ?? trading.overview?.equity.at(-1)?.equity ?? null;
-  const dayStart = trading.overview?.dayStartEquity ?? null;
-  const position = trading.live?.position ?? null;
   const state = azrielStates[coreState];
   const model = engine === "gemini" ? remoteSettings?.model : settings?.model;
 
@@ -92,7 +83,6 @@ export function NucleoPage({ coreState, onOpenAI, onOpenDaily, onOpenTrading, on
         <path d="M 250 150 L 330 150 L 400 230" />
         <path d="M 750 150 L 670 150 L 600 230" />
         <path d="M 250 450 L 330 450 L 400 370" />
-        <path d="M 750 450 L 670 450 L 600 370" />
       </svg>
 
       <button type="button" className="nucleo__core" onClick={onVoice} title="Falar com o Azriel (Ctrl+Espaço)">
@@ -116,14 +106,6 @@ export function NucleoPage({ coreState, onOpenAI, onOpenDaily, onOpenTrading, on
       <Node position="bl" code="IA" title="INTELIGÊNCIA" onOpen={onOpenAI}>
         <div className="nucleo-figure"><strong className="nucleo-figure__word">{engine === "gemini" ? "GEMINI" : "LOCAL"}</strong><span>{model || "sem modelo"}</span></div>
         <p data-tone={engineAvailable ? "up" : "down"}>{engineAvailable ? "● Motor pronto" : "● Motor indisponível"}</p>
-      </Node>
-
-      <Node position="br" code="TRD" title="TRADING" onOpen={onOpenTrading}>
-        <div className="nucleo-figure"><strong>{equity != null ? usd(equity).replace(" USDT", "") : "—"}</strong><span>USDT · conta demo</span></div>
-        <p data-tone={equity != null && dayStart ? (equity >= dayStart ? "up" : "down") : undefined}>
-          {equity != null && dayStart ? `Hoje ${signedUsd(equity - dayStart)}` : "Sem registro hoje"}
-          {position ? ` · ${position.side === "LONG" ? "COMPRADO" : "VENDIDO"} ${signedUsd(position.unrealized)}` : trading.overview ? ` · ${trading.overview.engine.running ? "agente ligado" : "agente desligado"}` : ""}
-        </p>
       </Node>
     </div>
 

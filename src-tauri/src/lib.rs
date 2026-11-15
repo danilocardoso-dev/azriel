@@ -4,13 +4,12 @@ mod daily_commands;
 pub mod database;
 mod gemini;
 mod media;
+mod memory_commands;
 mod money_commands;
 mod ollama;
 mod spotify;
 mod system_commands;
 mod system_monitor;
-mod trading;
-mod trading_commands;
 mod voice;
 
 use database::DatabaseState;
@@ -24,18 +23,11 @@ pub fn run() {
         .manage(system_monitor::SystemMonitorState(std::sync::Mutex::new(
             system_monitor::SystemMonitor::new(),
         )))
-        .manage(trading::engine::TradingState::default())
         .manage(voice::VoiceState::default())
         .setup(|app| {
             let database_path = app.path().app_data_dir()?.join("azriel.db");
             let connection = database::open(&database_path)
                 .map_err(|error| format!("erro ao iniciar o banco: {error}"))?;
-            if let Err(error) = database::trading_repository::backfill_trades(&connection) {
-                eprintln!("[TRADING] diário a partir do histórico falhou: {error}");
-            }
-            let resume_trading = database::trading_repository::get_settings(&connection)
-                .map(|settings| settings.running)
-                .unwrap_or(false);
             app.manage(DatabaseState {
                 connection: std::sync::Mutex::new(connection),
                 path: database_path,
@@ -44,12 +36,6 @@ pub fn run() {
             // comandos (get_ai_settings etc.) antes do DatabaseState existir.
             for window_config in app.config().app.windows.clone() {
                 tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?.build()?;
-            }
-            // O motor estava ligado quando o Azriel fechou: retoma de onde parou.
-            if resume_trading {
-                if let Err(error) = trading::engine::start(app.handle().clone()) {
-                    eprintln!("[TRADING] retomada falhou: {error}");
-                }
             }
             Ok(())
         })
@@ -104,21 +90,13 @@ pub fn run() {
             ai_commands::list_remote_ai_models,
             ai_commands::remote_agent_chat,
             ai_commands::web_search,
-            trading_commands::get_trading_overview,
-            trading_commands::update_trading_settings,
-            trading_commands::update_trading_keys,
-            trading_commands::get_trading_live,
-            trading_commands::start_trading,
-            trading_commands::stop_trading,
-            trading_commands::run_trading_cycle_now,
-            trading_commands::close_trading_position,
-            trading_commands::get_market_snapshot,
-            trading_commands::list_market_symbols,
-            trading_commands::set_trading_symbol,
-            trading_commands::run_trading_review,
-            trading_commands::revert_trading_review,
-            trading_commands::set_trading_auto_tune,
-            trading_commands::remove_trading_lesson,
+            memory_commands::get_azriel_identity,
+            memory_commands::save_azriel_identity,
+            memory_commands::reset_azriel_identity,
+            memory_commands::list_memories,
+            memory_commands::search_memories,
+            memory_commands::save_memory,
+            memory_commands::delete_memory,
             money_commands::money_month,
             money_commands::money_save_item,
             money_commands::money_delete_item,

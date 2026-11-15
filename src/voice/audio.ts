@@ -1,3 +1,4 @@
+import { chooseInput, isVirtual, pairedOutput } from "./devices";
 import { bytesToBase64, bytesToPcm16, base64ToBytes, floatToPcm16, level, pcm16ToBytes, pcm16ToFloat } from "./pcm";
 
 const INPUT_RATE = 16_000;
@@ -21,25 +22,59 @@ class AzrielMic extends AudioWorkletProcessor {
 registerProcessor("azriel-mic", AzrielMic);
 `;
 
+const SILENCE_CHUNKS = 60; // 6 s sem nenhum sinal = microfone mudo
+const SILENCE_LEVEL = 0.002;
+
+const constraints = (deviceId?: string): MediaStreamConstraints => ({
+  audio: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+});
+
+export interface MicrophoneInfo { label: string; outputId: string | null }
+
 export class Microphone {
   private context: AudioContext | null = null;
   private stream: MediaStream | null = null;
   muted = false;
 
-  async start(onChunk: (base64: string) => void, onLevel: (value: number) => void) {
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  /** Abre o padrão (para liberar os nomes dos aparelhos) e troca por um microfone de verdade se o padrão for virtual. */
+  private async open(): Promise<MicrophoneInfo> {
+    this.stream = await navigator.mediaDevices.getUserMedia(constraints());
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const current = this.stream.getAudioTracks()[0];
+    const currentId = current?.getSettings().deviceId;
+    const chosen = isVirtual(current?.label ?? "") || !currentId ? chooseInput(devices) : devices.find((device) => device.kind === "audioinput" && device.deviceId === currentId) ?? null;
+    if (chosen && chosen.deviceId !== currentId) {
+      this.stream.getTracks().forEach((track) => track.stop());
+      this.stream = await navigator.mediaDevices.getUserMedia(constraints(chosen.deviceId));
+    }
+    const label = this.stream.getAudioTracks()[0]?.label || chosen?.label || "microfone";
+    return { label, outputId: pairedOutput(devices, chosen)?.deviceId ?? null };
+  }
+
+  async start(onChunk: (base64: string) => void, onLevel: (value: number) => void, onSilent: (label: string) => void): Promise<MicrophoneInfo> {
+    const info = await this.open();
     // O navegador reamostra o microfone para 16 kHz, a taxa que o Gemini Live espera.
     this.context = new AudioContext({ sampleRate: INPUT_RATE });
+    // Criado fora do clique, o contexto pode nascer suspenso e o worklet nunca roda.
+    if (this.context.state === "suspended") await this.context.resume().catch(() => undefined);
     const url = URL.createObjectURL(new Blob([WORKLET], { type: "application/javascript" }));
     try { await this.context.audioWorklet.addModule(url); } finally { URL.revokeObjectURL(url); }
-    const source = this.context.createMediaStreamSource(this.stream);
+    const source = this.context.createMediaStreamSource(this.stream!);
     const node = new AudioWorkletNode(this.context, "azriel-mic");
+    let chunks = 0;
+    let peak = 0;
     node.port.onmessage = (event: MessageEvent<Float32Array>) => {
+      const value = level(event.data);
+      if (chunks <= SILENCE_CHUNKS) {
+        peak = Math.max(peak, value);
+        if (++chunks === SILENCE_CHUNKS && peak < SILENCE_LEVEL && !this.muted) onSilent(info.label);
+      }
       if (this.muted) { onLevel(0); return; }
-      onLevel(level(event.data));
+      onLevel(value);
       onChunk(bytesToBase64(pcm16ToBytes(floatToPcm16(event.data))));
     };
     source.connect(node);
+    return info;
   }
 
   stop() {
@@ -77,6 +112,12 @@ export class Speaker {
     this.nextTime = startAt + buffer.duration;
     this.sources.add(source);
     source.onended = () => this.sources.delete(source);
+  }
+
+  /** Toca no aparelho indicado (ex.: Hands-Free do fone Bluetooth). Sem suporte, fica na saída padrão. */
+  async useOutput(deviceId: string) {
+    const context = this.context as AudioContext & { setSinkId?: (id: string) => Promise<void> };
+    await context.setSinkId?.(deviceId).catch(() => undefined);
   }
 
   get speaking() { return this.sources.size > 0; }

@@ -26,7 +26,7 @@ const serialize = (value: unknown) => {
 
 /**
  * Loop de agente: o modelo escolhe as ferramentas, o Azriel executa e devolve o resultado.
- * Só ferramentas somente leitura são executadas; a última rodada vai sem ferramentas
+ * Só leituras e escritas autônomas (memória) são executadas; a última rodada vai sem ferramentas
  * para obrigar uma resposta final.
  */
 export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
@@ -42,7 +42,7 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
     messages.push({ role: "assistant", content: response.content, tool_calls: response.toolCalls });
     for (const call of response.toolCalls.slice(0, AGENT_MAX_CALLS_PER_STEP)) {
       const name = call.function.name;
-      if (!input.registry.has(name) || !input.registry.get(name).readonly) {
+      if (!input.registry.agentCanRun(name)) {
         messages.push({ role: "tool", tool_name: name, content: serialize({ error: `Ferramenta indisponível: ${name}` }) });
         continue;
       }

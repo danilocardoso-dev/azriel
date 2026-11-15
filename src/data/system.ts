@@ -3,7 +3,6 @@ export const modules: Array<{ id: ModuleId; label: string; code: string; glyph: 
   { id: "command", label: "Núcleo", code: "CORE", glyph: "◉", description: "Visão central" },
   { id: "ai", label: "AI Core", code: "AIC", glyph: "⌬", description: "Conversa" },
   { id: "daily", label: "Operações", code: "OPS", glyph: "≡", description: "Tarefas e notas" },
-  { id: "trading", label: "Trading", code: "TRD", glyph: "⟋", description: "Agente na conta demo" },
   { id: "music", label: "Música", code: "MUS", glyph: "♫", description: "Spotify" },
   { id: "money", label: "Finanças", code: "FIN", glyph: "$", description: "Contas e recebimentos" },
   { id: "settings", label: "Configurações", code: "CFG", glyph: "⚙", description: "Motores e chaves" },

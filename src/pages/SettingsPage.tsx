@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { AISettingsPanel } from "../components/ai/AISettingsPanel";
 import { GeminiSettingsPanel } from "../components/ai/GeminiSettingsPanel";
+import { IdentityPanel } from "../components/ai/IdentityPanel";
+import { MemoryPanel } from "../components/ai/MemoryPanel";
 import { ModuleIntro } from "../components/layout/ModuleIntro";
 import { getDatabaseInfo } from "../services/databaseService";
 import type { DatabaseInfo } from "../types";
@@ -58,6 +60,8 @@ export function SettingsPage() {
           </div>
         </section>
 
+        <IdentityPanel />
+        <MemoryPanel />
         <AISettingsPanel />
         <GeminiSettingsPanel />
       </div>

@@ -5,7 +5,6 @@ import { NucleoPage } from "./pages/NucleoPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { DailyOperationsPage } from "./pages/DailyOperationsPage";
 import { AICorePage } from "./pages/AICorePage";
-import { TradingPage } from "./pages/TradingPage";
 import { MusicPage } from "./pages/MusicPage";
 import { MoneyPage } from "./pages/MoneyPage";
 import { useSpotifyWebPlayer } from "./music/useSpotifyWebPlayer";
@@ -83,7 +82,6 @@ function App() {
   const content =
     activeModule === "ai" ? <AICorePage />
     : activeModule === "daily" ? <DailyOperationsPage />
-    : activeModule === "trading" ? <TradingPage />
     : activeModule === "music" ? <MusicPage webPlayer={webPlayer} />
     : activeModule === "money" ? <MoneyPage />
     : activeModule === "settings" ? <SettingsPage />
@@ -91,7 +89,6 @@ function App() {
       coreState={coreState}
       onOpenAI={() => setActiveModule("ai")}
       onOpenDaily={() => setActiveModule("daily")}
-      onOpenTrading={() => setActiveModule("trading")}
       onVoice={openVoice}
       onOpenYouTube={() => setPlayerOpen(true)}
       onOpenMusic={() => setActiveModule("music")}

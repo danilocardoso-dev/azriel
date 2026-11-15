@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Channel } from "@tauri-apps/api/core";
+import { loadPersona } from "../ai/persona";
 import { ToolRegistry } from "../ai/tools/toolRegistry";
 import { invokeDatabase } from "../repositories/tauri";
 import { localDateKey } from "../services/dateService";
@@ -61,11 +62,11 @@ export function useVoiceCall() {
     changePhase("tool");
     for (const call of calls) {
       const name = call.name as AIToolName;
-      const known = registry.current.has(name) && registry.current.get(name).readonly;
+      const known = registry.current.agentCanRun(name);
       setTool(known ? registry.current.get(name).domain : call.name);
       let result: unknown;
       try {
-        result = known ? (await registry.current.execute(name, { query: "", args: (call.args ?? {}) as Record<string, unknown> })).data : { error: `Ferramenta indisponível: ${call.name}` };
+        result = known ? (await registry.current.execute(name as AIToolName, { query: "", args: (call.args ?? {}) as Record<string, unknown> })).data : { error: `Ferramenta indisponível: ${call.name}` };
       } catch (error) { result = { error: messageOf(error) }; }
       await invokeDatabase("voice_tool_response", { id: call.id, name: call.name, result: result ?? null }).catch(() => undefined);
     }
@@ -81,7 +82,11 @@ export function useVoiceCall() {
         void microphone.start(
           (data) => { if (live.current) void invokeDatabase("voice_send_audio", { data }).catch(() => undefined); },
           (value) => { userLevel.current = value; },
-        ).then(() => { setStartedAt(Date.now()); changePhase("listening"); }).catch((error) => {
+          (label) => setNotice(`O microfone "${label}" não está captando som. Confira se ele está ligado e escolhido como entrada no Windows.`),
+        ).then((info) => {
+          if (info.outputId) void speaker.current?.useOutput(info.outputId);
+          setStartedAt(Date.now()); changePhase("listening");
+        }).catch((error) => {
           setNotice(`Microfone indisponível: ${messageOf(error)}`);
           void invokeDatabase("voice_stop").catch(() => undefined);
         });
@@ -107,7 +112,8 @@ export function useVoiceCall() {
     const events = new Channel<VoiceEvent>();
     events.onmessage = handle;
     try {
-      await invokeDatabase("voice_start", { tools: registry.current.agentTools(), date: localDateKey(), events });
+      const persona = await loadPersona(registry.current);
+      await invokeDatabase("voice_start", { tools: registry.current.agentTools(), date: localDateKey(), persona, events });
     } catch (error) {
       cleanup();
       setNotice(messageOf(error));

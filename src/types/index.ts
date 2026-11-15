@@ -1,4 +1,4 @@
-export type ModuleId = "command" | "ai" | "daily" | "trading" | "music" | "money" | "settings";
+export type ModuleId = "command" | "ai" | "daily" | "music" | "money" | "settings";
 export type AzrielState = "idle" | "processing" | "tool" | "executing" | "engineering" | "routine" | "alert" | "offline";
 export type AIToolPermission = "read" | "safe_write" | "confirm_write" | "visual_action";
 export interface DatabaseInfo { path: string; schemaVersion: number }
@@ -22,21 +22,6 @@ export interface NowPlaying { title:string; artist:string; album:string; source:
 export type MediaAction="toggle"|"next"|"previous";
 export interface WebSource { title:string; url:string }
 export interface WebSearchResult { answer:string; sources:WebSource[]; queries:string[] }
-export type TradingAction="OPEN_LONG"|"OPEN_SHORT"|"CLOSE"|"HOLD"|"ERROR"|"MANUAL_CLOSE";
-export interface TradingSettings { apiKeyConfigured:boolean; symbol:string; candleInterval:string; cycleMinutes:number; marginUsdt:number; leverage:number; stopLossPct:number; takeProfitPct:number; maxDailyLossPct:number; minConfidence:number; engine:AIEngine; profitLockPct:number; maxHoldMinutes:number; running:boolean; updatedAt:string }
-export type TradingSettingsInput=Omit<TradingSettings,"apiKeyConfigured"|"running"|"updatedAt">;
-export interface TradingEngineInfo { running:boolean; cycleInProgress:boolean; lastCycleAt:string|null; nextCycleAt:string|null; lastError:string|null; reviewInProgress:boolean; lastReviewError:string|null }
-export interface TradingDecision { id:number; createdAt:string; symbol:string; price:number; positionBefore:string; proposedAction:TradingAction; finalAction:TradingAction; confidence:number; reason:string; riskNote:string; engine:string; model:string; orderStatus:"NONE"|"FILLED"|"FAILED"; orderDetail:string; equity:number|null }
-export interface EquityPoint { createdAt:string; equity:number; balance:number; unrealized:number }
-export type TradeExitReason="STOP"|"TARGET"|"LOCK"|"TIMEOUT"|"AGENT"|"MANUAL"|"DAILY_LIMIT"|"EXCHANGE";
-export interface TradingTrade { id:number; symbol:string; side:"LONG"|"SHORT"; openedAt:string; closedAt:string|null; entryPrice:number; exitPrice:number|null; quantity:number; stopLossPct:number; takeProfitPct:number; candleInterval:string; balanceBefore:number; pnlUsdt:number|null; exitReason:TradeExitReason|null; confidence:number; entryReason:string; entryContext:string }
-export interface TuningChange { field:string; label:string; from:string; to:string }
-export interface TradingReview { id:number; createdAt:string; lastTradeId:number; tradesCount:number; pnlUsdt:number; winRate:number; diagnosis:string; lessons:string[]; changes:TuningChange[]; model:string; reverted:boolean }
-export interface TradingOverview { settings:TradingSettings; engine:TradingEngineInfo; decisions:TradingDecision[]; equity:EquityPoint[]; firstEquity:number|null; dayStartEquity:number|null; trades:TradingTrade[]; reviews:TradingReview[]; lessons:string[]; autoTune:boolean; tradesUntilReview:number }
-export interface LivePosition { side:"LONG"|"SHORT"; quantity:number; entryPrice:number; unrealized:number; leverage:number; stopLoss:number|null; takeProfit:number|null }
-export interface TradingLive { equity:number; balance:number; unrealized:number; availableMargin:number; position:LivePosition|null }
-export interface MarketCandle { time:number; open:number; high:number; low:number; close:number; volume:number }
-export interface MarketSnapshot { symbol:string; interval:string; candles:MarketCandle[]; lastPrice:number; changePct:number; high24h:number; low24h:number }
 export interface Conversation { id:string; title:string; createdAt:string; updatedAt:string }
 export type ConversationRole="user"|"assistant"|"system";
 export interface ConversationMessage { id:string; conversationId:string; role:ConversationRole; content:string; createdAt:string }
@@ -64,7 +49,12 @@ export interface NetworkSnapshot { interfaceName:string; receivedBytes:number; t
 export interface ProcessSnapshot { pid:number; name:string; cpuPercent:number; memoryBytes:number }
 export interface SystemSnapshot { collectedAt:number; details:SystemDetails; cpu:CpuSnapshot; memory:MemorySnapshot; storage:StorageSnapshot[]; network:NetworkSnapshot[]; errors:string[] }
 
-export type AIToolName="get_today_tasks"|"get_overdue_tasks"|"get_upcoming_tasks"|"get_critical_tasks"|"get_priority_tasks"|"complete_task"|"get_recent_notes"|"get_daily_operations_summary"|"get_system_status"|"get_cpu_status"|"get_memory_status"|"get_storage_status"|"get_network_status"|"get_process_summary"|"get_ollama_status"|"get_azriel_status"|"get_azriel_version"|"get_trading_status"|"search_web";
+export type AIToolName="get_today_tasks"|"get_overdue_tasks"|"get_upcoming_tasks"|"get_critical_tasks"|"get_priority_tasks"|"complete_task"|"get_recent_notes"|"get_daily_operations_summary"|"get_system_status"|"get_cpu_status"|"get_memory_status"|"get_storage_status"|"get_network_status"|"get_process_summary"|"get_ollama_status"|"get_azriel_status"|"get_azriel_version"|"search_web"|"remember"|"update_memory"|"search_memories";
 export interface AIToolInput { query:string; args?:Record<string,unknown>; term?:string; conversationId?:string; referencePosition?:number; factor?:number; delta?:number }
 export interface AIToolResult { name:AIToolName; domain:string; data:unknown; empty:boolean }
 export interface RoutedIntent { intent:string; scope:"azriel"|"general"; tools:AIToolName[]; term?:string; referencePosition?:number; factor?:number; delta?:number }
+export type MemoryCategory="operador"|"preferencia"|"projeto"|"pessoa"|"decisao"|"fato";
+export type MemorySource="azriel"|"operador";
+export interface AzrielIdentity { content:string; isDefault:boolean; updatedAt:string }
+export interface Memory { id:string; content:string; category:MemoryCategory; source:MemorySource; conversationId:string|null; createdAt:string; updatedAt:string }
+export interface MemoryInput { id:string; content:string; category:MemoryCategory; source:MemorySource; conversationId?:string|null }
