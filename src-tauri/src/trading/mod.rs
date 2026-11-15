@@ -3,3 +3,4 @@ pub mod engine;
 pub mod indicators;
 pub mod strategy;
 pub mod review;
+pub mod backtest;
