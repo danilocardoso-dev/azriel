@@ -472,7 +472,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .ai-message > header time {
   color: var(--text-dim);
 }
-.ai-message p {
+.ai-message > p {
   margin: 0;
   padding: 14px 16px;
   font-size: 13px;
@@ -480,6 +480,63 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   color: #dbf4f9;
   white-space: pre-wrap;
 }
+
+/* Respostas do Azriel com markdown */
+.ai-markdown {
+  padding: 14px 16px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: #dbf4f9;
+  overflow-wrap: anywhere;
+}
+.ai-markdown > :first-child { margin-top: 0; }
+.ai-markdown > :last-child { margin-bottom: 0; }
+.ai-markdown p { margin: 0 0 10px; }
+.ai-markdown strong { color: #f4fdff; font-weight: 600; }
+.ai-markdown em { color: #c8f8ff; }
+.ai-markdown h1, .ai-markdown h2, .ai-markdown h3, .ai-markdown h4 {
+  margin: 16px 0 8px;
+  color: var(--cyan);
+  font: 700 11px var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.ai-markdown h1 { font-size: 13px; }
+.ai-markdown h2 { font-size: 12px; }
+.ai-markdown ul, .ai-markdown ol { margin: 0 0 10px; padding-left: 22px; }
+.ai-markdown li { margin: 3px 0; }
+.ai-markdown li > p { margin: 0; }
+.ai-markdown ul li::marker { color: var(--cyan); }
+.ai-markdown ol li::marker { color: var(--cyan); font: 11px var(--mono); }
+.ai-markdown a { color: var(--cyan); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.ai-markdown a:hover { color: #9ff4ff; }
+.ai-markdown blockquote {
+  margin: 0 0 10px;
+  padding: 6px 12px;
+  border-left: 2px solid var(--cyan-dim);
+  background: rgba(70, 233, 255, 0.04);
+  color: var(--text-muted);
+}
+.ai-markdown code {
+  padding: 1px 5px;
+  border: 1px solid var(--line-soft);
+  background: rgba(2, 10, 15, 0.8);
+  color: #9ff4ff;
+  font: 12px var(--mono);
+}
+.ai-markdown pre {
+  margin: 0 0 10px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  background: #01090d;
+}
+.ai-markdown pre code { padding: 0; border: 0; background: none; color: #dbf4f9; white-space: pre; }
+.ai-markdown hr { border: 0; border-top: 1px solid var(--line-soft); margin: 14px 0; }
+.ai-markdown__table { overflow-x: auto; margin: 0 0 10px; }
+.ai-markdown table { border-collapse: collapse; font-size: 12px; }
+.ai-markdown th, .ai-markdown td { padding: 6px 10px; border: 1px solid var(--line-soft); text-align: left; }
+.ai-markdown th { color: var(--cyan); font: 700 10px var(--mono); letter-spacing: 0.06em; }
 
 /* Phase / Thinking Indicator */
 .ai-phase {

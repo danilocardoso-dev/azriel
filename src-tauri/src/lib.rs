@@ -54,6 +54,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::database_info,
+            commands::open_external,
             daily_commands::list_tasks,
             daily_commands::get_task,
             daily_commands::save_task,

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { AIConversationHistoryDialog } from "../components/ai/AIConversationHistoryDialog";
 import { EngineSwitcher } from "../components/ai/EngineSwitcher";
+import { MarkdownMessage } from "../components/ai/MarkdownMessage";
 import { DeleteConfirmationDialog } from "../components/daily/DeleteConfirmationDialog";
 import { ModuleIntro } from "../components/layout/ModuleIntro";
 import { useAI } from "../contexts/useAI";
@@ -68,7 +69,7 @@ export function AICorePage() {
         <div className="ai-terminal__messages" aria-live="polite" ref={messagesRef}>
           {!selectedConversation && messages.length === 0 && <div className="ai-welcome"><span>AI CORE // READ ONLY</span><h2>Como posso consultar o sistema?</h2><p>Azriel utiliza ferramentas controladas para recuperar dados. Nenhuma alteração pode ser executada pela IA.</p><div>{suggestions.map((suggestion) => <button onClick={() => { setInput(suggestion); inputRef.current?.focus(); }} key={suggestion}>{suggestion}</button>)}</div></div>}
           {selectedConversation && messages.length === 0 && !loading && <div className="ai-welcome"><span>CONTEXTO LIMPO</span><h2>Esta conversa está pronta para recomeçar.</h2><p>A conversa foi preservada, mas nenhuma mensagem anterior será enviada ao modelo.</p></div>}
-          {messages.map((message) => <article className={`ai-message ai-message--${message.role}`} key={message.id}><header><span>{message.role === "user" ? "AZ" : "AZRIEL"}</span><time>{formatTimestamp(message.createdAt)}</time></header><p>{message.content}</p></article>)}
+          {messages.map((message) => <article className={`ai-message ai-message--${message.role}`} key={message.id}><header><span>{message.role === "user" ? "AZ" : "AZRIEL"}</span><time>{formatTimestamp(message.createdAt)}</time></header>{message.role === "assistant" ? <MarkdownMessage content={message.content} /> : <p>{message.content}</p>}</article>)}
           {sending && <div className="ai-phase"><span /><strong>{phase}</strong></div>}
           {loading && selectedConversation && <div className="ai-phase"><span /><strong>RECUPERANDO HISTÓRICO</strong></div>}
           {error && <div className="ai-terminal__error"><strong>AI CORE ALERT</strong><p>{error}</p></div>}
