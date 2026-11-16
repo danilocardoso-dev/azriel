@@ -57,3 +57,9 @@
 @media (max-width: 720px) {
   .mind-add { grid-template-columns: 1fr; }
 }
+
+/* Histórico de ações */
+.mind-action[data-ok="false"] { border-left-color: var(--red-critical); }
+.mind-action[data-ok="false"] > header b { color: var(--red-critical); }
+.mind-action > code { color: var(--text-main); font: 11px/1.5 var(--mono); overflow-wrap: anywhere; white-space: pre-wrap; }
+.mind-action__detail { color: var(--text-muted); font: 10px var(--mono); overflow-wrap: anywhere; }

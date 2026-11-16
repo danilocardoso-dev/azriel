@@ -2,9 +2,10 @@ import type { AgentMessage, AgentResponse, AIToolPermission, ConfirmationRequest
 import type { AIProvider } from "../providers/AIProvider";
 import type { ToolRegistry } from "../tools/toolRegistry";
 
-export const AGENT_MAX_STEPS = 6;
-export const AGENT_MAX_CALLS_PER_STEP = 4;
-export const AGENT_TOOL_RESULT_CHARACTERS = 6_000;
+// Programar pede várias rodadas (ler, editar, testar, corrigir).
+export const AGENT_MAX_STEPS = 12;
+export const AGENT_MAX_CALLS_PER_STEP = 6;
+export const AGENT_TOOL_RESULT_CHARACTERS = 20_000;
 
 export interface AgentRunInput {
   provider: AIProvider;

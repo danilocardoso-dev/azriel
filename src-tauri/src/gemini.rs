@@ -8,8 +8,8 @@ use serde_json::{json, Value};
 use std::{collections::VecDeque, time::Duration};
 
 const GEMINI_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/openai";
-const MESSAGE_LIMIT: usize = 60;
-const TOOL_LIMIT: usize = 40;
+const MESSAGE_LIMIT: usize = 160;
+const TOOL_LIMIT: usize = 64;
 
 #[derive(Deserialize)]
 struct CompletionResponse {

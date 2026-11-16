@@ -158,3 +158,13 @@ CREATE TABLE IF NOT EXISTS azriel_memories (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_azriel_memories_updated ON azriel_memories(updated_at);
+-- Histórico do que o Azriel fez no PC (arquivos, comandos, exclusões), para o Senhor revisar.
+CREATE TABLE IF NOT EXISTS azriel_actions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  kind TEXT NOT NULL,
+  target TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  ok INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_azriel_actions_created ON azriel_actions(created_at);

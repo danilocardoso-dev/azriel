@@ -77,8 +77,8 @@ pub struct OllamaAgentResult {
     pub tool_calls: Vec<OllamaToolCall>,
 }
 
-const AGENT_MESSAGE_LIMIT: usize = 60;
-const AGENT_TOOL_LIMIT: usize = 40;
+const AGENT_MESSAGE_LIMIT: usize = 160;
+const AGENT_TOOL_LIMIT: usize = 64;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

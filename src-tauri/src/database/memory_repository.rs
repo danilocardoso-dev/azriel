@@ -1,9 +1,9 @@
 use super::memory_models::*;
 use rusqlite::{params, Connection, OptionalExtension};
 
-pub const DEFAULT_IDENTITY: &str = include_str!("../../prompts/identity-v2.txt");
+pub const DEFAULT_IDENTITY: &str = include_str!("../../prompts/identity-v3.txt");
 /// Padrões anteriores: se o banco ainda tem um deles intacto, sobe para o atual. Texto editado pelo Senhor nunca é trocado.
-const PREVIOUS_DEFAULTS: [&str; 1] = [include_str!("../../prompts/identity-v1.txt")];
+const PREVIOUS_DEFAULTS: [&str; 2] = [include_str!("../../prompts/identity-v1.txt"), include_str!("../../prompts/identity-v2.txt")];
 pub const CATEGORIES: [&str; 6] = ["operador", "preferencia", "projeto", "pessoa", "decisao", "fato"];
 const MAX_MEMORY_CHARS: usize = 1_000;
 const MAX_IDENTITY_CHARS: usize = 20_000;

@@ -11,6 +11,7 @@ mod spotify;
 mod system_commands;
 mod system_monitor;
 mod voice;
+mod workspace;
 
 use database::DatabaseState;
 use tauri::Manager;
@@ -55,6 +56,15 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::database_info,
             commands::open_external,
+            workspace::fs_list,
+            workspace::fs_read,
+            workspace::fs_search,
+            workspace::fs_write,
+            workspace::fs_edit,
+            workspace::fs_mkdir,
+            workspace::fs_delete,
+            workspace::run_command,
+            workspace::list_actions,
             daily_commands::list_tasks,
             daily_commands::get_task,
             daily_commands::save_task,

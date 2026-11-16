@@ -3,6 +3,7 @@ import { AISettingsPanel } from "../components/ai/AISettingsPanel";
 import { GeminiSettingsPanel } from "../components/ai/GeminiSettingsPanel";
 import { IdentityPanel } from "../components/ai/IdentityPanel";
 import { MemoryPanel } from "../components/ai/MemoryPanel";
+import { ActionHistoryPanel } from "../components/ai/ActionHistoryPanel";
 import { ModuleIntro } from "../components/layout/ModuleIntro";
 import { getDatabaseInfo } from "../services/databaseService";
 import type { DatabaseInfo } from "../types";
@@ -62,6 +63,7 @@ export function SettingsPage() {
 
         <IdentityPanel />
         <MemoryPanel />
+        <ActionHistoryPanel />
         <AISettingsPanel />
         <GeminiSettingsPanel />
       </div>
