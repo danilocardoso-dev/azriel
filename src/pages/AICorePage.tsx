@@ -16,7 +16,7 @@ const suggestions = [
 ];
 
 export function AICorePage() {
-  const { settings, status, engine, engineAvailable, conversations, selectedConversation, messages, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, send } = useAI();
+  const { settings, status, engine, engineAvailable, conversations, selectedConversation, messages, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, send, pendingConfirmation, answerConfirmation } = useAI();
   const [input, setInput] = useState("");
   const [conversationToDelete, setConversationToDelete] = useState<Conversation | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -26,7 +26,7 @@ export function AICorePage() {
   const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   // Rola só a lista de mensagens (scrollIntoView também arrastava a página inteira).
-  useEffect(() => { const list = messagesRef.current; if (list) list.scrollTo({ top: list.scrollHeight, behavior: "smooth" }); }, [messages, phase]);
+  useEffect(() => { const list = messagesRef.current; if (list) list.scrollTo({ top: list.scrollHeight, behavior: "smooth" }); }, [messages, phase, pendingConfirmation]);
   // O campo fica sempre pronto para a próxima mensagem.
   useEffect(() => { if (!sending) inputRef.current?.focus(); }, [sending, selectedConversation?.id]);
 
@@ -70,7 +70,13 @@ export function AICorePage() {
           {!selectedConversation && messages.length === 0 && <div className="ai-welcome"><span>AI CORE // READ ONLY</span><h2>Como posso consultar o sistema?</h2><p>Azriel utiliza ferramentas controladas para recuperar dados. Nenhuma alteração pode ser executada pela IA.</p><div>{suggestions.map((suggestion) => <button onClick={() => { setInput(suggestion); inputRef.current?.focus(); }} key={suggestion}>{suggestion}</button>)}</div></div>}
           {selectedConversation && messages.length === 0 && !loading && <div className="ai-welcome"><span>CONTEXTO LIMPO</span><h2>Esta conversa está pronta para recomeçar.</h2><p>A conversa foi preservada, mas nenhuma mensagem anterior será enviada ao modelo.</p></div>}
           {messages.map((message) => <article className={`ai-message ai-message--${message.role}`} key={message.id}><header><span>{message.role === "user" ? "AZ" : "AZRIEL"}</span><time>{formatTimestamp(message.createdAt)}</time></header>{message.role === "assistant" ? <MarkdownMessage content={message.content} /> : <p>{message.content}</p>}</article>)}
-          {sending && <div className="ai-phase"><span /><strong>{phase}</strong></div>}
+          {pendingConfirmation && <div className="ai-confirm" role="alertdialog" aria-labelledby="ai-confirm-title">
+            <span>PERMISSÃO NECESSÁRIA</span>
+            <strong id="ai-confirm-title">O Azriel quer: {pendingConfirmation.title}</strong>
+            <p>{pendingConfirmation.detail}</p>
+            <div><button type="button" className="ai-confirm__allow" onClick={() => answerConfirmation(true)}>PERMITIR</button><button type="button" className="ai-confirm__deny" onClick={() => answerConfirmation(false)} autoFocus>NEGAR</button></div>
+          </div>}
+          {sending && !pendingConfirmation && <div className="ai-phase"><span /><strong>{phase}</strong></div>}
           {loading && selectedConversation && <div className="ai-phase"><span /><strong>RECUPERANDO HISTÓRICO</strong></div>}
           {error && <div className="ai-terminal__error"><strong>AI CORE ALERT</strong><p>{error}</p></div>}
           {!engineAvailable && !loading && <div className="ai-terminal__offline"><strong>AI CORE OFFLINE</strong><p>{engine === "gemini" ? "Gemini sem chave ou sem modelo selecionado." : status?.error || "Ollama não encontrado no endpoint configurado."}</p><small>Os demais módulos permanecem operacionais. Troque o motor acima ou verifique em Configurações.</small></div>}

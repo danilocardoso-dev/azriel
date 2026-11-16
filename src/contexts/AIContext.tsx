@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AICoreService } from "../ai/AICoreService";
 import { ContextBuilder } from "../ai/context/ContextBuilder";
 import { loadPersona } from "../ai/persona";
@@ -9,10 +9,12 @@ import { routeIntent } from "../ai/router/toolRouter";
 import { preferredGeminiModel } from "../components/ai/aiSettingsFlow";
 import { aiRepository } from "../repositories/aiRepository";
 import { conversationService } from "../services/conversationService";
-import type { AIEngine, AISettings, AISettingsInput, AzrielState, Conversation, ConversationMessage, LocalAiModelStatus, OllamaStatus, RemoteAISettings } from "../types";
+import type { AIEngine, AISettings, AISettingsInput, AzrielState, ConfirmationRequest, Conversation, ConversationMessage, LocalAiModelStatus, OllamaStatus, RemoteAISettings } from "../types";
 import { AIContext, type AIContextValue } from "./ai-context";
 
 const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error);
+// Sem resposta do Senhor em 5 minutos, a exclusão é negada (o Azriel não fica esperando para sempre).
+const CONFIRMATION_TIMEOUT_MS = 5 * 60_000;
 
 export function AIProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<AISettings | null>(null);
@@ -29,6 +31,20 @@ export function AIProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingConfirmation, setPendingConfirmation] = useState<ConfirmationRequest | null>(null);
+  const confirmationResolver = useRef<((allowed: boolean) => void) | null>(null);
+  const answerConfirmation = useCallback((allowed: boolean) => {
+    const resolve = confirmationResolver.current;
+    confirmationResolver.current = null;
+    setPendingConfirmation(null);
+    resolve?.(allowed);
+  }, []);
+  const requestConfirmation = useCallback((request: ConfirmationRequest) => new Promise<boolean>((resolve) => {
+    confirmationResolver.current?.(false);
+    const timer = window.setTimeout(() => answerConfirmation(false), CONFIRMATION_TIMEOUT_MS);
+    confirmationResolver.current = (allowed) => { window.clearTimeout(timer); resolve(allowed); };
+    setPendingConfirmation(request);
+  }), [answerConfirmation]);
 
   const checkStatus = useCallback(async (target: AISettings): Promise<OllamaStatus> => {
     const next = await aiRepository.status(target.endpoint, Math.min(target.timeoutSeconds, 8));
@@ -217,14 +233,14 @@ export function AIProvider({ children }: { children: ReactNode }) {
       const effective = engine === "gemini" && remoteSettings ? { ...settings, model: remoteSettings.model } : settings;
       const registry = new ToolRegistry();
       const service = new AICoreService(provider, new ContextBuilder(registry), conversationService, effective, () => loadPersona(registry));
-      await service.send(query, conversation, (state, detail) => { setCoreState(state); if (detail) setPhase(detail); }, (message) => setMessages((current) => [...current, message]));
+      await service.send(query, conversation, (state, detail) => { setCoreState(state); if (detail) setPhase(detail); }, (message) => setMessages((current) => [...current, message]), requestConfirmation);
       setConversations(await conversationService.list());
     } catch (reason) {
       const detail = messageOf(reason); setError(detail); setCoreState(/ollama|gemini|internet/i.test(detail) ? "offline" : "alert"); setPhase("FALHA NO AI CORE");
       if (conversation) setMessages(await conversationService.messages(conversation.id).catch(() => []));
       throw reason;
     } finally { setSending(false); }
-  }, [engine, engineAvailable, remoteSettings, selectedConversation, settings, status]);
+  }, [engine, engineAvailable, remoteSettings, requestConfirmation, selectedConversation, settings, status]);
 
   const selectModel = useCallback(async (model: string) => {
     if (engine === "gemini") { await updateRemote({ enabled: true, model }); return; }
@@ -232,7 +248,7 @@ export function AIProvider({ children }: { children: ReactNode }) {
     await updateSettings({ endpoint: settings.endpoint, model, contextMessageLimit: settings.contextMessageLimit, timeoutSeconds: settings.timeoutSeconds });
   }, [engine, settings, updateRemote, updateSettings]);
 
-  const value = useMemo<AIContextValue>(() => ({ settings, remoteSettings, remoteModels, engine, engineAvailable, setEngine, selectModel, saveRemoteKey, removeRemoteKey, refreshRemoteModels, status, modelLifecycle, modelTransition, conversations, selectedConversation, messages, coreState, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, reload, send, updateSettings, probeOllama, refreshStatus, refreshModelLifecycle, loadLocalModel, unloadLocalModel }), [settings, remoteSettings, remoteModels, engine, engineAvailable, setEngine, selectModel, saveRemoteKey, removeRemoteKey, refreshRemoteModels, status, modelLifecycle, modelTransition, conversations, selectedConversation, messages, coreState, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, reload, send, updateSettings, probeOllama, refreshStatus, refreshModelLifecycle, loadLocalModel, unloadLocalModel]);
+  const value = useMemo<AIContextValue>(() => ({ settings, remoteSettings, remoteModels, engine, engineAvailable, setEngine, selectModel, saveRemoteKey, removeRemoteKey, refreshRemoteModels, status, modelLifecycle, modelTransition, conversations, selectedConversation, messages, coreState, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, reload, send, pendingConfirmation, answerConfirmation, updateSettings, probeOllama, refreshStatus, refreshModelLifecycle, loadLocalModel, unloadLocalModel }), [pendingConfirmation, answerConfirmation, settings, remoteSettings, remoteModels, engine, engineAvailable, setEngine, selectModel, saveRemoteKey, removeRemoteKey, refreshRemoteModels, status, modelLifecycle, modelTransition, conversations, selectedConversation, messages, coreState, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, reload, send, updateSettings, probeOllama, refreshStatus, refreshModelLifecycle, loadLocalModel, unloadLocalModel]);
   return <AIContext.Provider value={value}>{children}</AIContext.Provider>;
 }
 

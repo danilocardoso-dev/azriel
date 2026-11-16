@@ -9,6 +9,7 @@ import { MusicPage } from "./pages/MusicPage";
 import { MoneyPage } from "./pages/MoneyPage";
 import { useSpotifyWebPlayer } from "./music/useSpotifyWebPlayer";
 import { spotifyRepository } from "./repositories/spotifyRepository";
+import { azrielDevice } from "./music/azrielDevice";
 import type { ModuleId } from "./types";
 import { useAI } from "./contexts/useAI";
 import { MiniPlayer } from "./components/media/MiniPlayer";
@@ -24,6 +25,9 @@ function App() {
   const voice = useVoiceCall();
   const webPlayer = useSpotifyWebPlayer();
   const { start: startWebPlayer } = webPlayer;
+  // As ferramentas de música do Azriel tocam no player embutido quando ele está pronto.
+  const azrielDeviceId = webPlayer.status === "ready" ? webPlayer.deviceId : null;
+  useEffect(() => { azrielDevice.set(azrielDeviceId); }, [azrielDeviceId]);
   // Com o Spotify conectado, o player do Azriel sobe junto com o app: ele já é a saída padrão quando você tocar algo.
   useEffect(() => {
     const timer = window.setTimeout(() => { void spotifyRepository.status().then((status) => { if (status.connected) void startWebPlayer(); }).catch(() => undefined); }, 1_500);

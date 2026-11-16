@@ -1,7 +1,9 @@
 use super::memory_models::*;
 use rusqlite::{params, Connection, OptionalExtension};
 
-pub const DEFAULT_IDENTITY: &str = include_str!("../../prompts/identity-v1.txt");
+pub const DEFAULT_IDENTITY: &str = include_str!("../../prompts/identity-v2.txt");
+/// Padrões anteriores: se o banco ainda tem um deles intacto, sobe para o atual. Texto editado pelo Senhor nunca é trocado.
+const PREVIOUS_DEFAULTS: [&str; 1] = [include_str!("../../prompts/identity-v1.txt")];
 pub const CATEGORIES: [&str; 6] = ["operador", "preferencia", "projeto", "pessoa", "decisao", "fato"];
 const MAX_MEMORY_CHARS: usize = 1_000;
 const MAX_IDENTITY_CHARS: usize = 20_000;
@@ -27,8 +29,19 @@ fn row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Memory> {
 pub fn seed_identity(connection: &Connection) -> Result<(), String> {
     connection
         .execute("INSERT OR IGNORE INTO azriel_identity(id, content) VALUES (1, ?1)", [DEFAULT_IDENTITY.trim()])
-        .map(|_| ())
-        .map_err(err)
+        .map_err(err)?;
+    let stored: String = connection.query_row("SELECT content FROM azriel_identity WHERE id=1", [], |row| row.get(0)).map_err(err)?;
+    if PREVIOUS_DEFAULTS.iter().any(|previous| same_text(previous, &stored)) {
+        connection
+            .execute("UPDATE azriel_identity SET content=?1, updated_at=CURRENT_TIMESTAMP WHERE id=1", [DEFAULT_IDENTITY.trim()])
+            .map_err(err)?;
+    }
+    Ok(())
+}
+
+/// Compara ignorando fim de linha (o Git no Windows troca LF por CRLF) e espaços nas pontas.
+fn same_text(a: &str, b: &str) -> bool {
+    a.replace("\r\n", "\n").trim() == b.replace("\r\n", "\n").trim()
 }
 
 pub fn get_identity(connection: &Connection) -> Result<Identity, String> {
@@ -37,7 +50,7 @@ pub fn get_identity(connection: &Connection) -> Result<Identity, String> {
         .optional()
         .map_err(err)?;
     let (content, updated_at) = stored.unwrap_or_else(|| (DEFAULT_IDENTITY.trim().to_string(), String::new()));
-    Ok(Identity { is_default: content.trim() == DEFAULT_IDENTITY.trim(), content, updated_at })
+    Ok(Identity { is_default: same_text(&content, DEFAULT_IDENTITY), content, updated_at })
 }
 
 pub fn save_identity(connection: &Connection, content: &str) -> Result<Identity, String> {
@@ -154,6 +167,22 @@ mod tests {
         assert_eq!(get_identity(&connection).unwrap().content, "Sou o Azriel, versão do Senhor.");
         assert!(reset_identity(&connection).unwrap().is_default);
         assert!(save_identity(&connection, "   ").is_err());
+    }
+
+    #[test]
+    fn untouched_old_default_is_upgraded_but_edited_text_is_kept() {
+        let connection = connection();
+        save_identity(&connection, PREVIOUS_DEFAULTS[0]).unwrap();
+        seed_identity(&connection).unwrap();
+        let identity = get_identity(&connection).unwrap();
+        assert!(identity.is_default);
+        assert!(identity.content.contains("Excluir qualquer coisa: só com a permissão do Senhor"));
+        save_identity(&connection, &PREVIOUS_DEFAULTS[0].replace('\n', "\r\n")).unwrap();
+        seed_identity(&connection).unwrap();
+        assert!(get_identity(&connection).unwrap().is_default, "CRLF do Git não impede a atualização");
+        save_identity(&connection, &format!("{}\nNota minha.", PREVIOUS_DEFAULTS[0])).unwrap();
+        seed_identity(&connection).unwrap();
+        assert!(get_identity(&connection).unwrap().content.ends_with("Nota minha."));
     }
 
     #[test]

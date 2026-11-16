@@ -1,5 +1,5 @@
 import { createContext } from "react";
-import type { AIEngine, AISettings, AISettingsInput, AzrielState, Conversation, ConversationMessage, LocalAiModelStatus, OllamaStatus, RemoteAISettings } from "../types";
+import type { AIEngine, AISettings, AISettingsInput, AzrielState, ConfirmationRequest, Conversation, ConversationMessage, LocalAiModelStatus, OllamaStatus, RemoteAISettings } from "../types";
 
 export interface AIContextValue {
   settings: AISettings | null;
@@ -30,6 +30,9 @@ export interface AIContextValue {
   clearConversationHistory: (conversation: Conversation) => Promise<number>;
   reload: () => Promise<void>;
   send: (query: string) => Promise<void>;
+  /** Pedido de permissão do Azriel (exclusões) aguardando o Senhor no AI Core. */
+  pendingConfirmation: ConfirmationRequest | null;
+  answerConfirmation: (allowed: boolean) => void;
   updateSettings: (input: AISettingsInput) => Promise<void>;
   probeOllama: (endpoint: string, timeoutSeconds: number) => Promise<OllamaStatus>;
   refreshStatus: () => Promise<OllamaStatus | null>;

@@ -5,6 +5,12 @@ import { localDateKey } from "../../services/dateService";
 import { systemService } from "../../services/systemService";
 import { aiRepository } from "../../repositories/aiRepository";
 import { memoryRepository } from "../../repositories/memoryRepository";
+import { moneyRepository } from "../../repositories/moneyRepository";
+import { spotifyRepository } from "../../repositories/spotifyRepository";
+import { notifyDataRelationsChanged } from "../../contexts/dataEvents";
+import { azrielDevice } from "../../music/azrielDevice";
+import { spotifyControl } from "../../music/controls";
+import { actionTools, type ActionDependencies } from "./actionTools";
 import type { Memory, MemoryCategory, MemoryInput, WebSearchResult } from "../../types";
 import type { AgentToolSchema, AISettings, AIToolInput, AIToolName, AIToolPermission, AIToolResult, DailyCounters, MemorySnapshot, Note, OllamaStatus, ProcessSnapshot, StorageSnapshot, SystemSnapshot, Task } from "../../types";
 
@@ -18,8 +24,18 @@ export interface ToolDependencies {
   ollama: { settings(): Promise<AISettings>; status(endpoint: string, timeoutSeconds: number): Promise<OllamaStatus> };
   web?: { search(query: string): Promise<WebSearchResult> };
   memory?: { list(): Promise<Memory[]>; search(query: string): Promise<Memory[]>; save(input: MemoryInput): Promise<Memory> };
+  actions?: ActionDependencies;
 }
-const production: ToolDependencies = { tasks: taskService, notes: noteService, databaseInfo: getDatabaseInfo, system: systemService, ollama: { settings: aiRepository.getSettings, status: aiRepository.status }, web: { search: aiRepository.webSearch }, memory: memoryRepository };
+const productionActions: ActionDependencies = {
+  tasks: { get: taskService.get, save: taskService.save, complete: taskService.complete, remove: taskService.remove },
+  notes: { get: noteService.get, save: noteService.save, archive: noteService.archive, remove: noteService.remove },
+  money: moneyRepository,
+  music: { search: (query, kind) => spotifyRepository.search(query, kind), play: spotifyRepository.play, player: spotifyRepository.player, control: (action, context) => spotifyControl(action, undefined, context), device: azrielDevice.get },
+  changed: () => { if (typeof window !== "undefined") notifyDataRelationsChanged(); },
+  newId: () => newId(),
+  today: () => localDateKey(),
+};
+const production: ToolDependencies = { tasks: taskService, notes: noteService, databaseInfo: getDatabaseInfo, system: systemService, ollama: { settings: aiRepository.getSettings, status: aiRepository.status }, web: { search: aiRepository.webSearch }, memory: memoryRepository, actions: productionActions };
 
 export const MEMORY_CATEGORIES: MemoryCategory[] = ["operador", "preferencia", "projeto", "pessoa", "decisao", "fato"];
 const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
@@ -75,6 +91,7 @@ function tools(deps: ToolDependencies): AzrielTool[] {
       execute:(input)=>{ const query=String(input.args?.query ?? input.term ?? input.query ?? "").trim(); if(!query) return { error:"Busca vazia" }; return deps.web ? deps.web.search(query) : { error:"Busca na web indisponível" }; } },
     { name:"get_azriel_version", domain:"Azriel", description:"Versão do núcleo atual", readonly:true, execute:()=>({version:"core-only"}) },
     ...(deps.memory ? memoryTools(deps.memory) : []),
+    ...(deps.actions ? actionTools(deps.actions) : []),
   ];
 }
 export class ToolRegistry {

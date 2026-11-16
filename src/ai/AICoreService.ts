@@ -2,7 +2,7 @@ import systemPrompt from "../prompts/system.txt?raw";
 import generalPrompt from "../prompts/general.txt?raw";
 import agentPrompt from "../prompts/agent.txt?raw";
 import { localDateKey } from "../services/dateService";
-import type { AIRequest, AISettings, AIToolResult, AzrielState, Conversation, ConversationMessage, Task } from "../types";
+import type { AIRequest, AISettings, AIToolResult, AzrielState, ConfirmationRequest, Conversation, ConversationMessage, Task } from "../types";
 import { runAgent } from "./agent/agentLoop";
 import { routeIntent } from "./router/toolRouter";
 import { ContextBuilder } from "./context/ContextBuilder";
@@ -116,7 +116,7 @@ export class AICoreService {
     return persona ? [{ role: "system", content: persona }] : [];
   }
 
-  async send(query: string, currentConversation: Conversation | null, onPhase?: (state: AzrielState, detail?: string) => void, onMessage?: (message: ConversationMessage) => void): Promise<AIExchange> {
+  async send(query: string, currentConversation: Conversation | null, onPhase?: (state: AzrielState, detail?: string) => void, onMessage?: (message: ConversationMessage) => void, confirm?: (request: ConfirmationRequest) => Promise<boolean>): Promise<AIExchange> {
     const cleanQuery = query.trim();
     if (!cleanQuery) throw new Error("Digite uma pergunta para o Azriel.");
     if (cleanQuery.length > 4_000) throw new Error("A pergunta excede o limite de 4.000 caracteres.");
@@ -126,7 +126,7 @@ export class AICoreService {
     const intent = routeIntent(cleanQuery);
     if (this.provider.chatWithTools && !DETERMINISTIC_INTENTS.includes(intent.intent)) {
       try {
-        const agentAnswer = await this.answerWithAgent(cleanQuery, conversation.id, onPhase);
+        const agentAnswer = await this.answerWithAgent(cleanQuery, conversation.id, onPhase, confirm);
         const assistantMessage = await this.conversations.addMessage({ conversationId: conversation.id, role: "assistant", content: agentAnswer });
         onMessage?.(assistantMessage);
         onPhase?.("idle", "RESPOSTA CONCLUÍDA");
@@ -205,7 +205,7 @@ export class AICoreService {
     return { conversation, userMessage, assistantMessage };
   }
 
-  private async answerWithAgent(query: string, conversationId: string, onPhase?: (state: AzrielState, detail?: string) => void): Promise<string> {
+  private async answerWithAgent(query: string, conversationId: string, onPhase?: (state: AzrielState, detail?: string) => void, confirm?: (request: ConfirmationRequest) => Promise<boolean>): Promise<string> {
     onPhase?.("processing", "ANALISANDO SOLICITAÇÃO");
     const history = selectConversationHistory(await this.conversations.messages(conversationId), this.settings.contextMessageLimit, AGENT_HISTORY_CHARACTER_BUDGET)
       .map(({ role, content }) => ({ role, content }));
@@ -217,7 +217,11 @@ export class AICoreService {
       messages: withSingleSystem([...await this.personaMessages(), { role: "system" as const, content: `${agentPrompt}\nData local atual: ${localDateKey()}.` }, ...history]),
       query,
       conversationId,
-      onTool: (domain) => onPhase?.("tool", `CONSULTANDO ${domain.toUpperCase()}`),
+      onTool: (domain, permission) => onPhase?.(
+        permission === "read" ? "tool" : "executing",
+        permission === "confirm_write" ? "AGUARDANDO A PERMISSÃO DO SENHOR" : permission === "safe_write" ? `EXECUTANDO EM ${domain.toUpperCase()}` : `CONSULTANDO ${domain.toUpperCase()}`,
+      ),
+      confirm,
     });
     if (!result.content || hasPathologicalRepetition(result.content)) return repetitionFallback;
     return result.content;

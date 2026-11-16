@@ -1,8 +1,8 @@
-import type { AgentMessage, AgentResponse, AIToolPermission } from "../../types";
+import type { AgentMessage, AgentResponse, AIToolPermission, ConfirmationRequest } from "../../types";
 import type { AIProvider } from "../providers/AIProvider";
 import type { ToolRegistry } from "../tools/toolRegistry";
 
-export const AGENT_MAX_STEPS = 4;
+export const AGENT_MAX_STEPS = 6;
 export const AGENT_MAX_CALLS_PER_STEP = 4;
 export const AGENT_TOOL_RESULT_CHARACTERS = 6_000;
 
@@ -15,6 +15,8 @@ export interface AgentRunInput {
   query: string;
   conversationId?: string;
   onTool?: (domain: string, permission: AIToolPermission) => void;
+  /** Pergunta ao Senhor antes de excluir; sem ela (voz), exclusões são recusadas. */
+  confirm?: (request: ConfirmationRequest) => Promise<boolean>;
 }
 
 export interface AgentRunResult { content: string; truncated: boolean; toolsUsed: string[] }
@@ -49,7 +51,7 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
       const tool = input.registry.get(name);
       input.onTool?.(tool.domain, tool.permission ?? "read");
       try {
-        const result = await input.registry.execute(name, { query: input.query, conversationId: input.conversationId, args: call.function.arguments });
+        const result = await input.registry.execute(name, { query: input.query, conversationId: input.conversationId, args: call.function.arguments, confirm: input.confirm });
         toolsUsed.push(name);
         messages.push({ role: "tool", tool_name: name, content: serialize(result.empty ? { empty: true, data: result.data } : result.data) });
       } catch (error) {
