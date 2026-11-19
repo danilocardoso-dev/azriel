@@ -1,6 +1,7 @@
 import type { AgentMessage, AgentResponse, AIToolPermission, ConfirmationRequest } from "../../types";
 import type { AIProvider } from "../providers/AIProvider";
 import type { ToolRegistry } from "../tools/toolRegistry";
+import { abortable, isInterrupted, throwIfAborted } from "../interrupt";
 
 // Programar pede várias rodadas (ler, editar, testar, corrigir).
 export const AGENT_MAX_STEPS = 12;
@@ -18,6 +19,8 @@ export interface AgentRunInput {
   onTool?: (domain: string, permission: AIToolPermission) => void;
   /** Pergunta ao Senhor antes de excluir; sem ela (voz), exclusões são recusadas. */
   confirm?: (request: ConfirmationRequest) => Promise<boolean>;
+  /** ESC/Parar: interrompe entre rodadas, entre ferramentas e durante a espera pelo modelo. */
+  signal?: AbortSignal;
 }
 
 export interface AgentRunResult { content: string; truncated: boolean; toolsUsed: string[] }
@@ -40,7 +43,8 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
   let response: AgentResponse | null = null;
   for (let step = 0; step < AGENT_MAX_STEPS; step += 1) {
     const last = step === AGENT_MAX_STEPS - 1;
-    response = await input.provider.chatWithTools({ model: input.model, timeoutSeconds: input.timeoutSeconds, messages, tools: last ? [] : tools });
+    throwIfAborted(input.signal, toolsUsed);
+    response = await abortable(input.provider.chatWithTools({ model: input.model, timeoutSeconds: input.timeoutSeconds, messages, tools: last ? [] : tools }), input.signal, toolsUsed);
     if (!response.toolCalls.length) break;
     messages.push({ role: "assistant", content: response.content, tool_calls: response.toolCalls });
     for (const call of response.toolCalls.slice(0, AGENT_MAX_CALLS_PER_STEP)) {
@@ -50,12 +54,15 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
         continue;
       }
       const tool = input.registry.get(name);
+      throwIfAborted(input.signal, toolsUsed);
       input.onTool?.(tool.domain, tool.permission ?? "read");
+      // Conta como usada assim que começa: se o Senhor parar no meio, a ação pode já ter acontecido.
+      toolsUsed.push(name);
       try {
-        const result = await input.registry.execute(name, { query: input.query, conversationId: input.conversationId, args: call.function.arguments, confirm: input.confirm });
-        toolsUsed.push(name);
+        const result = await abortable(input.registry.execute(name, { query: input.query, conversationId: input.conversationId, args: call.function.arguments, confirm: input.confirm }), input.signal, toolsUsed);
         messages.push({ role: "tool", tool_name: name, content: serialize(result.empty ? { empty: true, data: result.data } : result.data) });
       } catch (error) {
+        if (isInterrupted(error)) throw error;
         messages.push({ role: "tool", tool_name: name, content: serialize({ error: error instanceof Error ? error.message : String(error) }) });
       }
     }

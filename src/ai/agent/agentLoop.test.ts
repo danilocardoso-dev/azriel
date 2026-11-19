@@ -83,6 +83,7 @@ describe("AICoreService com agente", () => {
       messages: async () => stored,
       addMessage: async (input) => { const message = { ...input, id: `m${stored.length}`, createdAt: "" }; stored.push(message); return message; },
       saveTaskReferences: async () => 0,
+      deleteMessage: async (id: string) => { const index = stored.findIndex((message) => message.id === id); if (index >= 0) stored.splice(index, 1); },
     };
   };
 

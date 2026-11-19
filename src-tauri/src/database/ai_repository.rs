@@ -123,6 +123,13 @@ pub fn delete_conversation(connection: &Connection, id: &str) -> Result<(), Stri
     Ok(())
 }
 
+/// Remove uma mensagem (ex.: pedido interrompido pelo Senhor antes de qualquer ação).
+pub fn delete_message(connection: &Connection, id: &str) -> Result<(), String> {
+    validate_id(id)?;
+    connection.execute("DELETE FROM messages WHERE id=?1", [id]).map_err(err)?;
+    Ok(())
+}
+
 pub fn clear_conversation_messages(
     connection: &mut Connection,
     conversation_id: &str,

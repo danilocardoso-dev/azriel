@@ -1463,3 +1463,8 @@ html.orb-window body::after {
     grid-column: auto;
   }
 }
+
+/* ESC / Parar */
+.ai-phase small { margin-left: auto; color: var(--text-dim); font: 9px var(--mono); letter-spacing: 0.12em; }
+.ai-composer .ai-composer__stop { border-color: var(--red-critical); background: rgba(255, 90, 107, 0.12); color: var(--red-critical); }
+.ai-composer .ai-composer__stop:hover { background: rgba(255, 90, 107, 0.26); box-shadow: 0 0 16px var(--red-glow); }

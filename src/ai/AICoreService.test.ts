@@ -33,6 +33,7 @@ describe("mensagem de sistema única", () => {
       messages: async () => stored,
       addMessage: async (input: { conversationId: string; role: "user" | "assistant"; content: string }) => { const message = { id: String(stored.length), createdAt: "", ...input } as ConversationMessage; stored.push(message); return message; },
       saveTaskReferences: async () => 0,
+      deleteMessage: async (id: string) => { const index = stored.findIndex((message) => message.id === id); if (index >= 0) stored.splice(index, 1); },
     };
     const registry = new ToolRegistry({} as ToolDependencies);
     const settings = { model: "m", timeoutSeconds: 10, contextMessageLimit: 10 } as AISettings;

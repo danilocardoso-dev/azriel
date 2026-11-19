@@ -16,7 +16,7 @@ const suggestions = [
 ];
 
 export function AICorePage() {
-  const { settings, status, engine, engineAvailable, conversations, selectedConversation, messages, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, send, pendingConfirmation, answerConfirmation } = useAI();
+  const { settings, status, engine, engineAvailable, conversations, selectedConversation, messages, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, send, stop, pendingConfirmation, answerConfirmation } = useAI();
   const [input, setInput] = useState("");
   const [conversationToDelete, setConversationToDelete] = useState<Conversation | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -30,12 +30,39 @@ export function AICorePage() {
   // O campo fica sempre pronto para a próxima mensagem.
   useEffect(() => { if (!sending) inputRef.current?.focus(); }, [sending, selectedConversation?.id]);
 
+  // ESC para o Azriel de qualquer ponto da tela (antes do atalho global, que sairia da tela cheia).
+  useEffect(() => {
+    if (!sending) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      stop();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [sending, stop]);
+
   async function submit(event: FormEvent) {
     event.preventDefault(); const query = input.trim(); if (!query || sending) return; setInput("");
-    try { await send(query); } catch { /* O contexto exibe a falha sem rejeição solta. */ }
+    try {
+      const { restoredText } = await send(query);
+      // Interrompido antes de qualquer ação: o texto volta para corrigir (sem apagar o que já foi digitado).
+      if (restoredText) setInput((current) => current.trim() ? `${restoredText}\n${current}` : restoredText);
+    } catch { /* O contexto exibe a falha sem rejeição solta. */ }
     finally { inputRef.current?.focus(); }
   }
-  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }
+  const lastUserMessage = [...messages].reverse().find((message) => message.role === "user")?.content ?? "";
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); return; }
+    // ↑ com o campo vazio: traz a última mensagem para reaproveitar.
+    if (event.key === "ArrowUp" && !input && lastUserMessage) {
+      event.preventDefault();
+      setInput(lastUserMessage);
+      const field = event.currentTarget;
+      window.requestAnimationFrame(() => field.setSelectionRange(field.value.length, field.value.length));
+    }
+  }
   async function removeConversation() {
     if (!conversationToDelete || deleting) return;
     setDeleting(true);
@@ -76,12 +103,14 @@ export function AICorePage() {
             <p>{pendingConfirmation.detail}</p>
             <div><button type="button" className="ai-confirm__allow" onClick={() => answerConfirmation(true)}>PERMITIR</button><button type="button" className="ai-confirm__deny" onClick={() => answerConfirmation(false)} autoFocus>NEGAR</button></div>
           </div>}
-          {sending && !pendingConfirmation && <div className="ai-phase"><span /><strong>{phase}</strong></div>}
+          {sending && !pendingConfirmation && <div className="ai-phase"><span /><strong>{phase}</strong><small>ESC para parar</small></div>}
           {loading && selectedConversation && <div className="ai-phase"><span /><strong>RECUPERANDO HISTÓRICO</strong></div>}
           {error && <div className="ai-terminal__error"><strong>AI CORE ALERT</strong><p>{error}</p></div>}
           {!engineAvailable && !loading && <div className="ai-terminal__offline"><strong>AI CORE OFFLINE</strong><p>{engine === "gemini" ? "Gemini sem chave ou sem modelo selecionado." : status?.error || "Ollama não encontrado no endpoint configurado."}</p><small>Os demais módulos permanecem operacionais. Troque o motor acima ou verifique em Configurações.</small></div>}
         </div>
-        <form className="ai-composer" onSubmit={submit}><span>&gt;</span><textarea ref={inputRef} autoFocus rows={5} placeholder="Digite um comando para o Azriel..." value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} disabled={!engineAvailable} aria-busy={sending} /><button disabled={!engineAvailable || sending || !input.trim()}>{sending ? "PROCESSANDO" : "ENVIAR"}</button></form>
+        <form className="ai-composer" onSubmit={submit}><span>&gt;</span><textarea ref={inputRef} autoFocus rows={5} placeholder={sending ? "O Azriel está trabalhando. ESC para parar." : "Digite um comando para o Azriel... (↑ traz a última mensagem)"} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} disabled={!engineAvailable} aria-busy={sending} />{sending
+          ? <button type="button" className="ai-composer__stop" onClick={stop} title="Parar (ESC)">■ PARAR</button>
+          : <button disabled={!engineAvailable || !input.trim()}>ENVIAR</button>}</form>
       </section>
     </div>
     {historyOpen && selectedConversation && settings && <AIConversationHistoryDialog conversation={selectedConversation} messages={messages} contextMessageLimit={settings.contextMessageLimit} busy={clearingHistory} onClose={() => setHistoryOpen(false)} onRequestClear={() => { setHistoryOpen(false); setHistoryClearPending(true); }} />}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AICoreService } from "../ai/AICoreService";
 import { ContextBuilder } from "../ai/context/ContextBuilder";
+import { isInterrupted } from "../ai/interrupt";
 import { loadPersona } from "../ai/persona";
 import { GeminiProvider } from "../ai/providers/GeminiProvider";
 import { OllamaProvider } from "../ai/providers/OllamaProvider";
@@ -8,6 +9,7 @@ import { ToolRegistry } from "../ai/tools/toolRegistry";
 import { routeIntent } from "../ai/router/toolRouter";
 import { preferredGeminiModel } from "../components/ai/aiSettingsFlow";
 import { aiRepository } from "../repositories/aiRepository";
+import { workspaceRepository } from "../repositories/workspaceRepository";
 import { conversationService } from "../services/conversationService";
 import type { AIEngine, AISettings, AISettingsInput, AzrielState, ConfirmationRequest, Conversation, ConversationMessage, LocalAiModelStatus, OllamaStatus, RemoteAISettings } from "../types";
 import { AIContext, type AIContextValue } from "./ai-context";
@@ -33,6 +35,7 @@ export function AIProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<ConfirmationRequest | null>(null);
   const confirmationResolver = useRef<((allowed: boolean) => void) | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const answerConfirmation = useCallback((allowed: boolean) => {
     const resolve = confirmationResolver.current;
     confirmationResolver.current = null;
@@ -223,6 +226,9 @@ export function AIProvider({ children }: { children: ReactNode }) {
     if (!engineAvailable && !worksWithoutModel) throw new Error(engine === "gemini" ? "Gemini sem chave ou modelo. Verifique em Configurações." : status?.error || "AI Core offline. Verifique o Ollama nas Configurações.");
     setSending(true); setError(null);
     let conversation = selectedConversation;
+    const createdNow = !conversation;
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       if (!conversation) {
         conversation = await conversationService.create(query);
@@ -233,14 +239,41 @@ export function AIProvider({ children }: { children: ReactNode }) {
       const effective = engine === "gemini" && remoteSettings ? { ...settings, model: remoteSettings.model } : settings;
       const registry = new ToolRegistry();
       const service = new AICoreService(provider, new ContextBuilder(registry), conversationService, effective, () => loadPersona(registry));
-      await service.send(query, conversation, (state, detail) => { setCoreState(state); if (detail) setPhase(detail); }, (message) => setMessages((current) => [...current, message]), requestConfirmation);
+      await service.send(query, conversation, (state, detail) => { if (controller.signal.aborted) return; setCoreState(state); if (detail) setPhase(detail); }, (message) => setMessages((current) => [...current, message]), requestConfirmation, controller.signal);
       setConversations(await conversationService.list());
+      return {};
     } catch (reason) {
+      if (isInterrupted(reason) && conversation) {
+        // ESC/Parar: sem alerta. A conversa mostra só o que de fato ficou no banco.
+        const remaining = await conversationService.messages(conversation.id).catch(() => [] as ConversationMessage[]);
+        if (createdNow && remaining.length === 0) {
+          // Conversa criada só para este pedido, que foi desfeito: some junto.
+          await conversationService.remove(conversation.id).catch(() => undefined);
+          setSelectedConversation(null);
+          setConversations((current) => current.filter((item) => item.id !== conversation!.id));
+        }
+        setMessages(remaining);
+        setCoreState("idle"); setPhase("INTERROMPIDO PELO SENHOR");
+        return { restoredText: reason.restoredText };
+      }
       const detail = messageOf(reason); setError(detail); setCoreState(/ollama|gemini|internet/i.test(detail) ? "offline" : "alert"); setPhase("FALHA NO AI CORE");
       if (conversation) setMessages(await conversationService.messages(conversation.id).catch(() => []));
       throw reason;
-    } finally { setSending(false); }
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
+      setSending(false);
+    }
   }, [engine, engineAvailable, remoteSettings, requestConfirmation, selectedConversation, settings, status]);
+
+  /** ESC/Parar: corta a espera pelo modelo, nega um pedido de permissão aberto e mata comandos em andamento. */
+  const stop = useCallback(() => {
+    const controller = abortRef.current;
+    if (!controller || controller.signal.aborted) return;
+    setPhase("INTERROMPENDO...");
+    controller.abort();
+    answerConfirmation(false);
+    void workspaceRepository.cancel().catch(() => undefined);
+  }, [answerConfirmation]);
 
   const selectModel = useCallback(async (model: string) => {
     if (engine === "gemini") { await updateRemote({ enabled: true, model }); return; }
@@ -248,7 +281,7 @@ export function AIProvider({ children }: { children: ReactNode }) {
     await updateSettings({ endpoint: settings.endpoint, model, contextMessageLimit: settings.contextMessageLimit, timeoutSeconds: settings.timeoutSeconds });
   }, [engine, settings, updateRemote, updateSettings]);
 
-  const value = useMemo<AIContextValue>(() => ({ settings, remoteSettings, remoteModels, engine, engineAvailable, setEngine, selectModel, saveRemoteKey, removeRemoteKey, refreshRemoteModels, status, modelLifecycle, modelTransition, conversations, selectedConversation, messages, coreState, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, reload, send, pendingConfirmation, answerConfirmation, updateSettings, probeOllama, refreshStatus, refreshModelLifecycle, loadLocalModel, unloadLocalModel }), [pendingConfirmation, answerConfirmation, settings, remoteSettings, remoteModels, engine, engineAvailable, setEngine, selectModel, saveRemoteKey, removeRemoteKey, refreshRemoteModels, status, modelLifecycle, modelTransition, conversations, selectedConversation, messages, coreState, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, reload, send, updateSettings, probeOllama, refreshStatus, refreshModelLifecycle, loadLocalModel, unloadLocalModel]);
+  const value = useMemo<AIContextValue>(() => ({ settings, remoteSettings, remoteModels, engine, engineAvailable, setEngine, selectModel, saveRemoteKey, removeRemoteKey, refreshRemoteModels, status, modelLifecycle, modelTransition, conversations, selectedConversation, messages, coreState, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, reload, send, stop, pendingConfirmation, answerConfirmation, updateSettings, probeOllama, refreshStatus, refreshModelLifecycle, loadLocalModel, unloadLocalModel }), [stop, pendingConfirmation, answerConfirmation, settings, remoteSettings, remoteModels, engine, engineAvailable, setEngine, selectModel, saveRemoteKey, removeRemoteKey, refreshRemoteModels, status, modelLifecycle, modelTransition, conversations, selectedConversation, messages, coreState, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, reload, send, updateSettings, probeOllama, refreshStatus, refreshModelLifecycle, loadLocalModel, unloadLocalModel]);
   return <AIContext.Provider value={value}>{children}</AIContext.Provider>;
 }
 

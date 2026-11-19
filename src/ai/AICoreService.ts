@@ -4,6 +4,7 @@ import agentPrompt from "../prompts/agent.txt?raw";
 import { localDateKey } from "../services/dateService";
 import type { AIRequest, AISettings, AIToolResult, AzrielState, ConfirmationRequest, Conversation, ConversationMessage, Task } from "../types";
 import { runAgent } from "./agent/agentLoop";
+import { abortable, InterruptedError, isInterrupted } from "./interrupt";
 import { routeIntent } from "./router/toolRouter";
 import { ContextBuilder } from "./context/ContextBuilder";
 import type { AIProvider } from "./providers/AIProvider";
@@ -13,6 +14,22 @@ export interface ConversationGateway {
   messages(conversationId: string): Promise<ConversationMessage[]>;
   addMessage(input: { conversationId: string; role: "user" | "assistant"; content: string }): Promise<ConversationMessage>;
   saveTaskReferences(conversationId: string, sourceMessageId: string, taskIds: string[]): Promise<number>;
+  deleteMessage(id: string): Promise<void>;
+}
+
+// O que cada ferramenta de escrita faz, para contar ao Senhor o que já tinha começado antes do ESC.
+const ACTION_LABELS: Record<string, string> = {
+  remember: "registrar memória", update_memory: "corrigir memória", create_task: "criar tarefa", update_task: "alterar tarefa", delete_task: "apagar tarefa",
+  create_note: "criar nota", update_note: "alterar nota", archive_note: "arquivar nota", delete_note: "apagar nota",
+  save_money_item: "salvar lançamento", set_money_paid: "marcar pagamento", delete_money_item: "apagar lançamento",
+  play_music: "tocar música", music_control: "controlar a música",
+  write_file: "gravar arquivo", edit_file: "editar arquivo", create_folder: "criar pasta", delete_path: "apagar arquivo ou pasta", run_command: "rodar comando",
+};
+
+/** Ações com efeito (não leituras) entre as ferramentas usadas, já sem repetição. */
+export function writesIn(toolsUsed: string[], registry: { has(name: string): boolean; get(name: never): { readonly: boolean } }): string[] {
+  const written = toolsUsed.filter((name) => registry.has(name) && !registry.get(name as never).readonly);
+  return [...new Set(written.map((name) => ACTION_LABELS[name] ?? name))];
 }
 
 const taskFromToolData = (value: unknown): value is Task => {
@@ -116,17 +133,34 @@ export class AICoreService {
     return persona ? [{ role: "system", content: persona }] : [];
   }
 
-  async send(query: string, currentConversation: Conversation | null, onPhase?: (state: AzrielState, detail?: string) => void, onMessage?: (message: ConversationMessage) => void, confirm?: (request: ConfirmationRequest) => Promise<boolean>): Promise<AIExchange> {
+  async send(query: string, currentConversation: Conversation | null, onPhase?: (state: AzrielState, detail?: string) => void, onMessage?: (message: ConversationMessage) => void, confirm?: (request: ConfirmationRequest) => Promise<boolean>, signal?: AbortSignal): Promise<AIExchange> {
     const cleanQuery = query.trim();
     if (!cleanQuery) throw new Error("Digite uma pergunta para o Azriel.");
     if (cleanQuery.length > 4_000) throw new Error("A pergunta excede o limite de 4.000 caracteres.");
     const conversation = currentConversation ?? await this.conversations.create(cleanQuery.slice(0, 54));
     const userMessage = await this.conversations.addMessage({ conversationId: conversation.id, role: "user", content: cleanQuery });
     onMessage?.(userMessage);
+    try {
+      return await this.respond(cleanQuery, conversation, userMessage, onPhase, onMessage, confirm, signal);
+    } catch (error) {
+      if (!isInterrupted(error)) throw error;
+      const acted = writesIn(error.toolsUsed, this.contextBuilder.registry);
+      if (!acted.length) {
+        // Nada foi feito: como se o pedido nunca tivesse existido; o texto volta para o campo.
+        await this.conversations.deleteMessage(userMessage.id).catch(() => undefined);
+        throw new InterruptedError(cleanQuery);
+      }
+      const note = await this.conversations.addMessage({ conversationId: conversation.id, role: "assistant", content: `⏹ **Interrompido pelo Senhor.** Antes de parar, eu já tinha começado a: ${acted.join(", ")}. Convém conferir o resultado antes de repetir o pedido.` });
+      onMessage?.(note);
+      throw new InterruptedError(null, error.toolsUsed);
+    }
+  }
+
+  private async respond(cleanQuery: string, conversation: Conversation, userMessage: ConversationMessage, onPhase?: (state: AzrielState, detail?: string) => void, onMessage?: (message: ConversationMessage) => void, confirm?: (request: ConfirmationRequest) => Promise<boolean>, signal?: AbortSignal): Promise<AIExchange> {
     const intent = routeIntent(cleanQuery);
     if (this.provider.chatWithTools && !DETERMINISTIC_INTENTS.includes(intent.intent)) {
       try {
-        const agentAnswer = await this.answerWithAgent(cleanQuery, conversation.id, onPhase, confirm);
+        const agentAnswer = await this.answerWithAgent(cleanQuery, conversation.id, onPhase, confirm, signal);
         const assistantMessage = await this.conversations.addMessage({ conversationId: conversation.id, role: "assistant", content: agentAnswer });
         onMessage?.(assistantMessage);
         onPhase?.("idle", "RESPOSTA CONCLUÍDA");
@@ -180,14 +214,14 @@ export class AICoreService {
       timeoutSeconds: this.settings.timeoutSeconds,
       messages: withSingleSystem([...systemMessages, ...history]),
     };
-    let response = await this.provider.chat(request);
+    let response = await abortable(this.provider.chat(request), signal);
     answer = response.content.trim();
     if (hasPathologicalRepetition(answer) || response.truncated) {
       const retryReason = response.truncated
         ? "A resposta anterior atingiu o limite. Responda novamente de forma completa e concisa, usando no máximo três parágrafos curtos."
         : "A resposta anterior entrou em repetição. Responda novamente de forma curta, factual e sem repetir frases ou termos.";
       onPhase?.("processing", response.truncated ? "REGENERANDO RESPOSTA COMPLETA" : "REGENERANDO RESPOSTA SEM REPETIÇÕES");
-      response = await this.provider.chat({
+      response = await abortable(this.provider.chat({
         ...request,
         generationProfile: "repetition-retry",
         messages: withSingleSystem([
@@ -195,7 +229,7 @@ export class AICoreService {
           { role: "system", content: retryReason },
           ...history,
         ]),
-      });
+      }), signal);
       answer = response.content.trim();
       if (hasPathologicalRepetition(answer) || response.truncated) answer = repetitionFallback;
     }
@@ -205,7 +239,7 @@ export class AICoreService {
     return { conversation, userMessage, assistantMessage };
   }
 
-  private async answerWithAgent(query: string, conversationId: string, onPhase?: (state: AzrielState, detail?: string) => void, confirm?: (request: ConfirmationRequest) => Promise<boolean>): Promise<string> {
+  private async answerWithAgent(query: string, conversationId: string, onPhase?: (state: AzrielState, detail?: string) => void, confirm?: (request: ConfirmationRequest) => Promise<boolean>, signal?: AbortSignal): Promise<string> {
     onPhase?.("processing", "ANALISANDO SOLICITAÇÃO");
     const history = selectConversationHistory(await this.conversations.messages(conversationId), this.settings.contextMessageLimit, AGENT_HISTORY_CHARACTER_BUDGET)
       .map(({ role, content }) => ({ role, content }));
@@ -222,6 +256,7 @@ export class AICoreService {
         permission === "confirm_write" ? "AGUARDANDO A PERMISSÃO DO SENHOR" : permission === "safe_write" ? `EXECUTANDO EM ${domain.toUpperCase()}` : `CONSULTANDO ${domain.toUpperCase()}`,
       ),
       confirm,
+      signal,
     });
     if (!result.content || hasPathologicalRepetition(result.content)) return repetitionFallback;
     return result.content;

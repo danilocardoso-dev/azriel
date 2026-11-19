@@ -64,6 +64,11 @@ pub fn delete_conversation(state: State<'_, DatabaseState>, id: String) -> Resul
     ai_repository::delete_conversation(&connection, &id)
 }
 #[tauri::command]
+pub fn delete_message(state: State<'_, DatabaseState>, id: String) -> Result<(), String> {
+    let connection = lock(&state)?;
+    ai_repository::delete_message(&connection, &id)
+}
+#[tauri::command]
 pub fn clear_conversation_messages(
     state: State<'_, DatabaseState>,
     conversation_id: String,

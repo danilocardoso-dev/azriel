@@ -9,5 +9,6 @@ export const conversationService = {
   messages: aiRepository.listMessages,
   addMessage: (input: Omit<ConversationMessageInput, "id">) => aiRepository.addMessage({ ...input, id: crypto.randomUUID() }),
   saveTaskReferences: aiRepository.saveTaskReferences,
+  deleteMessage: aiRepository.deleteMessage,
 };
 

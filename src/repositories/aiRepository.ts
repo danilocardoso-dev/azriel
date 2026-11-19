@@ -8,6 +8,7 @@ export const aiRepository = {
   createConversation: (id: string, title: string) => invokeDatabase<Conversation>("create_conversation", { input: { id, title } }),
   deleteConversation: (id: string) => invokeDatabase<void>("delete_conversation", { id }),
   clearConversationMessages: (conversationId: string) => invokeDatabase<number>("clear_conversation_messages", { conversationId }),
+  deleteMessage: (id: string) => invokeDatabase<void>("delete_message", { id }),
   listMessages: (conversationId: string) => invokeDatabase<ConversationMessage[]>("list_messages", { conversationId }),
   addMessage: (input: ConversationMessageInput) => invokeDatabase<ConversationMessage>("add_message", { input }),
   saveTaskReferences: (conversationId: string, sourceMessageId: string, taskIds: string[]) => invokeDatabase<number>("save_ai_task_references", { input: { conversationId, sourceMessageId, taskIds } }),

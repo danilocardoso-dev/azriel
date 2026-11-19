@@ -10,6 +10,7 @@ use std::{
     io::Read,
     path::{Component, Path, PathBuf},
     process::{Command, Stdio},
+    sync::Mutex,
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Manager, State};
@@ -278,7 +279,37 @@ fn encoded(script: &str) -> String {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CommandResult { exit_code: Option<i32>, stdout: String, stderr: String, timed_out: bool, duration_ms: u128, cwd: String }
+pub struct CommandResult { exit_code: Option<i32>, stdout: String, stderr: String, timed_out: bool, cancelled: bool, duration_ms: u128, cwd: String }
+
+/// Comandos rodando agora (PID) e os que o Senhor mandou parar (ESC no AI Core).
+static RUNNING: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+static CANCELLED: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+
+fn kill_tree(pid: u32) {
+    let mut taskkill = Command::new("taskkill");
+    taskkill.args(["/T", "/F", "/PID", &pid.to_string()]).stdout(Stdio::null()).stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        taskkill.creation_flags(0x0800_0000);
+    }
+    let _ = taskkill.status();
+}
+
+/// Para todos os comandos em andamento, com tudo o que eles abriram. Devolve quantos parou.
+pub fn cancel_running() -> usize {
+    let pids: Vec<u32> = RUNNING.lock().map(|running| running.clone()).unwrap_or_default();
+    if let Ok(mut cancelled) = CANCELLED.lock() { cancelled.extend(&pids); }
+    for pid in &pids { kill_tree(*pid); }
+    pids.len()
+}
+
+#[tauri::command]
+pub async fn cancel_commands(app: AppHandle) -> Result<usize, String> {
+    let stopped = blocking(|| Ok(cancel_running())).await?;
+    if stopped > 0 { log(&app, "comando interrompido", &format!("{stopped} comando(s)"), "parado pelo Senhor (ESC)", true); }
+    Ok(stopped)
+}
 
 pub fn run_powershell(script: &str, cwd: &Path, timeout: Duration) -> Result<CommandResult, String> {
     let mut command = Command::new("powershell.exe");
@@ -295,6 +326,8 @@ pub fn run_powershell(script: &str, cwd: &Path, timeout: Duration) -> Result<Com
     }
     let started = Instant::now();
     let mut child = command.spawn().map_err(|error| format!("Não foi possível iniciar o PowerShell: {error}"))?;
+    let pid = child.id();
+    if let Ok(mut running) = RUNNING.lock() { running.push(pid); }
     let mut stdout = child.stdout.take().ok_or("Saída indisponível")?;
     let mut stderr = child.stderr.take().ok_or("Saída de erro indisponível")?;
     let out_reader = std::thread::spawn(move || { let mut buffer = Vec::new(); let _ = stdout.read_to_end(&mut buffer); buffer });
@@ -305,15 +338,17 @@ pub fn run_powershell(script: &str, cwd: &Path, timeout: Duration) -> Result<Com
         if started.elapsed() > timeout {
             timed_out = true;
             // Mata a árvore inteira (npm, node...), não só o PowerShell.
-            let _ = Command::new("taskkill").args(["/T", "/F", "/PID", &child.id().to_string()]).stdout(Stdio::null()).stderr(Stdio::null()).status();
+            kill_tree(pid);
             let _ = child.kill();
             break child.wait().ok();
         }
         std::thread::sleep(Duration::from_millis(100));
     };
+    if let Ok(mut running) = RUNNING.lock() { running.retain(|item| *item != pid); }
+    let cancelled = CANCELLED.lock().map(|mut list| { let hit = list.contains(&pid); list.retain(|item| *item != pid); hit }).unwrap_or(false);
     let stdout = String::from_utf8_lossy(&out_reader.join().unwrap_or_default()).into_owned();
     let stderr = String::from_utf8_lossy(&err_reader.join().unwrap_or_default()).into_owned();
-    Ok(CommandResult { exit_code: status.and_then(|s| s.code()), stdout: tail(&stdout, MAX_OUTPUT_CHARS), stderr: tail(&stderr, MAX_OUTPUT_CHARS / 2), timed_out, duration_ms: started.elapsed().as_millis(), cwd: cwd.display().to_string() })
+    Ok(CommandResult { exit_code: status.and_then(|s| s.code()), stdout: tail(&stdout, MAX_OUTPUT_CHARS), stderr: tail(&stderr, MAX_OUTPUT_CHARS / 2), timed_out, cancelled, duration_ms: started.elapsed().as_millis(), cwd: cwd.display().to_string() })
 }
 
 fn quote(path: &Path) -> String {
@@ -404,6 +439,7 @@ pub async fn run_command(app: AppHandle, command: String, cwd: String, timeout_s
     let target = format!("{} › {}", cwd.display(), script.chars().take(300).collect::<String>());
     let result = blocking(move || run_powershell(&script, &cwd, timeout)).await;
     let detail = match &result {
+        Ok(done) if done.cancelled => "parado pelo Senhor".to_string(),
         Ok(done) if done.timed_out => format!("tempo esgotado após {} s", timeout.as_secs()),
         Ok(done) => format!("código {}", done.exit_code.map(|c| c.to_string()).unwrap_or_else(|| "?".into())),
         Err(error) => error.clone(),
@@ -502,5 +538,18 @@ mod tests {
         assert!(done.stdout.contains("olá \"Senhor\""), "saída: {}", done.stdout);
         let slow = run_powershell("Start-Sleep -Seconds 30", &dir, Duration::from_secs(2)).unwrap();
         assert!(slow.timed_out);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn cancel_stops_a_running_command() {
+        let dir = sandbox("cancel");
+        let worker = std::thread::spawn(move || run_powershell("Start-Sleep -Seconds 60", &dir, Duration::from_secs(120)).unwrap());
+        let started = Instant::now();
+        while RUNNING.lock().unwrap().is_empty() && started.elapsed() < Duration::from_secs(20) { std::thread::sleep(Duration::from_millis(50)); }
+        assert!(cancel_running() >= 1);
+        let done = worker.join().unwrap();
+        assert!(done.cancelled && !done.timed_out);
+        assert!(started.elapsed() < Duration::from_secs(30), "parou na hora, não esperou os 60 s");
     }
 }

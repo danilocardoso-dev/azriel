@@ -29,7 +29,10 @@ export interface AIContextValue {
   deleteConversation: (conversation: Conversation) => Promise<void>;
   clearConversationHistory: (conversation: Conversation) => Promise<number>;
   reload: () => Promise<void>;
-  send: (query: string) => Promise<void>;
+  /** Devolve o texto para o campo quando o Senhor interrompe antes de qualquer ação. */
+  send: (query: string) => Promise<{ restoredText?: string | null }>;
+  /** ESC/Parar. */
+  stop: () => void;
   /** Pedido de permissão do Azriel (exclusões) aguardando o Senhor no AI Core. */
   pendingConfirmation: ConfirmationRequest | null;
   answerConfirmation: (allowed: boolean) => void;
