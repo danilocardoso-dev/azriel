@@ -1,4 +1,4 @@
-import type { AgentRequest, AgentResponse, AIRequest, AIResponse, AISettings, AISettingsInput, RemoteAISettings, RemoteAISettingsInput, OpenRouterModel, OpenRouterSettings, OpenRouterSettingsInput, WebSearchResult, Conversation, ConversationMessage, ConversationMessageInput, LocalAiModelStatus, OllamaStatus } from "../types";
+import type { AgentRequest, AgentResponse, AIRequest, AIResponse, AISettings, AISettingsInput, RemoteAISettings, RemoteAISettingsInput, DeepSeekSettings, DeepSeekSettingsInput, WebSearchResult, Conversation, ConversationMessage, ConversationMessageInput, LocalAiModelStatus, OllamaStatus } from "../types";
 import { invokeDatabase } from "./tauri";
 
 export const aiRepository = {
@@ -35,11 +35,11 @@ export const aiRepository = {
     tools: request.tools,
     timeoutSeconds: request.timeoutSeconds,
   }),
-  // OpenRouter: chave e modelo ficam no backend; request.model é ignorado aqui.
-  getOpenRouterSettings: () => invokeDatabase<OpenRouterSettings>("get_openrouter_settings"),
-  updateOpenRouterSettings: (input: OpenRouterSettingsInput) => invokeDatabase<OpenRouterSettings>("update_openrouter_settings", { input: { ...input, apiKey: input.apiKey ?? null } }),
-  listOpenRouterModels: () => invokeDatabase<OpenRouterModel[]>("list_openrouter_models"),
-  openRouterAgentChat: (request: AgentRequest) => invokeDatabase<AgentResponse>("openrouter_agent_chat", { messages: request.messages, tools: request.tools, timeoutSeconds: request.timeoutSeconds }),
+  // DeepSeek: chave e modelo ficam no backend; request.model é ignorado aqui.
+  getDeepSeekSettings: () => invokeDatabase<DeepSeekSettings>("get_deepseek_settings"),
+  updateDeepSeekSettings: (input: DeepSeekSettingsInput) => invokeDatabase<DeepSeekSettings>("update_deepseek_settings", { input: { ...input, apiKey: input.apiKey ?? null } }),
+  listDeepSeekModels: () => invokeDatabase<string[]>("list_deepseek_models"),
+  deepSeekAgentChat: (request: AgentRequest) => invokeDatabase<AgentResponse>("deepseek_agent_chat", { messages: request.messages, tools: request.tools, timeoutSeconds: request.timeoutSeconds }),
   agentChat: (endpoint: string, request: AgentRequest) => invokeDatabase<AgentResponse>("ollama_agent_chat", {
     endpoint,
     model: request.model,

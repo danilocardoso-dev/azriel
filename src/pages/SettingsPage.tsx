@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AISettingsPanel } from "../components/ai/AISettingsPanel";
 import { GeminiSettingsPanel } from "../components/ai/GeminiSettingsPanel";
-import { OpenRouterSettingsPanel } from "../components/ai/OpenRouterSettingsPanel";
+import { DeepSeekSettingsPanel } from "../components/ai/DeepSeekSettingsPanel";
 import { IdentityPanel } from "../components/ai/IdentityPanel";
 import { MemoryPanel } from "../components/ai/MemoryPanel";
 import { ActionHistoryPanel } from "../components/ai/ActionHistoryPanel";
@@ -60,7 +60,7 @@ export function SettingsPage() {
         <ActionHistoryPanel />
         <AISettingsPanel />
         <GeminiSettingsPanel />
-        <OpenRouterSettingsPanel />
+        <DeepSeekSettingsPanel />
       </div>
     </section>
   );

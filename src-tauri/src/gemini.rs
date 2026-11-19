@@ -53,9 +53,9 @@ struct ModelEntry {
     id: String,
 }
 
-/// Um provedor com API compatível com OpenAI (Gemini, OpenRouter...). Mesmo formato, outro endereço.
+/// Um provedor com API compatível com OpenAI (Gemini, DeepSeek...). Mesmo formato, outro endereço.
 pub struct Compat {
-    /// Nome que aparece nas mensagens ao Senhor ("O Gemini...", "O OpenRouter...").
+    /// Nome que aparece nas mensagens ao Senhor ("O Gemini...", "O DeepSeek...").
     pub name: &'static str,
     pub base_url: &'static str,
     /// O Gemini rejeita `parameters` vazio; outros provedores aceitam.
@@ -563,12 +563,12 @@ mod tests {
 
     #[test]
     fn errors_name_the_provider_and_report_retries() {
-        let router = Compat { name: "OpenRouter", base_url: "https://x", strip_empty_parameters: false };
-        assert_eq!(status_error_for(&router, 401, 0), "Chave do OpenRouter inválida ou sem permissão");
+        let router = Compat { name: "DeepSeek", base_url: "https://x", strip_empty_parameters: false };
+        assert_eq!(status_error_for(&router, 401, 0), "Chave do DeepSeek inválida ou sem permissão");
         assert!(status_error_for(&router, 402, 0).contains("Sem créditos"));
         assert!(status_error_for(&GEMINI, 503, 2).contains("tentei 3 vezes"));
         assert!(RETRY_STATUSES.contains(&503) && !RETRY_STATUSES.contains(&429), "cota (429) não é sobrecarga");
-        assert!(empty_reason("OpenRouter", Some("length")).contains("do OpenRouter"));
+        assert!(empty_reason("DeepSeek", Some("length")).contains("do DeepSeek"));
     }
 
     #[test]

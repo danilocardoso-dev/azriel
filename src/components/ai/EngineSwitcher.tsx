@@ -2,15 +2,15 @@ import { useState } from "react";
 import { useAI } from "../../contexts/useAI";
 import type { AIEngine } from "../../types";
 
-/** Troca o motor (local, Gemini ou OpenRouter) e o modelo sem sair do AI Core. */
+/** Troca o motor (local, Gemini ou DeepSeek) e o modelo sem sair do AI Core. */
 export function EngineSwitcher({ disabled }: { disabled?: boolean }) {
-  const { settings, remoteSettings, remoteModels, openRouter, status, engine, activeModel, setEngine, selectModel } = useAI();
+  const { settings, remoteSettings, remoteModels, deepSeek, deepSeekModels, status, engine, activeModel, setEngine, selectModel } = useAI();
   const [busy, setBusy] = useState(false);
-  // No OpenRouter, o seletor mostra só os favoritos escolhidos em Configurações (o catálogo tem centenas).
-  const models = engine === "openrouter" ? openRouter?.favorites ?? [] : engine === "gemini" ? remoteModels : status?.models ?? [];
+  // Cada motor mostra os seus modelos (o do Gemini já vem enxuto: Flash, Flash Lite e Pro).
+  const models = engine === "deepseek" ? deepSeekModels : engine === "gemini" ? remoteModels : status?.models ?? [];
   const current = activeModel || (engine === "ollama" ? settings?.model ?? "" : "");
   const options = current && !models.includes(current) ? [current, ...models] : models;
-  const routerReady = Boolean(openRouter?.apiKeyConfigured && openRouter.model);
+  const deepSeekReady = Boolean(deepSeek?.apiKeyConfigured && deepSeek.model);
 
   async function run(action: () => Promise<void>) {
     if (busy) return;
@@ -25,7 +25,7 @@ export function EngineSwitcher({ disabled }: { disabled?: boolean }) {
     <div className="ai-engine__toggle">
       <button type="button" data-active={engine === "ollama"} disabled={locked} onClick={() => toggle("ollama")}>LOCAL</button>
       <button type="button" data-active={engine === "gemini"} disabled={locked || !remoteSettings?.apiKeyConfigured} title={remoteSettings?.apiKeyConfigured ? "Usar o Gemini" : "Cadastre a chave do Gemini em Configurações"} onClick={() => toggle("gemini")}>GEMINI</button>
-      <button type="button" data-active={engine === "openrouter"} disabled={locked || !routerReady} title={routerReady ? "Usar o OpenRouter (DeepSeek, Kimi e outros)" : "Cadastre a chave do OpenRouter e escolha um modelo em Configurações"} onClick={() => toggle("openrouter")}>OPENROUTER</button>
+      <button type="button" data-active={engine === "deepseek"} disabled={locked || !deepSeekReady} title={deepSeekReady ? "Usar o DeepSeek" : "Cadastre a chave do DeepSeek e escolha um modelo em Configurações"} onClick={() => toggle("deepseek")}>DEEPSEEK</button>
     </div>
     <select aria-label="Modelo" value={current} disabled={locked || !options.length} onChange={(event) => void run(() => selectModel(event.target.value))}>
       {!options.length && <option value="">SEM MODELOS</option>}

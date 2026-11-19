@@ -4,7 +4,7 @@ pub mod daily_models;
 pub mod daily_repository;
 pub mod memory_models;
 pub mod memory_repository;
-pub mod openrouter_repository;
+pub mod deepseek_repository;
 pub mod money_models;
 pub mod money_repository;
 
@@ -49,6 +49,7 @@ fn purge_retired_schema(connection: &Connection) -> Result<(), String> {
         "projects", "project_knowledge", "knowledge_areas", "knowledge_history", "education",
         "registered_actions", "applications", "workspaces", "registered_urls", "action_history",
         "automation_confirmation_requests", "routine_history", "engineering_calibration",
+        "openrouter_settings",
     ];
     let mut statement = connection
         .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")

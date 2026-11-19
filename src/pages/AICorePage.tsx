@@ -119,7 +119,7 @@ export function AICorePage() {
           {sending && !pendingConfirmation && <div className="ai-phase"><span /><strong>{phase}</strong><small>ESC para parar</small></div>}
           {loading && selectedConversation && <div className="ai-phase"><span /><strong>RECUPERANDO HISTÓRICO</strong></div>}
           {error && <div className="ai-terminal__error"><strong>AI CORE ALERT</strong><p>{error}</p></div>}
-          {!engineAvailable && !loading && <div className="ai-terminal__offline"><strong>AI CORE OFFLINE</strong><p>{engine === "openrouter" ? "OpenRouter sem chave ou sem modelo selecionado." : engine === "gemini" ? "Gemini sem chave ou sem modelo selecionado." : status?.error || "Ollama não encontrado no endpoint configurado."}</p><small>Os demais módulos permanecem operacionais. Troque o motor acima ou verifique em Configurações.</small></div>}
+          {!engineAvailable && !loading && <div className="ai-terminal__offline"><strong>AI CORE OFFLINE</strong><p>{engine === "deepseek" ? "DeepSeek sem chave ou sem modelo selecionado." : engine === "gemini" ? "Gemini sem chave ou sem modelo selecionado." : status?.error || "Ollama não encontrado no endpoint configurado."}</p><small>Os demais módulos permanecem operacionais. Troque o motor acima ou verifique em Configurações.</small></div>}
         </div>
         <form className="ai-composer" onSubmit={submit} onClick={() => inputRef.current?.focus()}>
           <div className="ai-composer__card">

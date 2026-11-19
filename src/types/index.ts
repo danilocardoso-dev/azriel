@@ -17,11 +17,9 @@ export interface AISettings { provider:"ollama"; endpoint:string; model:string; 
 export type AISettingsInput=Pick<AISettings,"endpoint"|"model"|"contextMessageLimit"|"timeoutSeconds">;
 export interface RemoteAISettings { provider:"gemini"; enabled:boolean; model:string; apiKeyConfigured:boolean; updatedAt:string }
 export interface RemoteAISettingsInput { enabled:boolean; model:string; apiKey?:string|null }
-export type AIEngine="ollama"|"gemini"|"openrouter";
-export interface OpenRouterSettings { enabled:boolean; model:string; favorites:string[]; apiKeyConfigured:boolean; updatedAt:string }
-export interface OpenRouterSettingsInput { enabled:boolean; model:string; favorites:string[]; apiKey?:string|null }
-/** Modelo do catálogo do OpenRouter (só os que aceitam ferramentas), preço em US$ por milhão de tokens. */
-export interface OpenRouterModel { id:string; name:string; contextLength:number; promptPerMillion:number; completionPerMillion:number; free:boolean }
+export type AIEngine="ollama"|"gemini"|"deepseek";
+export interface DeepSeekSettings { enabled:boolean; model:string; apiKeyConfigured:boolean; updatedAt:string }
+export interface DeepSeekSettingsInput { enabled:boolean; model:string; apiKey?:string|null }
 export interface NowPlaying { title:string; artist:string; album:string; source:string; playing:boolean; positionSeconds:number|null; durationSeconds:number|null; artwork:string|null }
 export type MediaAction="toggle"|"next"|"previous";
 export interface WebSource { title:string; url:string }
