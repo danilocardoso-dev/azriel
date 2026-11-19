@@ -53,7 +53,6 @@ export function MoneyPage() {
 
   return <section className="module-page money-page">
     <header className="money-head">
-      <div><span>MÓDULO // FIN</span><h1>Finanças</h1></div>
       <nav className="money-month" aria-label="Mês">
         <button type="button" onClick={() => setMonth((current) => shiftMonth(current, -1))} aria-label="Mês anterior">‹</button>
         <strong>{monthLabel(month)}</strong>

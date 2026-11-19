@@ -2,7 +2,6 @@ import { useState } from "react";
 import { NoteDialog } from "../components/daily/NoteDialog";
 import { QuickCapture } from "../components/daily/QuickCapture";
 import { TaskDialog } from "../components/daily/TaskDialog";
-import { ModuleIntro } from "../components/layout/ModuleIntro";
 import { useDailyOperations } from "../contexts/useDailyOperations";
 import { formatLocalDate, localDateKey } from "../services/dateService";
 import type { DailyView, TaskPriority } from "../types";
@@ -48,12 +47,6 @@ export function DailyOperationsPage({ initialCapture }: { initialCapture?: "task
 
   return (
     <section className="module-page daily-page">
-      <ModuleIntro
-        code="OPS-09"
-        title="Operações Diárias"
-        description="Clique em uma tarefa ou nota para ver os detalhes, editar, definir prazo ou excluir."
-        metric={`${counters.pending} PENDENTES // ${counters.today} HOJE`}
-      />
 
       <QuickCapture initialKind={initialCapture} autoFocus={Boolean(initialCapture)} />
 

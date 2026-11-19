@@ -115,28 +115,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 
 /* ==========================================================================
-   MODULE INTRO & TITLES
+   TÍTULOS (eyebrow dos painéis e diálogos)
    ========================================================================== */
-.module-intro {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 24px;
-  padding: 0 0 18px;
-  border-bottom: 1px solid var(--line-soft);
-  margin-bottom: 20px;
-  position: relative;
-}
-.module-intro::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  bottom: -1px;
-  width: 60px;
-  height: 1px;
-  background: var(--cyan);
-  box-shadow: 0 0 10px var(--cyan);
-}
 .eyebrow {
   color: var(--cyan);
   font: 700 9px var(--mono);
@@ -144,30 +124,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   text-transform: uppercase;
   margin: 0 0 6px;
   display: block;
-}
-.module-intro h1 {
-  margin: 0 0 4px;
-  font-size: clamp(26px, 2.5vw, 38px);
-  font-weight: 200;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-main);
-}
-.module-intro p {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.5;
-}
-.module-intro__metric {
-  color: var(--cyan);
-  font: 700 10px var(--mono);
-  letter-spacing: 0.15em;
-  padding: 6px 12px;
-  border: 1px solid var(--cyan-border);
-  background: rgba(70, 233, 255, 0.04);
-  box-shadow: 0 0 12px rgba(70, 233, 255, 0.08);
-  white-space: nowrap;
 }
 
 /* ==========================================================================

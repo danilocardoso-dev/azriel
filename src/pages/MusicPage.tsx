@@ -18,10 +18,9 @@ export function MusicPage({ webPlayer }: { webPlayer: SpotifyWebPlayer }) {
   useEffect(() => { const first = window.setTimeout(() => void refreshStatus(), 0); return () => window.clearTimeout(first); }, [refreshStatus]);
 
   return <section className="module-page music-page">
-    <header className="music-page__head">
-      <div><span>MÓDULO // MUS-01</span><h1>Música</h1></div>
-      {status?.connected && <button type="button" onClick={() => void spotifyRepository.disconnect().then(setStatus).catch((reason) => setError(messageOf(reason)))}>DESCONECTAR SPOTIFY</button>}
-    </header>
+    {status?.connected && <header className="music-page__head">
+      <button type="button" onClick={() => void spotifyRepository.disconnect().then(setStatus).catch((reason) => setError(messageOf(reason)))}>DESCONECTAR SPOTIFY</button>
+    </header>}
     {error && <p className="music-error" role="alert">{error} <button type="button" onClick={() => setError(null)}>×</button></p>}
     {!status ? <p className="music-muted">Carregando...</p>
       : !status.clientIdConfigured ? <SpotifySetup status={status} onSaved={setStatus} onError={setError} />

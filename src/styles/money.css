@@ -1,6 +1,6 @@
 /* Finanças — mesmo idioma do Núcleo: vidro escuro, cantos suaves, ciano. */
 .money-page { gap: 16px; }
-.money-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.money-head { display: flex; justify-content: flex-start; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
 .money-head span { color: var(--cyan-dim); font: 10px var(--mono); letter-spacing: 0.2em; }
 .money-head h1 { margin: 4px 0 0; color: var(--text-main); font: 200 32px var(--sans); letter-spacing: 0.06em; }
 .money-month { display: flex; align-items: center; gap: 10px; }

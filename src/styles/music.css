@@ -1,6 +1,6 @@
 /* Música — player do Spotify no idioma do Núcleo: vidro escuro, cantos suaves, ciano. */
 .music-page { gap: 16px; }
-.music-page__head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 8px; }
+.music-page__head { display: flex; justify-content: flex-end; align-items: flex-end; gap: 16px; margin-bottom: 8px; }
 .music-page__head span { color: var(--cyan-dim); font: 10px var(--mono); letter-spacing: 0.2em; }
 .music-page__head h1 { margin: 4px 0 0; color: var(--text-main); font: 200 32px var(--sans); letter-spacing: 0.06em; }
 .music-page__head button { padding: 8px 14px; border: 1px solid var(--line-soft); border-radius: 999px; color: var(--text-muted); font: 700 9px var(--mono); letter-spacing: 0.12em; }
