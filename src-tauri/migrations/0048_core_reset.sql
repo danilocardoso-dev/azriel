@@ -168,3 +168,8 @@ CREATE TABLE IF NOT EXISTS azriel_actions (
   ok INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_azriel_actions_created ON azriel_actions(created_at);
+-- Passos do agente (arquivos lidos/editados, comandos, ações) de cada resposta, para mostrar como no Claude.
+CREATE TABLE IF NOT EXISTS message_activity (
+  message_id TEXT PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+  steps TEXT NOT NULL DEFAULT '[]'
+);

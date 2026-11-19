@@ -1,7 +1,8 @@
-import type { AgentMessage, AgentResponse, AIToolPermission, ConfirmationRequest } from "../../types";
+import type { AgentMessage, AgentResponse, AgentStep, AIToolPermission, ConfirmationRequest } from "../../types";
 import type { AIProvider } from "../providers/AIProvider";
 import type { ToolRegistry } from "../tools/toolRegistry";
-import { abortable, isInterrupted, throwIfAborted } from "../interrupt";
+import { abortable, InterruptedError, isInterrupted, throwIfAborted } from "../interrupt";
+import { finishedStep, startedStep } from "./steps";
 
 // Programar pede várias rodadas (ler, editar, testar, corrigir).
 export const AGENT_MAX_STEPS = 12;
@@ -21,9 +22,11 @@ export interface AgentRunInput {
   confirm?: (request: ConfirmationRequest) => Promise<boolean>;
   /** ESC/Parar: interrompe entre rodadas, entre ferramentas e durante a espera pelo modelo. */
   signal?: AbortSignal;
+  /** Cada passo ao começar e ao terminar (mesmo id), para a tela mostrar ao vivo. */
+  onStep?: (step: AgentStep) => void;
 }
 
-export interface AgentRunResult { content: string; truncated: boolean; toolsUsed: string[] }
+export interface AgentRunResult { content: string; truncated: boolean; toolsUsed: string[]; steps: AgentStep[] }
 
 const serialize = (value: unknown) => {
   const text = JSON.stringify(value ?? null);
@@ -40,7 +43,14 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
   const tools = input.registry.agentTools();
   const messages = [...input.messages];
   const toolsUsed: string[] = [];
+  const steps: AgentStep[] = [];
+  const report = (step: AgentStep) => {
+    const index = steps.findIndex((item) => item.id === step.id);
+    if (index >= 0) steps[index] = step; else steps.push(step);
+    input.onStep?.(step);
+  };
   let response: AgentResponse | null = null;
+  try {
   for (let step = 0; step < AGENT_MAX_STEPS; step += 1) {
     const last = step === AGENT_MAX_STEPS - 1;
     throwIfAborted(input.signal, toolsUsed);
@@ -58,14 +68,25 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
       input.onTool?.(tool.domain, tool.permission ?? "read");
       // Conta como usada assim que começa: se o Senhor parar no meio, a ação pode já ter acontecido.
       toolsUsed.push(name);
+      const id = steps.length + 1;
+      report(startedStep(id, name, tool.domain, call.function.arguments));
       try {
         const result = await abortable(input.registry.execute(name, { query: input.query, conversationId: input.conversationId, args: call.function.arguments, confirm: input.confirm }), input.signal, toolsUsed);
+        report(finishedStep(id, name, tool.domain, call.function.arguments, result.data));
         messages.push({ role: "tool", tool_name: name, content: serialize(result.empty ? { empty: true, data: result.data } : result.data) });
       } catch (error) {
         if (isInterrupted(error)) throw error;
-        messages.push({ role: "tool", tool_name: name, content: serialize({ error: error instanceof Error ? error.message : String(error) }) });
+        const message = error instanceof Error ? error.message : String(error);
+        report(finishedStep(id, name, tool.domain, call.function.arguments, null, message));
+        messages.push({ role: "tool", tool_name: name, content: serialize({ error: message }) });
       }
     }
   }
-  return { content: response?.content.trim() ?? "", truncated: response?.truncated ?? false, toolsUsed };
+  } catch (error) {
+    if (!isInterrupted(error)) throw error;
+    // O passo que estava rodando fica marcado como interrompido; os passos seguem junto do erro.
+    for (const step of steps.filter((item) => item.status === "running")) report({ ...step, label: "Interrompido", status: "error" });
+    throw new InterruptedError(null, toolsUsed, steps);
+  }
+  return { content: response?.content.trim() ?? "", truncated: response?.truncated ?? false, toolsUsed, steps };
 }

@@ -11,7 +11,7 @@ import { preferredGeminiModel } from "../components/ai/aiSettingsFlow";
 import { aiRepository } from "../repositories/aiRepository";
 import { workspaceRepository } from "../repositories/workspaceRepository";
 import { conversationService } from "../services/conversationService";
-import type { AIEngine, AISettings, AISettingsInput, AzrielState, ConfirmationRequest, Conversation, ConversationMessage, LocalAiModelStatus, OllamaStatus, RemoteAISettings } from "../types";
+import type { AgentStep, AIEngine, AISettings, AISettingsInput, AzrielState, ConfirmationRequest, Conversation, ConversationMessage, LocalAiModelStatus, OllamaStatus, RemoteAISettings } from "../types";
 import { AIContext, type AIContextValue } from "./ai-context";
 
 const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -34,6 +34,8 @@ export function AIProvider({ children }: { children: ReactNode }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<ConfirmationRequest | null>(null);
+  // Passos do agente ao vivo (o que ele está fazendo agora), como as linhas de ferramenta do Claude.
+  const [liveSteps, setLiveSteps] = useState<AgentStep[]>([]);
   const confirmationResolver = useRef<((allowed: boolean) => void) | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const answerConfirmation = useCallback((allowed: boolean) => {
@@ -224,7 +226,7 @@ export function AIProvider({ children }: { children: ReactNode }) {
     const localIntent = routeIntent(query).intent;
     const worksWithoutModel = ["critical_tasks", "priority_tasks", "complete_task_reference", "unsupported_internal"].includes(localIntent);
     if (!engineAvailable && !worksWithoutModel) throw new Error(engine === "gemini" ? "Gemini sem chave ou modelo. Verifique em Configurações." : status?.error || "AI Core offline. Verifique o Ollama nas Configurações.");
-    setSending(true); setError(null);
+    setSending(true); setError(null); setLiveSteps([]);
     let conversation = selectedConversation;
     const createdNow = !conversation;
     const controller = new AbortController();
@@ -239,7 +241,7 @@ export function AIProvider({ children }: { children: ReactNode }) {
       const effective = engine === "gemini" && remoteSettings ? { ...settings, model: remoteSettings.model } : settings;
       const registry = new ToolRegistry();
       const service = new AICoreService(provider, new ContextBuilder(registry), conversationService, effective, () => loadPersona(registry));
-      await service.send(query, conversation, (state, detail) => { if (controller.signal.aborted) return; setCoreState(state); if (detail) setPhase(detail); }, (message) => setMessages((current) => [...current, message]), requestConfirmation, controller.signal);
+      await service.send(query, conversation, (state, detail) => { if (controller.signal.aborted) return; setCoreState(state); if (detail) setPhase(detail); }, (message) => setMessages((current) => [...current, message]), requestConfirmation, controller.signal, (step) => setLiveSteps((current) => current.some((item) => item.id === step.id) ? current.map((item) => item.id === step.id ? step : item) : [...current, step]));
       setConversations(await conversationService.list());
       return {};
     } catch (reason) {
@@ -261,6 +263,7 @@ export function AIProvider({ children }: { children: ReactNode }) {
       throw reason;
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
+      setLiveSteps([]);
       setSending(false);
     }
   }, [engine, engineAvailable, remoteSettings, requestConfirmation, selectedConversation, settings, status]);
@@ -281,7 +284,7 @@ export function AIProvider({ children }: { children: ReactNode }) {
     await updateSettings({ endpoint: settings.endpoint, model, contextMessageLimit: settings.contextMessageLimit, timeoutSeconds: settings.timeoutSeconds });
   }, [engine, settings, updateRemote, updateSettings]);
 
-  const value = useMemo<AIContextValue>(() => ({ settings, remoteSettings, remoteModels, engine, engineAvailable, setEngine, selectModel, saveRemoteKey, removeRemoteKey, refreshRemoteModels, status, modelLifecycle, modelTransition, conversations, selectedConversation, messages, coreState, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, reload, send, stop, pendingConfirmation, answerConfirmation, updateSettings, probeOllama, refreshStatus, refreshModelLifecycle, loadLocalModel, unloadLocalModel }), [stop, pendingConfirmation, answerConfirmation, settings, remoteSettings, remoteModels, engine, engineAvailable, setEngine, selectModel, saveRemoteKey, removeRemoteKey, refreshRemoteModels, status, modelLifecycle, modelTransition, conversations, selectedConversation, messages, coreState, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, reload, send, updateSettings, probeOllama, refreshStatus, refreshModelLifecycle, loadLocalModel, unloadLocalModel]);
+  const value = useMemo<AIContextValue>(() => ({ settings, remoteSettings, remoteModels, engine, engineAvailable, setEngine, selectModel, saveRemoteKey, removeRemoteKey, refreshRemoteModels, status, modelLifecycle, modelTransition, conversations, selectedConversation, messages, coreState, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, reload, send, stop, liveSteps, pendingConfirmation, answerConfirmation, updateSettings, probeOllama, refreshStatus, refreshModelLifecycle, loadLocalModel, unloadLocalModel }), [stop, liveSteps, pendingConfirmation, answerConfirmation, settings, remoteSettings, remoteModels, engine, engineAvailable, setEngine, selectModel, saveRemoteKey, removeRemoteKey, refreshRemoteModels, status, modelLifecycle, modelTransition, conversations, selectedConversation, messages, coreState, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, reload, send, updateSettings, probeOllama, refreshStatus, refreshModelLifecycle, loadLocalModel, unloadLocalModel]);
   return <AIContext.Provider value={value}>{children}</AIContext.Provider>;
 }
 

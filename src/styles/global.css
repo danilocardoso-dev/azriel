@@ -583,74 +583,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   animation: spin 0.8s linear infinite;
 }
 
-/* AI Prompt Composer */
-.ai-composer {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 20px;
-  border-top: 1px solid var(--line-soft);
-  background: rgba(2, 10, 16, 0.95);
-  backdrop-filter: blur(12px);
-}
-.ai-composer > span {
-  font: 700 18px var(--mono);
-  color: var(--cyan);
-  text-shadow: 0 0 10px var(--cyan);
-  user-select: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.ai-composer textarea {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 48px;
-  max-height: 140px;
-  height: 48px;
-  resize: vertical;
-  padding: 12px 16px;
-  border: 1px solid var(--line);
-  background: rgba(1, 8, 14, 0.9);
-  color: #effdff;
-  font: 500 13px var(--mono);
-  line-height: 1.4;
-  outline: none;
-  transition: all 0.25s ease;
-  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
-}
-.ai-composer textarea:focus {
-  border-color: var(--cyan);
-  box-shadow: 0 0 18px var(--cyan-glow);
-  background: rgba(3, 16, 26, 0.95);
-}
-.ai-composer button {
-  height: 48px;
-  padding: 0 28px;
-  border: 1px solid var(--cyan);
-  background: linear-gradient(135deg, rgba(70, 233, 255, 0.22), rgba(0, 168, 199, 0.12));
-  color: #effdff;
-  font: 700 11px var(--mono);
-  letter-spacing: 0.14em;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.25s ease;
-  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
-}
-.ai-composer button:hover:not(:disabled) {
-  background: linear-gradient(135deg, rgba(70, 233, 255, 0.4), rgba(0, 168, 199, 0.25));
-  box-shadow: 0 0 20px var(--cyan);
-  color: #fff;
-  transform: translateY(-1px);
-}
-.ai-composer button:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-  border-color: var(--line-soft);
-  background: rgba(70, 233, 255, 0.03);
-}
-
 /* ==========================================================================
    DAILY OPERATIONS (TACTICAL TASK & NOTES DECK)
    ========================================================================== */
@@ -1466,5 +1398,3 @@ html.orb-window body::after {
 
 /* ESC / Parar */
 .ai-phase small { margin-left: auto; color: var(--text-dim); font: 9px var(--mono); letter-spacing: 0.12em; }
-.ai-composer .ai-composer__stop { border-color: var(--red-critical); background: rgba(255, 90, 107, 0.12); color: var(--red-critical); }
-.ai-composer .ai-composer__stop:hover { background: rgba(255, 90, 107, 0.26); box-shadow: 0 0 16px var(--red-glow); }

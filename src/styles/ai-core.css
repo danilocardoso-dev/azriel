@@ -1,0 +1,169 @@
+/* ==========================================================================
+   AI CORE — conversa no estilo do Claude: texto livre, bolha do Senhor,
+   passos do agente visíveis e campo grande e arredondado.
+   ========================================================================== */
+
+/* Cantos suaves no lugar do visual "quadrado" */
+.ai-layout { border-radius: 16px; overflow: hidden; }
+.ai-conversations__new { border-radius: 10px; }
+.ai-conversation-item { border-radius: 10px; }
+.ai-terminal__header-actions button,
+.ai-terminal__header-actions select,
+.ai-terminal__header-actions i { border-radius: 8px; }
+.ai-confirm, .ai-terminal__error, .ai-terminal__offline, .ai-welcome { border-radius: 14px; }
+
+/* Coluna de leitura */
+.ai-terminal__messages { padding: 28px clamp(16px, 5vw, 56px) 12px; gap: 22px; }
+.ai-turn { width: 100%; max-width: 780px; margin: 0 auto; }
+
+/* Mensagem do Senhor: bolha à direita */
+.ai-turn--user { display: flex; justify-content: flex-end; }
+.ai-turn--user > p {
+  margin: 0;
+  max-width: min(80%, 620px);
+  padding: 10px 15px;
+  border: 1px solid var(--cyan-border-soft);
+  border-radius: 18px 18px 6px 18px;
+  background: rgba(70, 233, 255, 0.08);
+  color: var(--text-main);
+  font: 14px/1.6 var(--sans);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Resposta do Azriel: texto livre, sem caixa */
+.ai-turn--assistant .ai-markdown { padding: 0; font-size: 14px; line-height: 1.72; color: #dcf3f8; }
+.ai-turn--assistant .ai-markdown pre { border-radius: 10px; }
+.ai-turn--assistant .ai-markdown code { border-radius: 5px; }
+
+/* Passos do agente (o que ele fez) */
+.agent-steps { margin: 0 0 12px; display: grid; gap: 2px; }
+.agent-steps ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.agent-steps__summary,
+.agent-step__line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-muted);
+  font: 12.5px/1.4 var(--sans);
+  text-align: left;
+}
+.agent-steps__summary { cursor: pointer; color: var(--text-muted); }
+.agent-step__line:not(:disabled) { cursor: pointer; }
+.agent-steps__summary:hover,
+.agent-step__line:not(:disabled):hover { background: rgba(70, 233, 255, 0.05); color: var(--text-main); }
+.agent-step__line:disabled { cursor: default; opacity: 1; }
+.agent-step__line > i {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font: 700 10px var(--sans);
+  font-style: normal;
+}
+.agent-step[data-status="ok"] .agent-step__line > i { color: var(--green-online); background: rgba(80, 223, 170, 0.12); }
+.agent-step[data-status="error"] .agent-step__line > i { color: var(--red-critical); background: rgba(255, 90, 107, 0.12); }
+.agent-step[data-status="denied"] .agent-step__line > i { color: var(--amber-alert); background: rgba(255, 182, 75, 0.12); }
+.agent-step[data-status="running"] .agent-step__line > i::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--cyan);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.agent-step__line > b { flex: none; color: var(--text-main); font-weight: 500; }
+.agent-step[data-status="error"] .agent-step__line > b { color: #ffb3bb; }
+.agent-step__target {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: rgba(70, 233, 255, 0.06);
+  color: #a9f5ff;
+  font: 11.5px var(--mono);
+}
+.agent-step__target > span { color: var(--text-dim); }
+.agent-step__diff { flex: none; display: flex; gap: 6px; font: 600 11.5px var(--mono); }
+.agent-step__diff ins { color: var(--green-online); text-decoration: none; }
+.agent-step__diff del { color: var(--red-critical); text-decoration: none; }
+.agent-steps__summary > em,
+.agent-step__line > em { flex: none; margin-left: auto; color: var(--text-dim); font-style: normal; font-size: 10px; }
+.agent-steps__summary > em { margin-left: 0; }
+.agent-step__detail {
+  margin: 2px 0 6px 32px;
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: #01090d;
+  color: #cfe9ee;
+  font: 11.5px/1.5 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.agent-steps[data-live="true"] { margin-bottom: 0; }
+
+/* "Pensando" mais discreto */
+.ai-phase { max-width: 780px; color: var(--text-muted); }
+.ai-phase small { margin-left: auto; color: var(--text-dim); font: 9px var(--mono); letter-spacing: 0.12em; }
+
+/* Campo de mensagem: cartão grande e arredondado que cresce com o texto */
+.ai-composer { padding: 10px clamp(16px, 5vw, 56px) 18px; background: transparent; cursor: text; }
+.ai-composer__card {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 14px 12px 10px 18px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(4, 18, 27, 0.94);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.35);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.ai-composer__card:focus-within { border-color: var(--cyan-dim); box-shadow: 0 0 0 1px rgba(70, 233, 255, 0.12), 0 10px 34px rgba(0, 0, 0, 0.4); }
+.ai-composer__card textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 26px;
+  padding: 2px 6px 2px 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow-y: auto;
+  background: transparent;
+  color: var(--text-main);
+  font: 14.5px/1.6 var(--sans);
+}
+.ai-composer__card textarea::placeholder { color: var(--text-dim); }
+.ai-composer__card textarea:disabled { cursor: not-allowed; }
+.ai-composer__bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; }
+.ai-composer__bar small { color: var(--text-dim); font: 10px var(--mono); letter-spacing: 0.04em; }
+.ai-composer__send {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--cyan);
+  color: #021116;
+  font: 700 17px/1 var(--sans);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.2s, opacity 0.2s;
+}
+.ai-composer__send:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 0 16px var(--cyan-glow); }
+.ai-composer__send:disabled { opacity: 0.25; cursor: not-allowed; }
+.ai-composer__send--stop { background: var(--red-critical); color: #fff; font-size: 12px; }
+.ai-composer__send--stop:hover { box-shadow: 0 0 16px var(--red-glow) !important; }

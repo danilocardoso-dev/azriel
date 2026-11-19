@@ -24,8 +24,10 @@ export interface WebSource { title:string; url:string }
 export interface WebSearchResult { answer:string; sources:WebSource[]; queries:string[] }
 export interface Conversation { id:string; title:string; createdAt:string; updatedAt:string }
 export type ConversationRole="user"|"assistant"|"system";
-export interface ConversationMessage { id:string; conversationId:string; role:ConversationRole; content:string; createdAt:string }
-export interface ConversationMessageInput { id:string; conversationId:string; role:ConversationRole; content:string }
+/** Um passo do agente numa resposta (o que ele fez), como as linhas de ferramenta do Claude. */
+export interface AgentStep { id:number; tool:string; label:string; target?:string; detail?:string; added?:number; removed?:number; status:"running"|"ok"|"error"|"denied" }
+export interface ConversationMessage { id:string; conversationId:string; role:ConversationRole; content:string; createdAt:string; steps?:AgentStep[] }
+export interface ConversationMessageInput { id:string; conversationId:string; role:ConversationRole; content:string; activity?:string|null }
 export type AIGenerationProfile="standard"|"repetition-retry";
 export interface AIRequest { model:string; messages:Array<{role:ConversationRole;content:string}>; timeoutSeconds:number; generationProfile?:AIGenerationProfile; structuredOutputSchema?:Record<string,unknown>|null; requestMetadata?:unknown }
 export interface AIResponse { content:string; model:string; truncated:boolean }

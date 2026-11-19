@@ -169,7 +169,7 @@ pub fn list_messages(
     conversation_id: &str,
 ) -> Result<Vec<Message>, String> {
     let mut statement = connection.prepare(
-        "SELECT id,conversation_id,role,content,created_at FROM messages WHERE conversation_id=?1 ORDER BY rowid"
+        "SELECT m.id,m.conversation_id,m.role,m.content,m.created_at,a.steps FROM messages m LEFT JOIN message_activity a ON a.message_id=m.id WHERE m.conversation_id=?1 ORDER BY m.rowid"
     ).map_err(err)?;
     let rows = statement
         .query_map([conversation_id], map_message)
@@ -197,6 +197,15 @@ pub fn add_message(connection: &mut Connection, input: &MessageInput) -> Result<
             params![input.id, input.conversation_id, input.role, content],
         )
         .map_err(err)?;
+    // Passos do agente: só JSON de lista, com teto, para não inchar o banco.
+    if let Some(steps) = input.activity.as_deref().map(str::trim).filter(|steps| !steps.is_empty() && *steps != "[]") {
+        if steps.len() > 200_000 || !steps.starts_with('[') || serde_json::from_str::<serde_json::Value>(steps).map(|value| !value.is_array()).unwrap_or(true) {
+            return Err("Passos do agente inválidos".into());
+        }
+        transaction
+            .execute("INSERT OR REPLACE INTO message_activity(message_id, steps) VALUES (?1, ?2)", params![input.id, steps])
+            .map_err(err)?;
+    }
     transaction
         .execute(
             "UPDATE conversations SET updated_at=CURRENT_TIMESTAMP WHERE id=?1",
@@ -206,7 +215,7 @@ pub fn add_message(connection: &mut Connection, input: &MessageInput) -> Result<
     transaction.commit().map_err(err)?;
     connection
         .query_row(
-            "SELECT id,conversation_id,role,content,created_at FROM messages WHERE id=?1",
+            "SELECT m.id,m.conversation_id,m.role,m.content,m.created_at,a.steps FROM messages m LEFT JOIN message_activity a ON a.message_id=m.id WHERE m.id=?1",
             [&input.id],
             map_message,
         )
@@ -361,6 +370,7 @@ fn map_message(row: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
         role: row.get(2)?,
         content: row.get(3)?,
         created_at: row.get(4)?,
+        activity: row.get(5)?,
     })
 }
 
@@ -426,6 +436,7 @@ mod tests {
                     conversation_id: "conversation-1".into(),
                     role: "user".into(),
                     content: "Azriel, situação".into(),
+                    activity: None,
                 },
             )
             .unwrap();
@@ -436,6 +447,7 @@ mod tests {
                     conversation_id: "conversation-1".into(),
                     role: "assistant".into(),
                     content: "Situação recuperada".into(),
+                    activity: Some(r#"[{"label":"Consultou Sistema"}]"#.into()),
                 },
             )
             .unwrap();
@@ -454,10 +466,14 @@ mod tests {
                     .collect::<Vec<_>>(),
                 vec!["user", "assistant"]
             );
+            assert_eq!(messages[0].activity, None);
+            assert_eq!(messages[1].activity.as_deref(), Some(r#"[{"label":"Consultou Sistema"}]"#), "passos voltam junto da resposta");
             assert_eq!(
                 clear_conversation_messages(&mut connection, "conversation-1").unwrap(),
                 2
             );
+            let orphans: i64 = connection.query_row("SELECT COUNT(*) FROM message_activity", [], |row| row.get(0)).unwrap();
+            assert_eq!(orphans, 0, "apagar a mensagem apaga os passos");
             assert!(list_messages(&connection, "conversation-1")
                 .unwrap()
                 .is_empty());
@@ -493,6 +509,7 @@ mod tests {
                 conversation_id: "conversation-ref".into(),
                 role: "assistant".into(),
                 content: "1. Demanda crítica".into(),
+                activity: None,
             },
         )
         .unwrap();

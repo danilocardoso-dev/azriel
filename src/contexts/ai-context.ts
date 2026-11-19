@@ -1,5 +1,5 @@
 import { createContext } from "react";
-import type { AIEngine, AISettings, AISettingsInput, AzrielState, ConfirmationRequest, Conversation, ConversationMessage, LocalAiModelStatus, OllamaStatus, RemoteAISettings } from "../types";
+import type { AgentStep, AIEngine, AISettings, AISettingsInput, AzrielState, ConfirmationRequest, Conversation, ConversationMessage, LocalAiModelStatus, OllamaStatus, RemoteAISettings } from "../types";
 
 export interface AIContextValue {
   settings: AISettings | null;
@@ -33,6 +33,8 @@ export interface AIContextValue {
   send: (query: string) => Promise<{ restoredText?: string | null }>;
   /** ESC/Parar. */
   stop: () => void;
+  /** Passos do agente enquanto ele trabalha. */
+  liveSteps: AgentStep[];
   /** Pedido de permissão do Azriel (exclusões) aguardando o Senhor no AI Core. */
   pendingConfirmation: ConfirmationRequest | null;
   answerConfirmation: (allowed: boolean) => void;

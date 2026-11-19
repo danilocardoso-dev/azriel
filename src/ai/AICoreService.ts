@@ -2,7 +2,7 @@ import systemPrompt from "../prompts/system.txt?raw";
 import generalPrompt from "../prompts/general.txt?raw";
 import agentPrompt from "../prompts/agent.txt?raw";
 import { localDateKey } from "../services/dateService";
-import type { AIRequest, AISettings, AIToolResult, AzrielState, ConfirmationRequest, Conversation, ConversationMessage, Task } from "../types";
+import type { AgentStep, AIRequest, AISettings, AIToolResult, AzrielState, ConfirmationRequest, Conversation, ConversationMessage, Task } from "../types";
 import { runAgent } from "./agent/agentLoop";
 import { abortable, InterruptedError, isInterrupted } from "./interrupt";
 import { routeIntent } from "./router/toolRouter";
@@ -12,7 +12,7 @@ import type { AIProvider } from "./providers/AIProvider";
 export interface ConversationGateway {
   create(title: string): Promise<Conversation>;
   messages(conversationId: string): Promise<ConversationMessage[]>;
-  addMessage(input: { conversationId: string; role: "user" | "assistant"; content: string }): Promise<ConversationMessage>;
+  addMessage(input: { conversationId: string; role: "user" | "assistant"; content: string; steps?: AgentStep[] }): Promise<ConversationMessage>;
   saveTaskReferences(conversationId: string, sourceMessageId: string, taskIds: string[]): Promise<number>;
   deleteMessage(id: string): Promise<void>;
 }
@@ -133,7 +133,7 @@ export class AICoreService {
     return persona ? [{ role: "system", content: persona }] : [];
   }
 
-  async send(query: string, currentConversation: Conversation | null, onPhase?: (state: AzrielState, detail?: string) => void, onMessage?: (message: ConversationMessage) => void, confirm?: (request: ConfirmationRequest) => Promise<boolean>, signal?: AbortSignal): Promise<AIExchange> {
+  async send(query: string, currentConversation: Conversation | null, onPhase?: (state: AzrielState, detail?: string) => void, onMessage?: (message: ConversationMessage) => void, confirm?: (request: ConfirmationRequest) => Promise<boolean>, signal?: AbortSignal, onStep?: (step: AgentStep) => void): Promise<AIExchange> {
     const cleanQuery = query.trim();
     if (!cleanQuery) throw new Error("Digite uma pergunta para o Azriel.");
     if (cleanQuery.length > 4_000) throw new Error("A pergunta excede o limite de 4.000 caracteres.");
@@ -141,7 +141,7 @@ export class AICoreService {
     const userMessage = await this.conversations.addMessage({ conversationId: conversation.id, role: "user", content: cleanQuery });
     onMessage?.(userMessage);
     try {
-      return await this.respond(cleanQuery, conversation, userMessage, onPhase, onMessage, confirm, signal);
+      return await this.respond(cleanQuery, conversation, userMessage, onPhase, onMessage, confirm, signal, onStep);
     } catch (error) {
       if (!isInterrupted(error)) throw error;
       const acted = writesIn(error.toolsUsed, this.contextBuilder.registry);
@@ -150,18 +150,18 @@ export class AICoreService {
         await this.conversations.deleteMessage(userMessage.id).catch(() => undefined);
         throw new InterruptedError(cleanQuery);
       }
-      const note = await this.conversations.addMessage({ conversationId: conversation.id, role: "assistant", content: `⏹ **Interrompido pelo Senhor.** Antes de parar, eu já tinha começado a: ${acted.join(", ")}. Convém conferir o resultado antes de repetir o pedido.` });
+      const note = await this.conversations.addMessage({ conversationId: conversation.id, role: "assistant", content: `⏹ **Interrompido pelo Senhor.** Antes de parar, eu já tinha começado a: ${acted.join(", ")}. Convém conferir o resultado antes de repetir o pedido.`, steps: error.steps });
       onMessage?.(note);
       throw new InterruptedError(null, error.toolsUsed);
     }
   }
 
-  private async respond(cleanQuery: string, conversation: Conversation, userMessage: ConversationMessage, onPhase?: (state: AzrielState, detail?: string) => void, onMessage?: (message: ConversationMessage) => void, confirm?: (request: ConfirmationRequest) => Promise<boolean>, signal?: AbortSignal): Promise<AIExchange> {
+  private async respond(cleanQuery: string, conversation: Conversation, userMessage: ConversationMessage, onPhase?: (state: AzrielState, detail?: string) => void, onMessage?: (message: ConversationMessage) => void, confirm?: (request: ConfirmationRequest) => Promise<boolean>, signal?: AbortSignal, onStep?: (step: AgentStep) => void): Promise<AIExchange> {
     const intent = routeIntent(cleanQuery);
     if (this.provider.chatWithTools && !DETERMINISTIC_INTENTS.includes(intent.intent)) {
       try {
-        const agentAnswer = await this.answerWithAgent(cleanQuery, conversation.id, onPhase, confirm, signal);
-        const assistantMessage = await this.conversations.addMessage({ conversationId: conversation.id, role: "assistant", content: agentAnswer });
+        const agent = await this.answerWithAgent(cleanQuery, conversation.id, onPhase, confirm, signal, onStep);
+        const assistantMessage = await this.conversations.addMessage({ conversationId: conversation.id, role: "assistant", content: agent.content, steps: agent.steps });
         onMessage?.(assistantMessage);
         onPhase?.("idle", "RESPOSTA CONCLUÍDA");
         return { conversation, userMessage, assistantMessage };
@@ -239,7 +239,7 @@ export class AICoreService {
     return { conversation, userMessage, assistantMessage };
   }
 
-  private async answerWithAgent(query: string, conversationId: string, onPhase?: (state: AzrielState, detail?: string) => void, confirm?: (request: ConfirmationRequest) => Promise<boolean>, signal?: AbortSignal): Promise<string> {
+  private async answerWithAgent(query: string, conversationId: string, onPhase?: (state: AzrielState, detail?: string) => void, confirm?: (request: ConfirmationRequest) => Promise<boolean>, signal?: AbortSignal, onStep?: (step: AgentStep) => void): Promise<{ content: string; steps: AgentStep[] }> {
     onPhase?.("processing", "ANALISANDO SOLICITAÇÃO");
     const history = selectConversationHistory(await this.conversations.messages(conversationId), this.settings.contextMessageLimit, AGENT_HISTORY_CHARACTER_BUDGET)
       .map(({ role, content }) => ({ role, content }));
@@ -257,8 +257,9 @@ export class AICoreService {
       ),
       confirm,
       signal,
+      onStep,
     });
-    if (!result.content || hasPathologicalRepetition(result.content)) return repetitionFallback;
-    return result.content;
+    if (!result.content || hasPathologicalRepetition(result.content)) return { content: repetitionFallback, steps: result.steps };
+    return { content: result.content, steps: result.steps };
   }
 }

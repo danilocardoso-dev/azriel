@@ -1,7 +1,9 @@
+import type { AgentStep } from "../types";
+
 /** Interrupção pelo Senhor (ESC ou botão Parar), como no Claude. */
 export class InterruptedError extends Error {
   /** Texto devolvido ao campo quando nada foi feito ainda; null quando a mensagem ficou na conversa. */
-  constructor(readonly restoredText: string | null = null, readonly toolsUsed: string[] = []) {
+  constructor(readonly restoredText: string | null = null, readonly toolsUsed: string[] = [], readonly steps: AgentStep[] = []) {
     super("Interrompido pelo Senhor.");
     this.name = "InterruptedError";
   }

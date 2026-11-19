@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { AIConversationHistoryDialog } from "../components/ai/AIConversationHistoryDialog";
 import { EngineSwitcher } from "../components/ai/EngineSwitcher";
+import { AgentSteps } from "../components/ai/AgentSteps";
 import { MarkdownMessage } from "../components/ai/MarkdownMessage";
 import { DeleteConfirmationDialog } from "../components/daily/DeleteConfirmationDialog";
 import { ModuleIntro } from "../components/layout/ModuleIntro";
 import { useAI } from "../contexts/useAI";
 import { formatTimestamp } from "../services/dateService";
 import type { Conversation } from "../types";
+import "../styles/ai-core.css";
 
 const suggestions = [
   "Azriel, relatório do sistema.",
@@ -16,7 +18,7 @@ const suggestions = [
 ];
 
 export function AICorePage() {
-  const { settings, status, engine, engineAvailable, conversations, selectedConversation, messages, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, send, stop, pendingConfirmation, answerConfirmation } = useAI();
+  const { settings, status, engine, engineAvailable, conversations, selectedConversation, messages, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, send, stop, liveSteps, pendingConfirmation, answerConfirmation } = useAI();
   const [input, setInput] = useState("");
   const [conversationToDelete, setConversationToDelete] = useState<Conversation | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -26,7 +28,14 @@ export function AICorePage() {
   const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   // Rola só a lista de mensagens (scrollIntoView também arrastava a página inteira).
-  useEffect(() => { const list = messagesRef.current; if (list) list.scrollTo({ top: list.scrollHeight, behavior: "smooth" }); }, [messages, phase, pendingConfirmation]);
+  useEffect(() => { const list = messagesRef.current; if (list) list.scrollTo({ top: list.scrollHeight, behavior: "smooth" }); }, [messages, phase, pendingConfirmation, liveSteps]);
+  // Campo cresce com o texto, como no Claude (até 40% da altura da tela; depois rola).
+  useEffect(() => {
+    const field = inputRef.current;
+    if (!field) return;
+    field.style.height = "auto";
+    field.style.height = `${Math.min(field.scrollHeight, Math.round(window.innerHeight * 0.4))}px`;
+  }, [input]);
   // O campo fica sempre pronto para a próxima mensagem.
   useEffect(() => { if (!sending) inputRef.current?.focus(); }, [sending, selectedConversation?.id]);
 
@@ -84,7 +93,7 @@ export function AICorePage() {
   }
 
   return <>
-    <ModuleIntro code="AI-10" title="AI Core" description="Consulta somente leitura aos dados reais do Azriel." metric={`${engine === "gemini" ? "GEMINI" : "OLLAMA"} // ${engineAvailable ? "ONLINE" : "OFFLINE"}`} />
+    <ModuleIntro code="AI-10" title="AI Core" description="Seu segundo cérebro: conversa, lembra, age e programa no seu PC." metric={`${engine === "gemini" ? "GEMINI" : "OLLAMA"} // ${engineAvailable ? "ONLINE" : "OFFLINE"}`} />
     <div className="ai-layout">
       <aside className="ai-conversations">
         <header><span>CONVERSAS</span><strong>{conversations.length}</strong></header>
@@ -94,9 +103,15 @@ export function AICorePage() {
       <section className="ai-terminal">
         <header><div><span>AZRIEL // AI CORE</span><small>{selectedConversation ? selectedConversation.title : "NOVA SESSÃO"}</small></div><div className="ai-terminal__header-actions"><EngineSwitcher disabled={sending} /><button type="button" onClick={() => setHistoryOpen(true)} disabled={!selectedConversation || loading || sending}>CONTEXTO {messages.length}</button><i data-state={engineAvailable ? "online" : "offline"}>{engineAvailable ? "ONLINE" : "OFFLINE"}</i></div></header>
         <div className="ai-terminal__messages" aria-live="polite" ref={messagesRef}>
-          {!selectedConversation && messages.length === 0 && <div className="ai-welcome"><span>AI CORE // READ ONLY</span><h2>Como posso consultar o sistema?</h2><p>Azriel utiliza ferramentas controladas para recuperar dados. Nenhuma alteração pode ser executada pela IA.</p><div>{suggestions.map((suggestion) => <button onClick={() => { setInput(suggestion); inputRef.current?.focus(); }} key={suggestion}>{suggestion}</button>)}</div></div>}
+          {!selectedConversation && messages.length === 0 && <div className="ai-welcome"><span>AZRIEL // AI CORE</span><h2>Em que posso ajudar, Senhor?</h2><p>Converso, lembro, organizo agenda, notas e finanças e programo no seu PC. Excluir, só com a sua permissão.</p><div>{suggestions.map((suggestion) => <button onClick={() => { setInput(suggestion); inputRef.current?.focus(); }} key={suggestion}>{suggestion}</button>)}</div></div>}
           {selectedConversation && messages.length === 0 && !loading && <div className="ai-welcome"><span>CONTEXTO LIMPO</span><h2>Esta conversa está pronta para recomeçar.</h2><p>A conversa foi preservada, mas nenhuma mensagem anterior será enviada ao modelo.</p></div>}
-          {messages.map((message) => <article className={`ai-message ai-message--${message.role}`} key={message.id}><header><span>{message.role === "user" ? "AZ" : "AZRIEL"}</span><time>{formatTimestamp(message.createdAt)}</time></header>{message.role === "assistant" ? <MarkdownMessage content={message.content} /> : <p>{message.content}</p>}</article>)}
+          {messages.map((message) => message.role === "user"
+            ? <article className="ai-turn ai-turn--user" key={message.id} title={formatTimestamp(message.createdAt)}><p>{message.content}</p></article>
+            : <article className="ai-turn ai-turn--assistant" key={message.id} title={formatTimestamp(message.createdAt)}>
+              {message.steps && <AgentSteps steps={message.steps} />}
+              <MarkdownMessage content={message.content} />
+            </article>)}
+          {sending && liveSteps.length > 0 && <article className="ai-turn ai-turn--assistant"><AgentSteps steps={liveSteps} live /></article>}
           {pendingConfirmation && <div className="ai-confirm" role="alertdialog" aria-labelledby="ai-confirm-title">
             <span>PERMISSÃO NECESSÁRIA</span>
             <strong id="ai-confirm-title">O Azriel quer: {pendingConfirmation.title}</strong>
@@ -108,9 +123,17 @@ export function AICorePage() {
           {error && <div className="ai-terminal__error"><strong>AI CORE ALERT</strong><p>{error}</p></div>}
           {!engineAvailable && !loading && <div className="ai-terminal__offline"><strong>AI CORE OFFLINE</strong><p>{engine === "gemini" ? "Gemini sem chave ou sem modelo selecionado." : status?.error || "Ollama não encontrado no endpoint configurado."}</p><small>Os demais módulos permanecem operacionais. Troque o motor acima ou verifique em Configurações.</small></div>}
         </div>
-        <form className="ai-composer" onSubmit={submit}><span>&gt;</span><textarea ref={inputRef} autoFocus rows={5} placeholder={sending ? "O Azriel está trabalhando. ESC para parar." : "Digite um comando para o Azriel... (↑ traz a última mensagem)"} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} disabled={!engineAvailable} aria-busy={sending} />{sending
-          ? <button type="button" className="ai-composer__stop" onClick={stop} title="Parar (ESC)">■ PARAR</button>
-          : <button disabled={!engineAvailable || !input.trim()}>ENVIAR</button>}</form>
+        <form className="ai-composer" onSubmit={submit} onClick={() => inputRef.current?.focus()}>
+          <div className="ai-composer__card">
+            <textarea ref={inputRef} autoFocus rows={1} placeholder={sending ? "O Azriel está trabalhando… (ESC para parar)" : "Pergunte ou peça algo ao Azriel"} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} disabled={!engineAvailable} aria-busy={sending} aria-label="Mensagem para o Azriel" />
+            <div className="ai-composer__bar">
+              <small>{sending ? "ESC para parar" : "Enter envia · Shift+Enter quebra linha · ↑ última mensagem"}</small>
+              {sending
+                ? <button type="button" className="ai-composer__send ai-composer__send--stop" onClick={stop} title="Parar (ESC)" aria-label="Parar">■</button>
+                : <button className="ai-composer__send" disabled={!engineAvailable || !input.trim()} title="Enviar (Enter)" aria-label="Enviar">↑</button>}
+            </div>
+          </div>
+        </form>
       </section>
     </div>
     {historyOpen && selectedConversation && settings && <AIConversationHistoryDialog conversation={selectedConversation} messages={messages} contextMessageLimit={settings.contextMessageLimit} busy={clearingHistory} onClose={() => setHistoryOpen(false)} onRequestClear={() => { setHistoryOpen(false); setHistoryClearPending(true); }} />}

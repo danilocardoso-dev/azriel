@@ -65,6 +65,8 @@ pub struct Message {
     pub role: String,
     pub content: String,
     pub created_at: String,
+    /// Passos do agente em JSON (lista), quando houver.
+    pub activity: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,6 +76,8 @@ pub struct MessageInput {
     pub conversation_id: String,
     pub role: String,
     pub content: String,
+    #[serde(default)]
+    pub activity: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
