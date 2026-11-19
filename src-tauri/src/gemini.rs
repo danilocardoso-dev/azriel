@@ -67,6 +67,23 @@ pub const GEMINI: Compat = Compat { name: "Gemini", base_url: GEMINI_BASE_URL, s
 /// Sobrecarga do lado do provedor ("high demand"): costuma passar em segundos.
 const RETRY_STATUSES: [u16; 5] = [500, 502, 503, 504, 529];
 const RETRY_DELAYS_SECONDS: [u64; 2] = [2, 5];
+/// Tempo de espera por tentativa nos motores remotos e quantas vezes repetir quando ele estoura.
+const REMOTE_TIMEOUT_SECONDS: u64 = 180;
+const TIMEOUT_RETRIES: usize = 1;
+
+/// O tempo da configuração (pensado para o modelo local) vale como mínimo; o remoto espera 180 s.
+fn remote_timeout(configured: u64) -> u64 {
+    configured.max(REMOTE_TIMEOUT_SECONDS)
+}
+
+/// Falha de rede ou tempo esgotado, dizendo quanto esperou e quantas vezes tentou.
+fn request_error_after(provider: &Compat, error: &reqwest::Error, timeout_retries: usize, timeout: u64) -> String {
+    if error.is_timeout() && timeout_retries > 0 {
+        format!("O {} não respondeu a tempo: esperei {timeout} s em {} tentativas. O servidor deve estar sobrecarregado; troque de modelo ou tente mais tarde.", provider.name, timeout_retries + 1)
+    } else {
+        request_error_for(provider, error)
+    }
+}
 
 pub async fn chat_with_tools(
     api_key: &str,
@@ -106,15 +123,30 @@ pub async fn chat_compatible(
     }
     let label = provider.name.to_uppercase();
     let started = std::time::Instant::now();
+    // Modelos remotos que "pensam" demoram mais quando o servidor está cheio: 180 s por tentativa.
+    let timeout = remote_timeout(timeout_seconds);
     let mut attempt = 0usize;
+    let mut timeouts = 0usize;
     let response = loop {
-        let response = client(timeout_seconds)?
+        let sent = std::time::Instant::now();
+        let response = match client(timeout)?
             .post(format!("{}/chat/completions", provider.base_url))
             .bearer_auth(api_key)
             .json(&body)
             .send()
             .await
-            .map_err(|error| request_error_for(provider, &error))?;
+        {
+            Ok(response) => response,
+            Err(error) => {
+                eprintln!("[AI_CORE] provider={label} status={} attempt={} waited_ms={} timeout_s={timeout}", if error.is_timeout() { "timeout" } else { "connection_error" }, attempt + timeouts + 1, sent.elapsed().as_millis());
+                // Tempo esgotado: tenta mais uma vez sozinho antes de avisar o Senhor.
+                if error.is_timeout() && timeouts < TIMEOUT_RETRIES {
+                    timeouts += 1;
+                    continue;
+                }
+                return Err(request_error_after(provider, &error, timeouts, timeout));
+            }
+        };
         let status = response.status();
         if status.is_success() { break response; }
         let detail = provider_detail(&response.text().await.unwrap_or_default());
@@ -569,6 +601,13 @@ mod tests {
         assert!(status_error_for(&GEMINI, 503, 2).contains("tentei 3 vezes"));
         assert!(RETRY_STATUSES.contains(&503) && !RETRY_STATUSES.contains(&429), "cota (429) não é sobrecarga");
         assert!(empty_reason("DeepSeek", Some("length")).contains("do DeepSeek"));
+    }
+
+    #[test]
+    fn remote_engines_wait_at_least_180_seconds_and_retry_once_on_timeout() {
+        assert_eq!(remote_timeout(90), 180, "os 90 s do modelo local eram pouco para modelos remotos que pensam");
+        assert_eq!(remote_timeout(200), 200);
+        assert_eq!(TIMEOUT_RETRIES, 1);
     }
 
     #[test]
