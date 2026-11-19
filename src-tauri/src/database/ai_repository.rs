@@ -59,6 +59,10 @@ pub fn update_remote_settings(
         "UPDATE ai_remote_settings SET enabled=?1,model=?2,updated_at=CURRENT_TIMESTAMP WHERE id=1",
         params![input.enabled, model],
     ).map_err(err)?;
+    // Um motor por vez: ligar o Gemini desliga o OpenRouter.
+    if input.enabled {
+        connection.execute("UPDATE openrouter_settings SET enabled=0 WHERE id=1", []).map_err(err)?;
+    }
     get_remote_settings(connection)
 }
 

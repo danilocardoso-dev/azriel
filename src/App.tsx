@@ -18,7 +18,7 @@ import { useVoiceCall } from "./voice/useVoiceCall";
 import "./styles/jarvis.css";
 
 function App() {
-  const { coreState, engine, engineAvailable } = useAI();
+  const { coreState, engineLabel, engineAvailable } = useAI();
   const [activeModule, setActiveModule] = useState<ModuleId>("command");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [now, setNow] = useState(() => new Date());
@@ -114,7 +114,7 @@ function App() {
           <span>{now.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}</span>
         </div>
         <div className="jv-top__right">
-          <span className="jv-status" data-online={engineAvailable}><i />{engine === "gemini" ? "GEMINI" : "LOCAL"} · {azrielStates[coreState].label}</span>
+          <span className="jv-status" data-online={engineAvailable}><i />{engineLabel} · {azrielStates[coreState].label}</span>
           <button type="button" className="jv-icon" onClick={() => void enterOrbMode()} title="Minimizar para o orbe" aria-label="Minimizar para o orbe">−</button>
           <button type="button" className="jv-icon" data-active={isFullscreen} onClick={() => void changeFullscreen()} title={isFullscreen ? "Sair da tela cheia" : "Tela cheia"} aria-label="Tela cheia">⛶</button>
         </div>

@@ -4,6 +4,7 @@ pub mod daily_models;
 pub mod daily_repository;
 pub mod memory_models;
 pub mod memory_repository;
+pub mod openrouter_repository;
 pub mod money_models;
 pub mod money_repository;
 

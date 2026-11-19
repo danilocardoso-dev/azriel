@@ -53,6 +53,21 @@ struct ModelEntry {
     id: String,
 }
 
+/// Um provedor com API compatível com OpenAI (Gemini, OpenRouter...). Mesmo formato, outro endereço.
+pub struct Compat {
+    /// Nome que aparece nas mensagens ao Senhor ("O Gemini...", "O OpenRouter...").
+    pub name: &'static str,
+    pub base_url: &'static str,
+    /// O Gemini rejeita `parameters` vazio; outros provedores aceitam.
+    pub strip_empty_parameters: bool,
+}
+
+pub const GEMINI: Compat = Compat { name: "Gemini", base_url: GEMINI_BASE_URL, strip_empty_parameters: true };
+
+/// Sobrecarga do lado do provedor ("high demand"): costuma passar em segundos.
+const RETRY_STATUSES: [u16; 5] = [500, 502, 503, 504, 529];
+const RETRY_DELAYS_SECONDS: [u64; 2] = [2, 5];
+
 pub async fn chat_with_tools(
     api_key: &str,
     model: &str,
@@ -60,7 +75,18 @@ pub async fn chat_with_tools(
     tools: Vec<Value>,
     timeout_seconds: u64,
 ) -> Result<OllamaAgentResult, String> {
-    validate_model(model)?;
+    chat_compatible(&GEMINI, api_key, model, messages, tools, timeout_seconds).await
+}
+
+pub async fn chat_compatible(
+    provider: &Compat,
+    api_key: &str,
+    model: &str,
+    messages: Vec<OllamaAgentMessage>,
+    tools: Vec<Value>,
+    timeout_seconds: u64,
+) -> Result<OllamaAgentResult, String> {
+    validate_model(provider, model)?;
     if messages.is_empty() || messages.len() > MESSAGE_LIMIT || tools.len() > TOOL_LIMIT {
         return Err("Quantidade de mensagens ou ferramentas inválida para o AI Core".into());
     }
@@ -75,32 +101,42 @@ pub async fn chat_with_tools(
         "max_tokens": MAX_OUTPUT_TOKENS
     });
     if !tools.is_empty() {
-        body["tools"] = json!(tools.into_iter().map(gemini_tool).collect::<Vec<_>>());
+        let tools: Vec<Value> = if provider.strip_empty_parameters { tools.into_iter().map(gemini_tool).collect() } else { tools };
+        body["tools"] = json!(tools);
     }
+    let label = provider.name.to_uppercase();
     let started = std::time::Instant::now();
-    let response = client(timeout_seconds)?
-        .post(format!("{GEMINI_BASE_URL}/chat/completions"))
-        .bearer_auth(api_key)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|error| request_error(&error))?;
-    let status = response.status();
-    if !status.is_success() {
+    let mut attempt = 0usize;
+    let response = loop {
+        let response = client(timeout_seconds)?
+            .post(format!("{}/chat/completions", provider.base_url))
+            .bearer_auth(api_key)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|error| request_error_for(provider, &error))?;
+        let status = response.status();
+        if status.is_success() { break response; }
         let detail = provider_detail(&response.text().await.unwrap_or_default());
-        eprintln!("[AI_CORE] provider=GEMINI status=http_{} latency_ms={} detail={}", status.as_u16(), started.elapsed().as_millis(), detail.as_deref().unwrap_or("none"));
-        return Err(with_detail(status_error(status.as_u16()), detail));
-    }
+        eprintln!("[AI_CORE] provider={label} status=http_{} attempt={} latency_ms={} detail={}", status.as_u16(), attempt + 1, started.elapsed().as_millis(), detail.as_deref().unwrap_or("none"));
+        // Sobrecarga: tenta de novo sozinho, esperando um pouco mais a cada vez, antes de incomodar o Senhor.
+        if RETRY_STATUSES.contains(&status.as_u16()) && attempt < RETRY_DELAYS_SECONDS.len() {
+            tokio::time::sleep(Duration::from_secs(RETRY_DELAYS_SECONDS[attempt])).await;
+            attempt += 1;
+            continue;
+        }
+        return Err(with_detail(status_error_for(provider, status.as_u16(), attempt), detail));
+    };
     let payload = response
         .json::<CompletionResponse>()
         .await
-        .map_err(|_| "Resposta inválida recebida do Gemini".to_string())?;
+        .map_err(|_| format!("Resposta inválida recebida do {}", provider.name))?;
     let finish_reason = payload.choices.first().and_then(|choice| choice.finish_reason.clone()).unwrap_or_default();
-    let result = parse_completion(payload, model).inspect_err(|error| {
-        eprintln!("[AI_CORE] provider=GEMINI status=empty latency_ms={} messages={} finish_reason={} detail={error}", started.elapsed().as_millis(), messages.len(), if finish_reason.is_empty() { "none" } else { &finish_reason });
+    let result = parse_completion_as(provider.name, payload, model).inspect_err(|error| {
+        eprintln!("[AI_CORE] provider={label} status=empty latency_ms={} messages={} finish_reason={} detail={error}", started.elapsed().as_millis(), messages.len(), if finish_reason.is_empty() { "none" } else { &finish_reason });
     })?;
     eprintln!(
-        "[AI_CORE] provider=GEMINI status=success latency_ms={} messages={} tool_calls={}",
+        "[AI_CORE] provider={label} status=success latency_ms={} messages={} tool_calls={} retries={attempt}",
         started.elapsed().as_millis(),
         messages.len(),
         result.tool_calls.len(),
@@ -124,7 +160,7 @@ pub async fn list_models(api_key: &str, timeout_seconds: u64) -> Result<Vec<Stri
         .json::<ModelsResponse>()
         .await
         .map_err(|_| "Lista de modelos inválida recebida do Gemini".to_string())?;
-    Ok(chat_models(payload.data.into_iter().map(|entry| entry.id)))
+    Ok(curated_models(chat_models(payload.data.into_iter().map(|entry| entry.id))))
 }
 
 const INTERACTIONS_URL: &str = "https://generativelanguage.googleapis.com/v1beta/interactions";
@@ -146,7 +182,7 @@ pub struct WebSearchResult {
 
 /// Uma pergunta respondida com a busca do Google (grounding), em uma única chamada.
 pub async fn web_search(api_key: &str, model: &str, query: &str, timeout_seconds: u64) -> Result<WebSearchResult, String> {
-    validate_model(model)?;
+    validate_model(&GEMINI, model)?;
     let query = query.trim();
     if query.is_empty() || query.chars().count() > 500 {
         return Err("Informe uma busca de até 500 caracteres".into());
@@ -238,6 +274,35 @@ fn with_detail(message: String, detail: Option<String>) -> String {
     }
 }
 
+/// Lista enxuta para o seletor: só o mais novo de cada linha (Flash, Flash Lite e Pro),
+/// preferindo a versão estável à "preview". O modelo já escolhido continua aparecendo na tela.
+fn curated_models(models: Vec<String>) -> Vec<String> {
+    // (versão, linha, sufixo) de nomes como "gemini-3.5-flash-lite" ou "gemini-2.5-pro-preview-06-05".
+    let parse = |id: &str| -> Option<(Vec<u32>, &'static str, String)> {
+        let mut parts = id.strip_prefix("gemini-")?.split('-');
+        let version: Vec<u32> = parts.next()?.split('.').map(|n| n.parse().ok()).collect::<Option<_>>()?;
+        let rest: Vec<&str> = parts.collect();
+        let (tier, used) = match rest.as_slice() {
+            ["flash", "lite", ..] => ("flash-lite", 2),
+            ["flash", ..] => ("flash", 1),
+            ["pro", ..] => ("pro", 1),
+            _ => return None,
+        };
+        Some((version, tier, rest[used..].join("-")))
+    };
+    // Sem sufixo é estável; número (ex.: "001") é versão fixa; o resto (preview, exp) por último.
+    let suffix_rank = |suffix: &str| if suffix.is_empty() { 0 } else if suffix.chars().all(|c| c.is_ascii_digit()) { 1 } else { 2 };
+    let mut chosen = Vec::new();
+    for tier in ["flash", "flash-lite", "pro"] {
+        let best = models
+            .iter()
+            .filter_map(|id| parse(id).filter(|(_, t, _)| *t == tier).map(|(version, _, suffix)| (version, suffix, id)))
+            .max_by(|a, b| a.0.cmp(&b.0).then_with(|| suffix_rank(&b.1).cmp(&suffix_rank(&a.1))).then_with(|| b.2.len().cmp(&a.2.len())));
+        if let Some((_, _, id)) = best { chosen.push(id.clone()); }
+    }
+    if chosen.is_empty() { models } else { chosen }
+}
+
 /// Mantém só modelos de conversa: sem embeddings, voz, imagem etc.
 fn chat_models(ids: impl Iterator<Item = String>) -> Vec<String> {
     let mut models: Vec<String> = ids
@@ -287,27 +352,32 @@ fn to_openai_messages(messages: &[OllamaAgentMessage]) -> Vec<Value> {
 }
 
 /// Explica por que o Gemini respondeu vazio, em vez de um genérico "resposta vazia".
-fn empty_reason(finish_reason: Option<&str>) -> String {
+fn empty_reason(provider: &str, finish_reason: Option<&str>) -> String {
     let reason = finish_reason.unwrap_or("").to_lowercase();
     if reason == "length" || reason.contains("max_tokens") {
-        "A resposta do Gemini estourou o limite de tamanho antes de terminar (comum ao gravar arquivos grandes). Peça em partes menores, por exemplo um arquivo por vez.".into()
+        format!("A resposta do {provider} estourou o limite de tamanho antes de terminar (comum ao gravar arquivos grandes). Peça em partes menores, por exemplo um arquivo por vez.")
     } else if ["content_filter", "safety", "blocked", "prohibited", "recitation", "spii"].iter().any(|word| reason.contains(word)) {
-        "O Gemini bloqueou este pedido pela política de segurança do Google. Reformule o pedido ou troque de modelo.".into()
+        format!("O {provider} bloqueou este pedido pela política de segurança do modelo. Reformule o pedido ou troque de modelo.")
     } else if reason.contains("malformed") {
-        "O Gemini montou uma chamada de ferramenta inválida. Tente de novo ou use um modelo maior.".into()
+        format!("O {provider} montou uma chamada de ferramenta inválida. Tente de novo ou use um modelo maior.")
     } else if reason.is_empty() || reason == "stop" {
-        "O Gemini retornou uma resposta vazia".into()
+        format!("O {provider} retornou uma resposta vazia")
     } else {
-        format!("O Gemini retornou uma resposta vazia (motivo: {reason})")
+        format!("O {provider} retornou uma resposta vazia (motivo: {reason})")
     }
 }
 
+#[cfg(test)]
 fn parse_completion(payload: CompletionResponse, requested_model: &str) -> Result<OllamaAgentResult, String> {
+    parse_completion_as(GEMINI.name, payload, requested_model)
+}
+
+fn parse_completion_as(provider: &str, payload: CompletionResponse, requested_model: &str) -> Result<OllamaAgentResult, String> {
     let choice = payload
         .choices
         .into_iter()
         .next()
-        .ok_or_else(|| "O Gemini não retornou nenhuma resposta".to_string())?;
+        .ok_or_else(|| format!("O {provider} não retornou nenhuma resposta"))?;
     let content = choice.message.content.unwrap_or_default().trim().to_string();
     let tool_calls: Vec<OllamaToolCall> = choice
         .message
@@ -323,7 +393,7 @@ fn parse_completion(payload: CompletionResponse, requested_model: &str) -> Resul
         })
         .collect();
     if content.is_empty() && tool_calls.is_empty() {
-        return Err(empty_reason(choice.finish_reason.as_deref()));
+        return Err(empty_reason(provider, choice.finish_reason.as_deref()));
     }
     Ok(OllamaAgentResult {
         content,
@@ -333,10 +403,10 @@ fn parse_completion(payload: CompletionResponse, requested_model: &str) -> Resul
     })
 }
 
-fn validate_model(model: &str) -> Result<(), String> {
+fn validate_model(provider: &Compat, model: &str) -> Result<(), String> {
     let model = model.trim();
     if model.is_empty() {
-        return Err("Selecione um modelo do Gemini".into());
+        return Err(format!("Selecione um modelo do {}", provider.name));
     }
     if model.chars().count() > 120 || !model.chars().all(|character| character.is_ascii_alphanumeric() || ['-', '_', '.', ':', '/'].contains(&character)) {
         return Err("Nome de modelo inválido".into());
@@ -352,20 +422,32 @@ fn client(timeout_seconds: u64) -> Result<Client, String> {
 }
 
 fn request_error(error: &reqwest::Error) -> String {
-    if error.is_timeout() {
-        "O Gemini excedeu o tempo limite da solicitação".into()
-    } else {
-        "Não foi possível conectar ao Gemini. Verifique a internet.".into()
-    }
+    request_error_for(&GEMINI, error)
 }
 
 fn status_error(status: u16) -> String {
+    status_error_for(&GEMINI, status, 0)
+}
+
+fn request_error_for(provider: &Compat, error: &reqwest::Error) -> String {
+    if error.is_timeout() {
+        format!("O {} excedeu o tempo limite da solicitação", provider.name)
+    } else {
+        format!("Não foi possível conectar ao {}. Verifique a internet.", provider.name)
+    }
+}
+
+/// `retries`: quantas novas tentativas já foram feitas por sobrecarga antes de desistir.
+fn status_error_for(provider: &Compat, status: u16, retries: usize) -> String {
+    let name = provider.name;
     match status {
-        400 => "O Gemini recusou a solicitação (400). Verifique o modelo selecionado.".into(),
-        401 | 403 => "Chave do Gemini inválida ou sem permissão".into(),
-        404 => "Modelo do Gemini não encontrado".into(),
-        429 => "Limite de uso do Gemini atingido. Aguarde um pouco e tente de novo.".into(),
-        _ => format!("Gemini respondeu com status {status}"),
+        400 => format!("O {name} recusou a solicitação (400). Verifique o modelo selecionado."),
+        401 | 403 => format!("Chave do {name} inválida ou sem permissão"),
+        402 => format!("Sem créditos no {name}. Adicione créditos na conta para continuar."),
+        404 => format!("Modelo do {name} não encontrado"),
+        429 => format!("Limite de uso do {name} atingido. Aguarde um pouco e tente de novo."),
+        _ if RETRY_STATUSES.contains(&status) && retries > 0 => format!("O {name} está sobrecarregado (status {status}); tentei {} vezes. Troque de modelo ou tente mais tarde.", retries + 1),
+        _ => format!("{name} respondeu com status {status}"),
     }
 }
 
@@ -475,7 +557,26 @@ mod tests {
     fn errors_never_mention_the_key_and_explain_limits() {
         assert!(status_error(429).contains("Limite"));
         assert!(status_error(401).contains("Chave"));
-        assert!(validate_model("").is_err());
-        assert!(validate_model("gemini 2.5").is_err());
+        assert!(validate_model(&GEMINI, "").is_err());
+        assert!(validate_model(&GEMINI, "gemini 2.5").is_err());
+    }
+
+    #[test]
+    fn errors_name_the_provider_and_report_retries() {
+        let router = Compat { name: "OpenRouter", base_url: "https://x", strip_empty_parameters: false };
+        assert_eq!(status_error_for(&router, 401, 0), "Chave do OpenRouter inválida ou sem permissão");
+        assert!(status_error_for(&router, 402, 0).contains("Sem créditos"));
+        assert!(status_error_for(&GEMINI, 503, 2).contains("tentei 3 vezes"));
+        assert!(RETRY_STATUSES.contains(&503) && !RETRY_STATUSES.contains(&429), "cota (429) não é sobrecarga");
+        assert!(empty_reason("OpenRouter", Some("length")).contains("do OpenRouter"));
+    }
+
+    #[test]
+    fn gemini_list_keeps_only_the_newest_of_each_line() {
+        let ids = ["gemini-2.0-flash", "gemini-2.0-flash-001", "gemini-2.5-flash", "gemini-2.5-flash-preview-09-2025", "gemini-3.5-flash", "gemini-3.5-flash-preview",
+            "gemini-2.5-flash-lite", "gemini-3.5-flash-lite", "gemini-2.5-pro", "gemini-3-pro-preview", "gemini-flash-latest"];
+        let curated = curated_models(ids.iter().map(|id| id.to_string()).collect());
+        assert_eq!(curated, vec!["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3-pro-preview"]);
+        assert_eq!(curated_models(vec!["outro-modelo".into()]), vec!["outro-modelo"], "nome desconhecido: não esconde tudo");
     }
 }

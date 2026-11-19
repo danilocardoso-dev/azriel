@@ -49,7 +49,7 @@ function Node({ position, code, title, onOpen, children }: { position: "tl" | "t
 
 export function NucleoPage({ coreState, onOpenAI, onOpenDaily, onVoice, onOpenYouTube, onOpenMusic, azrielDeviceId, azrielState }: NucleoProps) {
   const { counters, tasks } = useDailyOperations();
-  const { send, engine, settings, remoteSettings, engineAvailable } = useAI();
+  const { send, engineLabel, activeModel, engineAvailable } = useAI();
   const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(null);
   const [command, setCommand] = useState("");
 
@@ -66,7 +66,7 @@ export function NucleoPage({ coreState, onOpenAI, onOpenDaily, onVoice, onOpenYo
   const memory = snapshot && snapshot.memory.totalBytes > 0 ? (snapshot.memory.usedBytes / snapshot.memory.totalBytes) * 100 : 0;
   const nextTasks = useMemo(() => tasks.filter((task) => !["completed", "cancelled"].includes(task.status)).slice(0, 3), [tasks]);
   const state = azrielStates[coreState];
-  const model = engine === "gemini" ? remoteSettings?.model : settings?.model;
+  const model = activeModel;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -104,7 +104,7 @@ export function NucleoPage({ coreState, onOpenAI, onOpenDaily, onVoice, onOpenYo
       </Node>
 
       <Node position="bl" code="IA" title="INTELIGÊNCIA" onOpen={onOpenAI}>
-        <div className="nucleo-figure"><strong className="nucleo-figure__word">{engine === "gemini" ? "GEMINI" : "LOCAL"}</strong><span>{model || "sem modelo"}</span></div>
+        <div className="nucleo-figure"><strong className="nucleo-figure__word">{engineLabel}</strong><span>{model || "sem modelo"}</span></div>
         <p data-tone={engineAvailable ? "up" : "down"}>{engineAvailable ? "● Motor pronto" : "● Motor indisponível"}</p>
       </Node>
     </div>

@@ -7,6 +7,7 @@ mod media;
 mod memory_commands;
 mod money_commands;
 mod ollama;
+mod openrouter;
 mod spotify;
 mod system_commands;
 mod system_monitor;
@@ -102,6 +103,10 @@ pub fn run() {
             ai_commands::update_remote_ai_settings,
             ai_commands::list_remote_ai_models,
             ai_commands::remote_agent_chat,
+            openrouter::get_openrouter_settings,
+            openrouter::update_openrouter_settings,
+            openrouter::list_openrouter_models,
+            openrouter::openrouter_agent_chat,
             ai_commands::web_search,
             memory_commands::get_azriel_identity,
             memory_commands::save_azriel_identity,

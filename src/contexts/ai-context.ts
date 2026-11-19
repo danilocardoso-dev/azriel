@@ -1,5 +1,5 @@
 import { createContext } from "react";
-import type { AgentStep, AIEngine, AISettings, AISettingsInput, AzrielState, ConfirmationRequest, Conversation, ConversationMessage, LocalAiModelStatus, OllamaStatus, RemoteAISettings } from "../types";
+import type { AgentStep, AIEngine, AISettings, AISettingsInput, AzrielState, ConfirmationRequest, Conversation, ConversationMessage, LocalAiModelStatus, OllamaStatus, OpenRouterSettings, OpenRouterSettingsInput, RemoteAISettings } from "../types";
 
 export interface AIContextValue {
   settings: AISettings | null;
@@ -7,6 +7,11 @@ export interface AIContextValue {
   remoteModels: string[];
   /** Motor ativo e se ele está pronto para responder. */
   engine: AIEngine;
+  /** Nome do motor para a tela ("LOCAL", "GEMINI", "OPENROUTER") e o modelo em uso. */
+  engineLabel: string;
+  activeModel: string;
+  openRouter: OpenRouterSettings | null;
+  saveOpenRouter: (input: OpenRouterSettingsInput) => Promise<OpenRouterSettings>;
   engineAvailable: boolean;
   setEngine: (engine: AIEngine) => Promise<void>;
   selectModel: (model: string) => Promise<void>;

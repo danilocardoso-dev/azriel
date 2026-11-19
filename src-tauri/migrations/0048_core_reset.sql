@@ -173,3 +173,13 @@ CREATE TABLE IF NOT EXISTS message_activity (
   message_id TEXT PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
   steps TEXT NOT NULL DEFAULT '[]'
 );
+-- OpenRouter: um provedor, vários modelos (DeepSeek, Kimi, Claude...). Só um motor fica ligado por vez.
+CREATE TABLE IF NOT EXISTS openrouter_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  enabled INTEGER NOT NULL DEFAULT 0,
+  model TEXT NOT NULL DEFAULT '',
+  favorites TEXT NOT NULL DEFAULT '[]',
+  api_key TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+INSERT OR IGNORE INTO openrouter_settings(id) VALUES (1);
