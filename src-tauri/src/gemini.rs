@@ -10,6 +10,7 @@ use std::{collections::VecDeque, time::Duration};
 const GEMINI_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/openai";
 const MESSAGE_LIMIT: usize = 160;
 const TOOL_LIMIT: usize = 64;
+const MAX_OUTPUT_TOKENS: u32 = 8_192;
 
 #[derive(Deserialize)]
 struct CompletionResponse {
@@ -70,7 +71,8 @@ pub async fn chat_with_tools(
         "model": model.trim(),
         "messages": to_openai_messages(&messages),
         "temperature": 0.2,
-        "max_tokens": 1_200
+        // Programar exige gravar arquivos inteiros numa chamada; 1.200 cortava o meio e voltava vazio.
+        "max_tokens": MAX_OUTPUT_TOKENS
     });
     if !tools.is_empty() {
         body["tools"] = json!(tools.into_iter().map(gemini_tool).collect::<Vec<_>>());
@@ -93,7 +95,10 @@ pub async fn chat_with_tools(
         .json::<CompletionResponse>()
         .await
         .map_err(|_| "Resposta inválida recebida do Gemini".to_string())?;
-    let result = parse_completion(payload, model)?;
+    let finish_reason = payload.choices.first().and_then(|choice| choice.finish_reason.clone()).unwrap_or_default();
+    let result = parse_completion(payload, model).inspect_err(|error| {
+        eprintln!("[AI_CORE] provider=GEMINI status=empty latency_ms={} messages={} finish_reason={} detail={error}", started.elapsed().as_millis(), messages.len(), if finish_reason.is_empty() { "none" } else { &finish_reason });
+    })?;
     eprintln!(
         "[AI_CORE] provider=GEMINI status=success latency_ms={} messages={} tool_calls={}",
         started.elapsed().as_millis(),
@@ -281,6 +286,22 @@ fn to_openai_messages(messages: &[OllamaAgentMessage]) -> Vec<Value> {
         .collect()
 }
 
+/// Explica por que o Gemini respondeu vazio, em vez de um genérico "resposta vazia".
+fn empty_reason(finish_reason: Option<&str>) -> String {
+    let reason = finish_reason.unwrap_or("").to_lowercase();
+    if reason == "length" || reason.contains("max_tokens") {
+        "A resposta do Gemini estourou o limite de tamanho antes de terminar (comum ao gravar arquivos grandes). Peça em partes menores, por exemplo um arquivo por vez.".into()
+    } else if ["content_filter", "safety", "blocked", "prohibited", "recitation", "spii"].iter().any(|word| reason.contains(word)) {
+        "O Gemini bloqueou este pedido pela política de segurança do Google. Reformule o pedido ou troque de modelo.".into()
+    } else if reason.contains("malformed") {
+        "O Gemini montou uma chamada de ferramenta inválida. Tente de novo ou use um modelo maior.".into()
+    } else if reason.is_empty() || reason == "stop" {
+        "O Gemini retornou uma resposta vazia".into()
+    } else {
+        format!("O Gemini retornou uma resposta vazia (motivo: {reason})")
+    }
+}
+
 fn parse_completion(payload: CompletionResponse, requested_model: &str) -> Result<OllamaAgentResult, String> {
     let choice = payload
         .choices
@@ -302,7 +323,7 @@ fn parse_completion(payload: CompletionResponse, requested_model: &str) -> Resul
         })
         .collect();
     if content.is_empty() && tool_calls.is_empty() {
-        return Err("O Gemini retornou uma resposta vazia".into());
+        return Err(empty_reason(choice.finish_reason.as_deref()));
     }
     Ok(OllamaAgentResult {
         content,
@@ -391,6 +412,20 @@ mod tests {
 
         let empty: CompletionResponse = serde_json::from_str(r#"{"choices":[{"message":{"content":"  "},"finish_reason":"stop"}]}"#).unwrap();
         assert!(parse_completion(empty, "gemini-2.5-flash").is_err());
+    }
+
+    #[test]
+    fn empty_answers_explain_why() {
+        let empty = |reason: &str| -> String {
+            let payload: CompletionResponse = serde_json::from_str(&format!(r#"{{"choices":[{{"message":{{"content":null}},"finish_reason":"{reason}"}}]}}"#)).unwrap();
+            parse_completion(payload, "gemini-3-flash").unwrap_err()
+        };
+        assert!(empty("length").contains("limite de tamanho"));
+        assert!(empty("content_filter").contains("política de segurança"));
+        assert!(empty("SAFETY").contains("política de segurança"));
+        assert!(empty("MALFORMED_FUNCTION_CALL").contains("chamada de ferramenta inválida"));
+        assert_eq!(empty("stop"), "O Gemini retornou uma resposta vazia");
+        assert!(empty("OTHER").contains("motivo: other"));
     }
 
     #[test]
