@@ -4,7 +4,6 @@ import { EngineSwitcher } from "../components/ai/EngineSwitcher";
 import { AgentSteps } from "../components/ai/AgentSteps";
 import { MarkdownMessage } from "../components/ai/MarkdownMessage";
 import { DeleteConfirmationDialog } from "../components/daily/DeleteConfirmationDialog";
-import { ModuleIntro } from "../components/layout/ModuleIntro";
 import { useAI } from "../contexts/useAI";
 import { formatTimestamp } from "../services/dateService";
 import type { Conversation } from "../types";
@@ -93,7 +92,6 @@ export function AICorePage() {
   }
 
   return <>
-    <ModuleIntro code="AI-10" title="AI Core" description="Seu segundo cérebro: conversa, lembra, age e programa no seu PC." metric={`${engine === "gemini" ? "GEMINI" : "OLLAMA"} // ${engineAvailable ? "ONLINE" : "OFFLINE"}`} />
     <div className="ai-layout">
       <aside className="ai-conversations">
         <header><span>CONVERSAS</span><strong>{conversations.length}</strong></header>
