@@ -1,10 +1,5 @@
 import { useEffect, useState } from "react";
-import { AISettingsPanel } from "../components/ai/AISettingsPanel";
-import { GeminiSettingsPanel } from "../components/ai/GeminiSettingsPanel";
-import { DeepSeekSettingsPanel } from "../components/ai/DeepSeekSettingsPanel";
-import { IdentityPanel } from "../components/ai/IdentityPanel";
-import { MemoryPanel } from "../components/ai/MemoryPanel";
-import { ActionHistoryPanel } from "../components/ai/ActionHistoryPanel";
+import { VoiceKeyPanel } from "../components/ai/VoiceKeyPanel";
 import { getDatabaseInfo } from "../services/databaseService";
 import type { DatabaseInfo } from "../types";
 
@@ -38,7 +33,7 @@ export function SettingsPage() {
             </span>
             <span>
               AI Provider
-              <strong>OLLAMA LOCAL + GEMINI OPCIONAL</strong>
+              <strong>SEM IA POR ENQUANTO · VOZ: GEMINI LIVE</strong>
             </span>
             <span>
               Dados Operacionais
@@ -55,12 +50,7 @@ export function SettingsPage() {
           </div>
         </section>
 
-        <IdentityPanel />
-        <MemoryPanel />
-        <ActionHistoryPanel />
-        <AISettingsPanel />
-        <GeminiSettingsPanel />
-        <DeepSeekSettingsPanel />
+        <VoiceKeyPanel />
       </div>
     </section>
   );

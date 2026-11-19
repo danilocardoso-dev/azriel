@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Channel } from "@tauri-apps/api/core";
-import { loadPersona } from "../ai/persona";
-import { ToolRegistry } from "../ai/tools/toolRegistry";
 import { invokeDatabase } from "../repositories/tauri";
 import { localDateKey } from "../services/dateService";
-import type { AIToolName } from "../types";
 import { Microphone, Speaker } from "./audio";
 
 export type CallPhase = "idle" | "connecting" | "listening" | "speaking" | "tool" | "ended";
@@ -42,7 +39,6 @@ export function useVoiceCall() {
   const mic = useRef<Microphone | null>(null);
   const speaker = useRef<Speaker | null>(null);
   const userLevel = useRef(0);
-  const registry = useRef(new ToolRegistry());
   const captionId = useRef(0);
   const phaseRef = useRef<CallPhase>("idle");
   const live = useRef(false);
@@ -58,21 +54,12 @@ export function useVoiceCall() {
     userLevel.current = 0;
   }, []);
 
+  // A voz roda sem ferramentas por enquanto; se o modelo pedir alguma, responde que não há.
   const runTools = useCallback(async (calls: Array<{ id: string; name: string; args?: unknown }>) => {
-    changePhase("tool");
     for (const call of calls) {
-      const name = call.name as AIToolName;
-      const known = registry.current.agentCanRun(name);
-      setTool(known ? registry.current.get(name).domain : call.name);
-      let result: unknown;
-      try {
-        result = known ? (await registry.current.execute(name as AIToolName, { query: "", args: (call.args ?? {}) as Record<string, unknown> })).data : { error: `Ferramenta indisponível: ${call.name}` };
-      } catch (error) { result = { error: messageOf(error) }; }
-      await invokeDatabase("voice_tool_response", { id: call.id, name: call.name, result: result ?? null }).catch(() => undefined);
+      await invokeDatabase("voice_tool_response", { id: call.id, name: call.name, result: { error: "Sem ferramentas na voz por enquanto." } }).catch(() => undefined);
     }
-    setTool(null);
-    if (live.current) changePhase("listening");
-  }, [changePhase]);
+  }, []);
 
   const handle = useCallback((event: VoiceEvent) => {
     switch (event.type) {
@@ -112,8 +99,7 @@ export function useVoiceCall() {
     const events = new Channel<VoiceEvent>();
     events.onmessage = handle;
     try {
-      const persona = await loadPersona(registry.current);
-      await invokeDatabase("voice_start", { tools: registry.current.agentTools(), date: localDateKey(), persona, events });
+      await invokeDatabase("voice_start", { tools: [], date: localDateKey(), persona: null, events });
     } catch (error) {
       cleanup();
       setNotice(messageOf(error));

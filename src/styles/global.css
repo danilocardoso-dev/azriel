@@ -452,30 +452,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .ai-markdown th, .ai-markdown td { padding: 6px 10px; border: 1px solid var(--line-soft); text-align: left; }
 .ai-markdown th { color: var(--cyan); font: 700 10px var(--mono); letter-spacing: 0.06em; }
 
-/* Pedido de permissão do Azriel (exclusões) */
-.ai-confirm {
-  max-width: 820px;
-  width: 100%;
-  margin: 0 auto;
-  box-sizing: border-box;
-  display: grid;
-  gap: 8px;
-  padding: 14px 16px;
-  border: 1px solid rgba(255, 182, 75, 0.45);
-  border-left: 3px solid var(--amber-alert);
-  background: rgba(255, 182, 75, 0.06);
-  box-shadow: 0 0 22px rgba(255, 182, 75, 0.08);
-}
-.ai-confirm > span { color: var(--amber-alert); font: 700 9px var(--mono); letter-spacing: 0.14em; }
-.ai-confirm > strong { color: #fff4e2; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
-.ai-confirm > p { margin: 0; color: var(--text-muted); font-size: 12px; }
-.ai-confirm > div { display: flex; gap: 8px; margin-top: 4px; }
-.ai-confirm button { padding: 9px 20px; font: 700 10px var(--mono); letter-spacing: 0.12em; cursor: pointer; transition: all 0.2s; }
-.ai-confirm__allow { border: 1px solid var(--red-critical); background: rgba(255, 90, 107, 0.12); color: var(--red-critical); }
-.ai-confirm__allow:hover { background: rgba(255, 90, 107, 0.24); box-shadow: 0 0 14px var(--red-glow); }
-.ai-confirm__deny { border: 1px solid var(--cyan); background: rgba(70, 233, 255, 0.1); color: var(--cyan); }
-.ai-confirm__deny:hover { background: rgba(70, 233, 255, 0.2); box-shadow: 0 0 14px var(--cyan-glow); }
-
 /* Phase / Thinking Indicator */
 .ai-phase {
   max-width: 820px;

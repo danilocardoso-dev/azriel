@@ -2,9 +2,6 @@ pub mod ai_models;
 pub mod ai_repository;
 pub mod daily_models;
 pub mod daily_repository;
-pub mod memory_models;
-pub mod memory_repository;
-pub mod deepseek_repository;
 pub mod money_models;
 pub mod money_repository;
 
@@ -37,7 +34,6 @@ pub fn initialize(connection: &mut Connection) -> Result<(), String> {
     connection
         .execute_batch(include_str!("../../migrations/0048_core_reset.sql"))
         .map_err(|error| error.to_string())?;
-    memory_repository::seed_identity(connection)?;
     connection
         .execute_batch("PRAGMA foreign_keys = ON;")
         .map_err(|error| error.to_string())?;

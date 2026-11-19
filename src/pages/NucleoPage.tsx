@@ -1,5 +1,5 @@
 import type { SpotifyPlayer } from "../repositories/spotifyRepository";
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { NowPlayingBar } from "../components/azriel/NowPlayingBar";
 import { Reactor } from "../components/azriel/Reactor";
 import { useAI } from "../contexts/useAI";
@@ -49,9 +49,8 @@ function Node({ position, code, title, onOpen, children }: { position: "tl" | "t
 
 export function NucleoPage({ coreState, onOpenAI, onOpenDaily, onVoice, onOpenYouTube, onOpenMusic, azrielDeviceId, azrielState }: NucleoProps) {
   const { counters, tasks } = useDailyOperations();
-  const { send, engineLabel, activeModel, engineAvailable } = useAI();
+  const { engineLabel } = useAI();
   const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(null);
-  const [command, setCommand] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -66,16 +65,6 @@ export function NucleoPage({ coreState, onOpenAI, onOpenDaily, onVoice, onOpenYo
   const memory = snapshot && snapshot.memory.totalBytes > 0 ? (snapshot.memory.usedBytes / snapshot.memory.totalBytes) * 100 : 0;
   const nextTasks = useMemo(() => tasks.filter((task) => !["completed", "cancelled"].includes(task.status)).slice(0, 3), [tasks]);
   const state = azrielStates[coreState];
-  const model = activeModel;
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    const query = command.trim();
-    if (!query) return;
-    setCommand("");
-    onOpenAI();
-    try { await send(query); } catch { /* o AI Core mostra a falha */ }
-  }
 
   return <section className="nucleo" data-state={coreState}>
     <div className="nucleo__orbit">
@@ -104,8 +93,8 @@ export function NucleoPage({ coreState, onOpenAI, onOpenDaily, onVoice, onOpenYo
       </Node>
 
       <Node position="bl" code="IA" title="INTELIGÊNCIA" onOpen={onOpenAI}>
-        <div className="nucleo-figure"><strong className="nucleo-figure__word">{engineLabel}</strong><span>{model || "sem modelo"}</span></div>
-        <p data-tone={engineAvailable ? "up" : "down"}>{engineAvailable ? "● Motor pronto" : "● Motor indisponível"}</p>
+        <div className="nucleo-figure"><strong className="nucleo-figure__word">{engineLabel}</strong><span>AI Core em espera</span></div>
+        <p>Voz disponível · Ctrl+Espaço</p>
       </Node>
     </div>
 
@@ -113,9 +102,9 @@ export function NucleoPage({ coreState, onOpenAI, onOpenDaily, onVoice, onOpenYo
 
     <NowPlayingBar onOpenYouTube={onOpenYouTube} onOpenMusic={onOpenMusic} azrielDeviceId={azrielDeviceId} azrielState={azrielState} />
 
-    <form className="nucleo-command" onSubmit={submit}>
+    <form className="nucleo-command" onSubmit={(event) => event.preventDefault()}>
       <span aria-hidden="true">›</span>
-      <input value={command} onChange={(event) => setCommand(event.target.value)} placeholder="Fale ou digite um comando para o Azriel" aria-label="Comando para o Azriel" />
+      <input disabled placeholder="Sem IA por enquanto · use a voz (Ctrl+Espaço)" aria-label="Comando para o Azriel (desligado)" />
       <button type="button" className="nucleo-command__mic" onClick={onVoice} aria-label="Falar com o Azriel" title="Falar (Ctrl+Espaço)"><i /></button>
     </form>
   </section>;

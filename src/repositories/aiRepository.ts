@@ -1,51 +1,15 @@
-import type { AgentRequest, AgentResponse, AIRequest, AIResponse, AISettings, AISettingsInput, RemoteAISettings, RemoteAISettingsInput, DeepSeekSettings, DeepSeekSettingsInput, WebSearchResult, Conversation, ConversationMessage, ConversationMessageInput, LocalAiModelStatus, OllamaStatus } from "../types";
+import type { Conversation, ConversationMessage, RemoteAISettings, RemoteAISettingsInput } from "../types";
 import { invokeDatabase } from "./tauri";
 
+/**
+ * Esqueleto do AI Core: sem motor de IA por enquanto. Ficam as conversas salvas e a chave do
+ * Google usada pela chamada de voz.
+ */
 export const aiRepository = {
-  getSettings: () => invokeDatabase<AISettings>("get_ai_settings"),
-  updateSettings: (input: AISettingsInput) => invokeDatabase<AISettings>("update_ai_settings", { input }),
   listConversations: () => invokeDatabase<Conversation[]>("list_conversations"),
-  createConversation: (id: string, title: string) => invokeDatabase<Conversation>("create_conversation", { input: { id, title } }),
   deleteConversation: (id: string) => invokeDatabase<void>("delete_conversation", { id }),
   clearConversationMessages: (conversationId: string) => invokeDatabase<number>("clear_conversation_messages", { conversationId }),
-  deleteMessage: (id: string) => invokeDatabase<void>("delete_message", { id }),
   listMessages: (conversationId: string) => invokeDatabase<ConversationMessage[]>("list_messages", { conversationId }),
-  addMessage: (input: ConversationMessageInput) => invokeDatabase<ConversationMessage>("add_message", { input }),
-  saveTaskReferences: (conversationId: string, sourceMessageId: string, taskIds: string[]) => invokeDatabase<number>("save_ai_task_references", { input: { conversationId, sourceMessageId, taskIds } }),
-  status: (endpoint: string, timeoutSeconds: number) => invokeDatabase<OllamaStatus>("ollama_status", { endpoint, timeoutSeconds }),
-  modelLifecycleStatus: () => invokeDatabase<LocalAiModelStatus>("get_local_ai_model_status"),
-  loadModel: () => invokeDatabase<LocalAiModelStatus>("load_local_ai_model"),
-  unloadModel: () => invokeDatabase<LocalAiModelStatus>("unload_local_ai_model"),
-  chat: (endpoint: string, request: AIRequest) => invokeDatabase<AIResponse>("ollama_chat", {
-    endpoint,
-    model: request.model,
-    messages: request.messages,
-    timeoutSeconds: request.timeoutSeconds,
-    generationProfile: request.generationProfile ?? "standard",
-    structuredOutputSchema: request.structuredOutputSchema ?? null,
-    requestMetadata: request.requestMetadata ?? null,
-  }),
   getRemoteSettings: () => invokeDatabase<RemoteAISettings>("get_remote_ai_settings"),
   updateRemoteSettings: (input: RemoteAISettingsInput) => invokeDatabase<RemoteAISettings>("update_remote_ai_settings", { input: { ...input, apiKey: input.apiKey ?? null } }),
-  listRemoteModels: () => invokeDatabase<string[]>("list_remote_ai_models"),
-  webSearch: (query: string) => invokeDatabase<WebSearchResult>("web_search", { query }),
-  // O modelo e a chave do Gemini são lidos pelo backend; request.model é ignorado aqui.
-  remoteAgentChat: (request: AgentRequest) => invokeDatabase<AgentResponse>("remote_agent_chat", {
-    messages: request.messages,
-    tools: request.tools,
-    timeoutSeconds: request.timeoutSeconds,
-  }),
-  // DeepSeek: chave e modelo ficam no backend; request.model é ignorado aqui.
-  getDeepSeekSettings: () => invokeDatabase<DeepSeekSettings>("get_deepseek_settings"),
-  updateDeepSeekSettings: (input: DeepSeekSettingsInput) => invokeDatabase<DeepSeekSettings>("update_deepseek_settings", { input: { ...input, apiKey: input.apiKey ?? null } }),
-  listDeepSeekModels: () => invokeDatabase<string[]>("list_deepseek_models"),
-  deepSeekAgentChat: (request: AgentRequest) => invokeDatabase<AgentResponse>("deepseek_agent_chat", { messages: request.messages, tools: request.tools, timeoutSeconds: request.timeoutSeconds }),
-  agentChat: (endpoint: string, request: AgentRequest) => invokeDatabase<AgentResponse>("ollama_agent_chat", {
-    endpoint,
-    model: request.model,
-    messages: request.messages,
-    tools: request.tools,
-    timeoutSeconds: request.timeoutSeconds,
-  }),
 };
-
