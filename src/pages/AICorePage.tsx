@@ -8,6 +8,15 @@ import { useAI } from "../contexts/useAI";
 import { formatTimestamp } from "../services/dateService";
 import type { Conversation } from "../types";
 import "../styles/ai-core.css";
+import { preferredQuickModel } from "../ai/quickCode";
+import { aiRepository } from "../repositories/aiRepository";
+
+const QUICK_KEY = "azriel.quick";
+interface QuickPrefs { on: boolean; folder: string; model: string }
+function readQuick(): QuickPrefs {
+  const fallback: QuickPrefs = { on: false, folder: "C:\\Projetos\\teste", model: "" };
+  try { return { ...fallback, ...JSON.parse(localStorage.getItem(QUICK_KEY) ?? "{}") as Partial<QuickPrefs> }; } catch { return fallback; }
+}
 
 const suggestions = [
   "Azriel, relatório do sistema.",
@@ -17,8 +26,21 @@ const suggestions = [
 ];
 
 export function AICorePage() {
-  const { settings, status, engine, engineAvailable, conversations, selectedConversation, messages, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, send, stop, liveSteps, pendingConfirmation, answerConfirmation } = useAI();
+  const { settings, status, engine, engineAvailable, conversations, selectedConversation, messages, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, send, sendQuick, stop, liveSteps, liveText, pendingConfirmation, answerConfirmation } = useAI();
   const [input, setInput] = useState("");
+  // ⚡ Programação rápida: lembrada entre aberturas (só conveniência; se o armazenamento falhar, usa o padrão).
+  const [quick, setQuick] = useState(() => readQuick());
+  const [localModels, setLocalModels] = useState<string[]>([]);
+  useEffect(() => { try { localStorage.setItem(QUICK_KEY, JSON.stringify(quick)); } catch { /* sem armazenamento: segue sem lembrar */ } }, [quick]);
+  // Modelos instalados no Ollama, lidos na hora (o Ollama pode ter sido aberto depois do Azriel).
+  useEffect(() => {
+    if (!quick.on || !settings) return;
+    let active = true;
+    void aiRepository.status(settings.endpoint, 5).then((result) => { if (active) setLocalModels(result.models); }).catch(() => { if (active) setLocalModels([]); });
+    return () => { active = false; };
+  }, [quick.on, settings]);
+  const quickModel = localModels.includes(quick.model) ? quick.model : preferredQuickModel(localModels);
+  const canSend = quick.on ? Boolean(quickModel && quick.folder.trim()) : engineAvailable;
   const [conversationToDelete, setConversationToDelete] = useState<Conversation | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -27,7 +49,7 @@ export function AICorePage() {
   const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   // Rola só a lista de mensagens (scrollIntoView também arrastava a página inteira).
-  useEffect(() => { const list = messagesRef.current; if (list) list.scrollTo({ top: list.scrollHeight, behavior: "smooth" }); }, [messages, phase, pendingConfirmation, liveSteps]);
+  useEffect(() => { const list = messagesRef.current; if (list) list.scrollTo({ top: list.scrollHeight, behavior: "smooth" }); }, [messages, phase, pendingConfirmation, liveSteps, liveText]);
   // Campo cresce com o texto, como no Claude (até 40% da altura da tela; depois rola).
   useEffect(() => {
     const field = inputRef.current;
@@ -54,7 +76,7 @@ export function AICorePage() {
   async function submit(event: FormEvent) {
     event.preventDefault(); const query = input.trim(); if (!query || sending) return; setInput("");
     try {
-      const { restoredText } = await send(query);
+      const { restoredText } = quick.on ? await sendQuick(query, quick.folder.trim(), quickModel) : await send(query);
       // Interrompido antes de qualquer ação: o texto volta para corrigir (sem apagar o que já foi digitado).
       if (restoredText) setInput((current) => current.trim() ? `${restoredText}\n${current}` : restoredText);
     } catch { /* O contexto exibe a falha sem rejeição solta. */ }
@@ -109,7 +131,10 @@ export function AICorePage() {
               {message.steps && <AgentSteps steps={message.steps} />}
               <MarkdownMessage content={message.content} />
             </article>)}
-          {sending && liveSteps.length > 0 && <article className="ai-turn ai-turn--assistant"><AgentSteps steps={liveSteps} live /></article>}
+          {sending && (liveSteps.length > 0 || liveText) && <article className="ai-turn ai-turn--assistant">
+            <AgentSteps steps={liveSteps} live />
+            {liveText && <MarkdownMessage content={liveText} />}
+          </article>}
           {pendingConfirmation && <div className="ai-confirm" role="alertdialog" aria-labelledby="ai-confirm-title">
             <span>PERMISSÃO NECESSÁRIA</span>
             <strong id="ai-confirm-title">O Azriel quer: {pendingConfirmation.title}</strong>
@@ -122,13 +147,23 @@ export function AICorePage() {
           {!engineAvailable && !loading && <div className="ai-terminal__offline"><strong>AI CORE OFFLINE</strong><p>{engine === "deepseek" ? "DeepSeek sem chave ou sem modelo selecionado." : engine === "gemini" ? "Gemini sem chave ou sem modelo selecionado." : status?.error || "Ollama não encontrado no endpoint configurado."}</p><small>Os demais módulos permanecem operacionais. Troque o motor acima ou verifique em Configurações.</small></div>}
         </div>
         <form className="ai-composer" onSubmit={submit} onClick={() => inputRef.current?.focus()}>
-          <div className="ai-composer__card">
-            <textarea ref={inputRef} autoFocus rows={1} placeholder={sending ? "O Azriel está trabalhando… (ESC para parar)" : "Pergunte ou peça algo ao Azriel"} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} disabled={!engineAvailable} aria-busy={sending} aria-label="Mensagem para o Azriel" />
+          <div className="ai-composer__card" data-quick={quick.on}>
+            <textarea ref={inputRef} autoFocus rows={1} placeholder={sending ? "O Azriel está trabalhando… (ESC para parar)" : quick.on ? "⚡ O que programar? (ex.: um site de portfólio com 3 seções)" : "Pergunte ou peça algo ao Azriel"} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={handleKeyDown} disabled={!canSend && !quick.on} aria-busy={sending} aria-label="Mensagem para o Azriel" />
             <div className="ai-composer__bar">
-              <small>{sending ? "ESC para parar" : "Enter envia · Shift+Enter quebra linha · ↑ última mensagem"}</small>
+              <div className="ai-quick" onClick={(event) => event.stopPropagation()}>
+                <button type="button" className="ai-quick__toggle" data-active={quick.on} disabled={sending} onClick={() => setQuick((current) => ({ ...current, on: !current.on }))} title="Programação rápida: modelo local, só código, sem o contexto do Azriel" aria-pressed={quick.on}>⚡ Programação rápida</button>
+                {quick.on && <>
+                  <input className="ai-quick__folder" value={quick.folder} disabled={sending} onChange={(event) => setQuick((current) => ({ ...current, folder: event.target.value }))} spellCheck={false} aria-label="Pasta onde gravar os arquivos" title="Pasta onde os arquivos serão gravados" />
+                  <select className="ai-quick__model" value={quickModel} disabled={sending || !localModels.length} onChange={(event) => setQuick((current) => ({ ...current, model: event.target.value }))} aria-label="Modelo local" title="Modelo local (Ollama)">
+                    {!localModels.length && <option value="">Ollama desligado</option>}
+                    {localModels.map((model) => <option key={model} value={model}>{model}</option>)}
+                  </select>
+                </>}
+                {!quick.on && <small>{sending ? "ESC para parar" : "Enter envia · Shift+Enter quebra linha · ↑ última mensagem"}</small>}
+              </div>
               {sending
                 ? <button type="button" className="ai-composer__send ai-composer__send--stop" onClick={stop} title="Parar (ESC)" aria-label="Parar">■</button>
-                : <button className="ai-composer__send" disabled={!engineAvailable || !input.trim()} title="Enviar (Enter)" aria-label="Enviar">↑</button>}
+                : <button className="ai-composer__send" disabled={!canSend || !input.trim()} title="Enviar (Enter)" aria-label="Enviar">↑</button>}
             </div>
           </div>
         </form>

@@ -8,6 +8,7 @@ mod memory_commands;
 mod money_commands;
 mod ollama;
 mod deepseek;
+mod quick_code;
 mod spotify;
 mod system_commands;
 mod system_monitor;
@@ -107,6 +108,8 @@ pub fn run() {
             deepseek::update_deepseek_settings,
             deepseek::list_deepseek_models,
             deepseek::deepseek_agent_chat,
+            quick_code::quick_code_stream,
+            quick_code::quick_code_cancel,
             ai_commands::web_search,
             memory_commands::get_azriel_identity,
             memory_commands::save_azriel_identity,

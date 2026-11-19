@@ -40,6 +40,9 @@ export interface AIContextValue {
   reload: () => Promise<void>;
   /** Devolve o texto para o campo quando o Senhor interrompe antes de qualquer ação. */
   send: (query: string) => Promise<{ restoredText?: string | null }>;
+  /** ⚡ Programação rápida: modelo local, só código, sem o contexto do Azriel. */
+  sendQuick: (query: string, folder: string, model: string) => Promise<{ restoredText?: string | null }>;
+  liveText: string;
   /** ESC/Parar. */
   stop: () => void;
   /** Passos do agente enquanto ele trabalha. */

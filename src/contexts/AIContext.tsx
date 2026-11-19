@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { AICoreService } from "../ai/AICoreService";
 import { ContextBuilder } from "../ai/context/ContextBuilder";
 import { isInterrupted } from "../ai/interrupt";
+import { runQuickCode } from "../ai/quickCode";
+import { quickCodeRepository } from "../repositories/quickCodeRepository";
 import { loadPersona } from "../ai/persona";
 import { GeminiProvider } from "../ai/providers/GeminiProvider";
 import { OllamaProvider } from "../ai/providers/OllamaProvider";
@@ -39,6 +41,8 @@ export function AIProvider({ children }: { children: ReactNode }) {
   const [pendingConfirmation, setPendingConfirmation] = useState<ConfirmationRequest | null>(null);
   // Passos do agente ao vivo (o que ele está fazendo agora), como as linhas de ferramenta do Claude.
   const [liveSteps, setLiveSteps] = useState<AgentStep[]>([]);
+  // Texto da programação rápida chegando em tempo real.
+  const [liveText, setLiveText] = useState("");
   const confirmationResolver = useRef<((allowed: boolean) => void) | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const answerConfirmation = useCallback((allowed: boolean) => {
@@ -320,6 +324,67 @@ export function AIProvider({ children }: { children: ReactNode }) {
     void workspaceRepository.cancel().catch(() => undefined);
   }, [answerConfirmation]);
 
+  /**
+   * ⚡ Programação rápida: o modelo local escreve os arquivos em tempo real e o Azriel grava na pasta.
+   * Sem identidade, memórias, ferramentas nem histórico: só a instrução de código e o pedido.
+   */
+  const sendQuick = useCallback(async (query: string, folder: string, model: string) => {
+    if (!settings) throw new Error("Configurações do AI Core ainda não foram carregadas.");
+    setSending(true); setError(null); setLiveSteps([]); setLiveText("");
+    let conversation = selectedConversation;
+    const createdNow = !conversation;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    let userMessage: ConversationMessage | null = null;
+    try {
+      if (!conversation) {
+        conversation = await conversationService.create(`⚡ ${query}`);
+        setSelectedConversation(conversation);
+        setConversations((current) => [conversation!, ...current]);
+      }
+      userMessage = await conversationService.addMessage({ conversationId: conversation.id, role: "user", content: `⚡ ${query}\n\n📁 ${folder}` });
+      setMessages((current) => [...current, userMessage!]);
+      setCoreState("executing"); setPhase(`PROGRAMAÇÃO RÁPIDA // ${model.toUpperCase()}`);
+      const result = await runQuickCode({
+        deps: {
+          list: workspaceRepository.list,
+          read: (path) => workspaceRepository.read(path),
+          write: workspaceRepository.write,
+          stream: (chosen, system, prompt, onToken) => quickCodeRepository.stream(settings.endpoint, chosen, system, prompt, onToken, (stats) => setPhase(`${stats.tokens} TOKENS · ${String(stats.tokensPerSecond).replace(".", ",")} TOK/S · ${String(stats.seconds).replace(".", ",")} S`)),
+          cancel: quickCodeRepository.cancel,
+        },
+        model, folder, request: query, signal: controller.signal,
+        onText: (text) => setLiveText((current) => current + text),
+        onStep: (step) => setLiveSteps((current) => current.some((item) => item.id === step.id) ? current.map((item) => item.id === step.id ? step : item) : [...current, step]),
+      });
+      const assistant = await conversationService.addMessage({ conversationId: conversation.id, role: "assistant", content: result.content, steps: result.steps });
+      setMessages((current) => [...current, assistant]);
+      setCoreState("idle");
+      setConversations(await conversationService.list());
+      return {};
+    } catch (reason) {
+      if (isInterrupted(reason) && conversation) {
+        // Parado antes de gravar: some o pedido e o texto volta para o campo.
+        if (userMessage) await conversationService.deleteMessage(userMessage.id).catch(() => undefined);
+        const remaining = await conversationService.messages(conversation.id).catch(() => [] as ConversationMessage[]);
+        if (createdNow && remaining.length === 0) {
+          await conversationService.remove(conversation.id).catch(() => undefined);
+          setSelectedConversation(null);
+          setConversations((current) => current.filter((item) => item.id !== conversation!.id));
+        }
+        setMessages(remaining);
+        setCoreState("idle"); setPhase("INTERROMPIDO PELO SENHOR");
+        return { restoredText: query };
+      }
+      const detail = messageOf(reason); setError(detail); setCoreState("alert"); setPhase("FALHA NA PROGRAMAÇÃO RÁPIDA");
+      throw reason;
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
+      setLiveSteps([]); setLiveText("");
+      setSending(false);
+    }
+  }, [selectedConversation, settings]);
+
   const selectModel = useCallback(async (model: string) => {
     if (engine === "deepseek" && deepSeek) { await saveDeepSeek({ enabled: true, model }); return; }
     if (engine === "gemini") { await updateRemote({ enabled: true, model }); return; }
@@ -336,7 +401,7 @@ export function AIProvider({ children }: { children: ReactNode }) {
     if (settings && model && model !== settings.model) await updateSettings({ endpoint: settings.endpoint, model, contextMessageLimit: settings.contextMessageLimit, timeoutSeconds: settings.timeoutSeconds });
   }, [deepSeek, remoteSettings, saveDeepSeek, settings, updateRemote, updateSettings]);
 
-  const value = useMemo<AIContextValue>(() => ({ settings, remoteSettings, remoteModels, deepSeek, saveDeepSeek, deepSeekModels, refreshDeepSeekModels, engineLabel, activeModel, engine, engineAvailable, setEngine, selectModel, chooseModel, saveRemoteKey, removeRemoteKey, refreshRemoteModels, status, modelLifecycle, modelTransition, conversations, selectedConversation, messages, coreState, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, reload, send, stop, liveSteps, pendingConfirmation, answerConfirmation, updateSettings, probeOllama, refreshStatus, refreshModelLifecycle, loadLocalModel, unloadLocalModel }), [deepSeek, saveDeepSeek, deepSeekModels, refreshDeepSeekModels, engineLabel, activeModel, stop, liveSteps, pendingConfirmation, answerConfirmation, settings, remoteSettings, remoteModels, engine, engineAvailable, setEngine, selectModel, chooseModel, saveRemoteKey, removeRemoteKey, refreshRemoteModels, status, modelLifecycle, modelTransition, conversations, selectedConversation, messages, coreState, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, reload, send, updateSettings, probeOllama, refreshStatus, refreshModelLifecycle, loadLocalModel, unloadLocalModel]);
+  const value = useMemo<AIContextValue>(() => ({ settings, remoteSettings, remoteModels, deepSeek, saveDeepSeek, deepSeekModels, refreshDeepSeekModels, engineLabel, activeModel, engine, engineAvailable, setEngine, selectModel, chooseModel, saveRemoteKey, removeRemoteKey, refreshRemoteModels, status, modelLifecycle, modelTransition, conversations, selectedConversation, messages, coreState, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, reload, send, sendQuick, stop, liveSteps, liveText, pendingConfirmation, answerConfirmation, updateSettings, probeOllama, refreshStatus, refreshModelLifecycle, loadLocalModel, unloadLocalModel }), [deepSeek, saveDeepSeek, deepSeekModels, refreshDeepSeekModels, engineLabel, activeModel, sendQuick, liveText, stop, liveSteps, pendingConfirmation, answerConfirmation, settings, remoteSettings, remoteModels, engine, engineAvailable, setEngine, selectModel, chooseModel, saveRemoteKey, removeRemoteKey, refreshRemoteModels, status, modelLifecycle, modelTransition, conversations, selectedConversation, messages, coreState, phase, loading, sending, error, selectConversation, newConversation, deleteConversation, clearConversationHistory, reload, send, updateSettings, probeOllama, refreshStatus, refreshModelLifecycle, loadLocalModel, unloadLocalModel]);
   return <AIContext.Provider value={value}>{children}</AIContext.Provider>;
 }
 
