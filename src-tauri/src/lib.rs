@@ -7,7 +7,6 @@ mod money_commands;
 mod spotify;
 mod system_commands;
 mod system_monitor;
-mod voice;
 
 use database::DatabaseState;
 use tauri::Manager;
@@ -20,7 +19,6 @@ pub fn run() {
         .manage(system_monitor::SystemMonitorState(std::sync::Mutex::new(
             system_monitor::SystemMonitor::new(),
         )))
-        .manage(voice::VoiceState::default())
         .setup(|app| {
             let database_path = app.path().app_data_dir()?.join("azriel.db");
             let connection = database::open(&database_path)
@@ -71,8 +69,6 @@ pub fn run() {
             ai_commands::delete_conversation,
             ai_commands::clear_conversation_messages,
             ai_commands::list_messages,
-            ai_commands::get_remote_ai_settings,
-            ai_commands::update_remote_ai_settings,
             money_commands::money_month,
             money_commands::money_save_item,
             money_commands::money_delete_item,
@@ -93,10 +89,6 @@ pub fn run() {
             spotify::spotify_tracks,
             spotify::spotify_playlists,
             spotify::spotify_play,
-            voice::voice_start,
-            voice::voice_send_audio,
-            voice::voice_tool_response,
-            voice::voice_stop,
             system_commands::system_snapshot,
             system_commands::list_processes,
         ])

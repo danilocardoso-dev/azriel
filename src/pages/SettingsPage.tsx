@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { VoiceKeyPanel } from "../components/ai/VoiceKeyPanel";
 import { getDatabaseInfo } from "../services/databaseService";
 import type { DatabaseInfo } from "../types";
 
@@ -33,7 +32,7 @@ export function SettingsPage() {
             </span>
             <span>
               AI Provider
-              <strong>SEM IA POR ENQUANTO · VOZ: GEMINI LIVE</strong>
+              <strong>SEM IA POR ENQUANTO</strong>
             </span>
             <span>
               Dados Operacionais
@@ -50,7 +49,6 @@ export function SettingsPage() {
           </div>
         </section>
 
-        <VoiceKeyPanel />
       </div>
     </section>
   );

@@ -12,8 +12,6 @@ import { spotifyRepository } from "./repositories/spotifyRepository";
 import type { ModuleId } from "./types";
 import { useAI } from "./contexts/useAI";
 import { MiniPlayer } from "./components/media/MiniPlayer";
-import { VoiceCall } from "./voice/VoiceCall";
-import { useVoiceCall } from "./voice/useVoiceCall";
 import "./styles/jarvis.css";
 
 function App() {
@@ -21,7 +19,6 @@ function App() {
   const [activeModule, setActiveModule] = useState<ModuleId>("command");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [now, setNow] = useState(() => new Date());
-  const voice = useVoiceCall();
   const webPlayer = useSpotifyWebPlayer();
   const { start: startWebPlayer } = webPlayer;
   // Com o Spotify conectado, o player do Azriel sobe junto com o app: ele já é a saída padrão quando você tocar algo.
@@ -29,10 +26,7 @@ function App() {
     const timer = window.setTimeout(() => { void spotifyRepository.status().then((status) => { if (status.connected) void startWebPlayer(); }).catch(() => undefined); }, 1_500);
     return () => window.clearTimeout(timer);
   }, [startWebPlayer]);
-  const [voiceOpen, setVoiceOpen] = useState(false);
   const [playerOpen, setPlayerOpen] = useState(false);
-  const { start: startVoice } = voice;
-  const openVoice = useCallback(() => { setVoiceOpen(true); void startVoice(); }, [startVoice]);
 
   const changeFullscreen = useCallback(async (forcedState?: boolean) => {
     const window = getCurrentWindow();
@@ -65,9 +59,6 @@ function App() {
       if (event.key === "F11") {
         event.preventDefault();
         void changeFullscreen();
-      } else if (event.ctrlKey && event.code === "Space" && !voiceOpen) {
-        event.preventDefault();
-        openVoice();
       } else if (event.key === "Escape" && isFullscreen) {
         void changeFullscreen(false);
       }
@@ -77,7 +68,7 @@ function App() {
       active = false;
       globalThis.window.removeEventListener("keydown", shortcut);
     };
-  }, [changeFullscreen, isFullscreen, openVoice, voiceOpen]);
+  }, [changeFullscreen, isFullscreen]);
 
   const content =
     activeModule === "ai" ? <AICorePage />
@@ -89,7 +80,6 @@ function App() {
       coreState={coreState}
       onOpenAI={() => setActiveModule("ai")}
       onOpenDaily={() => setActiveModule("daily")}
-      onVoice={openVoice}
       onOpenYouTube={() => setPlayerOpen(true)}
       onOpenMusic={() => setActiveModule("music")}
       azrielDeviceId={webPlayer.status === "ready" ? webPlayer.deviceId : null}
@@ -130,10 +120,6 @@ function App() {
             <span className="jv-rail__label"><b>{module.label}</b><small>{module.code}</small></span>
           </button>
         ))}
-        <button type="button" className="jv-rail__node jv-rail__node--voice" onClick={openVoice} aria-label="Falar com o Azriel">
-          <span className="jv-rail__glyph" aria-hidden="true"><i /></span>
-          <span className="jv-rail__label"><b>Falar</b><small>CTRL + ESPAÇO</small></span>
-        </button>
       </nav>
 
       <main className="jv-stage" key={activeModule}>
@@ -141,7 +127,6 @@ function App() {
       </main>
 
       {playerOpen && <MiniPlayer onClose={() => setPlayerOpen(false)} />}
-      {voiceOpen && <VoiceCall call={voice} onClose={() => setVoiceOpen(false)} />}
     </div>
   );
 }

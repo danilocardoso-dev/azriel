@@ -13,7 +13,6 @@ interface NucleoProps {
   coreState: AzrielState;
   onOpenAI: () => void;
   onOpenDaily: () => void;
-  onVoice: () => void;
   onOpenYouTube: () => void;
   onOpenMusic: () => void;
   azrielDeviceId: string | null;
@@ -47,7 +46,7 @@ function Node({ position, code, title, onOpen, children }: { position: "tl" | "t
   </section>;
 }
 
-export function NucleoPage({ coreState, onOpenAI, onOpenDaily, onVoice, onOpenYouTube, onOpenMusic, azrielDeviceId, azrielState }: NucleoProps) {
+export function NucleoPage({ coreState, onOpenAI, onOpenDaily, onOpenYouTube, onOpenMusic, azrielDeviceId, azrielState }: NucleoProps) {
   const { counters, tasks } = useDailyOperations();
   const { engineLabel } = useAI();
   const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(null);
@@ -74,10 +73,10 @@ export function NucleoPage({ coreState, onOpenAI, onOpenDaily, onVoice, onOpenYo
         <path d="M 250 450 L 330 450 L 400 370" />
       </svg>
 
-      <button type="button" className="nucleo__core" onClick={onVoice} title="Falar com o Azriel (Ctrl+Espaço)">
+      <div className="nucleo__core">
         <Reactor className="nucleo__reactor" />
         <span className="nucleo__identity"><strong>AZRIEL</strong><small>{state.label}</small></span>
-      </button>
+      </div>
 
       <Node position="tl" code="SYS" title="SISTEMA">
         <div className="nucleo-arcs">
@@ -94,18 +93,12 @@ export function NucleoPage({ coreState, onOpenAI, onOpenDaily, onVoice, onOpenYo
 
       <Node position="bl" code="IA" title="INTELIGÊNCIA" onOpen={onOpenAI}>
         <div className="nucleo-figure"><strong className="nucleo-figure__word">{engineLabel}</strong><span>AI Core em espera</span></div>
-        <p>Voz disponível · Ctrl+Espaço</p>
+        <p>Sem IA por enquanto</p>
       </Node>
     </div>
 
     <p className="nucleo__message">{state.message}</p>
 
     <NowPlayingBar onOpenYouTube={onOpenYouTube} onOpenMusic={onOpenMusic} azrielDeviceId={azrielDeviceId} azrielState={azrielState} />
-
-    <form className="nucleo-command" onSubmit={(event) => event.preventDefault()}>
-      <span aria-hidden="true">›</span>
-      <input disabled placeholder="Sem IA por enquanto · use a voz (Ctrl+Espaço)" aria-label="Comando para o Azriel (desligado)" />
-      <button type="button" className="nucleo-command__mic" onClick={onVoice} aria-label="Falar com o Azriel" title="Falar (Ctrl+Espaço)"><i /></button>
-    </form>
   </section>;
 }

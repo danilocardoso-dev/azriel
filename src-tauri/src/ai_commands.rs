@@ -1,5 +1,5 @@
-//! Esqueleto do AI Core: sem motor de IA por enquanto. Ficam as conversas salvas (consulta e
-//! limpeza) e a chave do Google usada pela chamada de voz (Gemini Live).
+//! Esqueleto do AI Core: sem motor de IA por enquanto. Ficam só as conversas salvas
+//! (consulta e limpeza).
 
 use crate::database::{ai_models::*, ai_repository, DatabaseState};
 use tauri::State;
@@ -35,17 +35,4 @@ pub fn clear_conversation_messages(state: State<'_, DatabaseState>, conversation
 pub fn list_messages(state: State<'_, DatabaseState>, conversation_id: String) -> Result<Vec<Message>, String> {
     let connection = lock(&state)?;
     ai_repository::list_messages(&connection, &conversation_id)
-}
-
-/// Chave do Google (Gemini Live) usada pela chamada de voz.
-#[tauri::command]
-pub fn get_remote_ai_settings(state: State<'_, DatabaseState>) -> Result<RemoteAiSettings, String> {
-    let connection = lock(&state)?;
-    ai_repository::get_remote_settings(&connection)
-}
-
-#[tauri::command]
-pub fn update_remote_ai_settings(state: State<'_, DatabaseState>, input: RemoteAiSettingsInput) -> Result<RemoteAiSettings, String> {
-    let connection = lock(&state)?;
-    ai_repository::update_remote_settings(&connection, &input)
 }

@@ -12,16 +12,12 @@ export interface Note { id:string; title:string|null; content:string; status:Not
 export type NoteInput = Omit<Note,"createdAt"|"updatedAt">;
 export interface DailyCounters { pending:number; today:number; overdue:number; priority:number; notes:number; completed:number }
 
-export interface RemoteAISettings { provider:"gemini"; enabled:boolean; model:string; apiKeyConfigured:boolean; updatedAt:string }
-export interface RemoteAISettingsInput { enabled:boolean; model:string; apiKey?:string|null }
 export interface NowPlaying { title:string; artist:string; album:string; source:string; playing:boolean; positionSeconds:number|null; durationSeconds:number|null; artwork:string|null }
 export type MediaAction="toggle"|"next"|"previous";
 export interface Conversation { id:string; title:string; createdAt:string; updatedAt:string }
 export type ConversationRole="user"|"assistant"|"system";
 export interface ConversationMessage { id:string; conversationId:string; role:ConversationRole; content:string; createdAt:string }
 export interface ConversationMessageInput { id:string; conversationId:string; role:ConversationRole; content:string }
-// Formato nativo do Ollama para tool calling (snake_case no fio).
-// id/extra_content vêm do Gemini (thought_signature) e precisam voltar intactos na rodada seguinte.
 
 export interface SystemDetails { osName:string|null; osVersion:string|null; kernelVersion:string|null; architecture:string; hostname:string|null; logicalCores:number; physicalCores:number|null; uptimeSeconds:number }
 export interface CpuSnapshot { usagePercent:number; cores:number[] }

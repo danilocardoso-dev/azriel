@@ -60,21 +60,6 @@
 
 .nucleo__message { margin: 4px 0 14px; color: var(--cyan-dim); font: 10px var(--mono); letter-spacing: 0.32em; text-transform: uppercase; }
 
-/* Linha de comando */
-.nucleo-command {
-  width: min(680px, 92%); display: flex; align-items: center; gap: 12px; padding: 6px 6px 6px 22px;
-  border: 1px solid var(--cyan-border); border-radius: 999px; background: rgba(2, 12, 18, 0.72); backdrop-filter: blur(8px);
-  box-shadow: 0 0 30px rgba(0, 168, 199, 0.08);
-}
-.nucleo-command:focus-within { border-color: var(--cyan); box-shadow: 0 0 30px var(--cyan-glow); }
-.nucleo-command span { color: var(--cyan); font: 18px var(--mono); }
-.nucleo-command input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text-main); font: 14px var(--sans); }
-.nucleo-command input::placeholder { color: var(--text-dim); }
-.nucleo-command input:focus-visible { outline: none; }
-.nucleo-command__mic { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--cyan-border); background: rgba(70, 233, 255, 0.08); transition: all 0.2s; }
-.nucleo-command__mic i { width: 12px; height: 12px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 14px var(--cyan); animation: reactor-breathe 2.4s ease-in-out infinite; }
-.nucleo-command__mic:hover { background: rgba(70, 233, 255, 0.2); box-shadow: 0 0 18px var(--cyan-glow); }
-
 @media (max-width: 1100px) {
   .nucleo-node { width: 29%; }
   .nucleo-figure strong { font-size: 30px; }
