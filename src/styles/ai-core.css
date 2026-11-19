@@ -7,9 +7,7 @@
 .ai-layout { border-radius: 16px; overflow: hidden; }
 .ai-conversations__new { border-radius: 10px; }
 .ai-conversation-item { border-radius: 10px; }
-.ai-terminal__header-actions button,
-.ai-terminal__header-actions select,
-.ai-terminal__header-actions i { border-radius: 8px; }
+.ai-terminal__header-actions button { border-radius: 8px; }
 .ai-confirm, .ai-terminal__error, .ai-terminal__offline, .ai-welcome { border-radius: 14px; }
 
 /* Coluna de leitura */
@@ -167,3 +165,20 @@
 .ai-composer__send:disabled { opacity: 0.25; cursor: not-allowed; }
 .ai-composer__send--stop { background: var(--red-critical); color: #fff; font-size: 12px; }
 .ai-composer__send--stop:hover { box-shadow: 0 0 16px var(--red-glow) !important; }
+
+/* Seletor único de motor + modelo (agrupado por provedor) */
+.ai-model-picker {
+  max-width: 240px;
+  padding: 6px 28px 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(4, 12, 18, 0.9);
+  color: var(--cyan);
+  font: 10px var(--mono);
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+.ai-model-picker:hover:not(:disabled) { border-color: var(--cyan-dim); }
+.ai-model-picker:disabled { opacity: 0.45; cursor: not-allowed; }
+.ai-model-picker optgroup { color: var(--text-muted); font-style: normal; }
+.ai-model-picker option { color: var(--text-main); background: #04121b; }

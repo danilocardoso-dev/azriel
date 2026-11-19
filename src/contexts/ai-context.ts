@@ -17,6 +17,8 @@ export interface AIContextValue {
   engineAvailable: boolean;
   setEngine: (engine: AIEngine) => Promise<void>;
   selectModel: (model: string) => Promise<void>;
+  /** Troca motor e modelo de uma vez (seletor único do AI Core). */
+  chooseModel: (engine: AIEngine, model: string) => Promise<void>;
   saveRemoteKey: (apiKey: string) => Promise<void>;
   removeRemoteKey: () => Promise<void>;
   refreshRemoteModels: () => Promise<string[]>;
