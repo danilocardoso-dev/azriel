@@ -15,7 +15,7 @@ const short = (text: string, max = 90) => text.length > max ? `${text.slice(0, m
 /** Como cada ferramenta aparece em andamento (antes do resultado). */
 const RUNNING: Record<string, string> = {
   read_file: "Lendo", list_folder: "Listando", search_code: "Buscando", write_file: "Gravando", edit_file: "Editando",
-  create_folder: "Criando pasta", delete_path: "Apagando", run_command: "Rodando", search_web: "Pesquisando na web",
+  create_folder: "Criando pasta", delete_path: "Apagando", run_command: "Rodando", open_in_browser: "Abrindo", search_web: "Pesquisando na web",
   remember: "Guardando na memória", update_memory: "Corrigindo memória", search_memories: "Procurando na memória",
   play_music: "Procurando música", music_control: "Controlando a música",
 };
@@ -25,6 +25,7 @@ function target(tool: string, args: Record<string, unknown>): string | undefined
     case "read_file": case "list_folder": case "write_file": case "edit_file": case "create_folder": case "delete_path": return str(args.path) || undefined;
     case "search_code": return `"${str(args.query)}" em ${str(args.root)}`;
     case "run_command": return str(args.command) || undefined;
+    case "open_in_browser": return str(args.target) || undefined;
     case "search_web": case "search_memories": return str(args.query) || undefined;
     case "remember": case "update_memory": return short(str(args.content));
     case "create_task": case "create_note": return short(str(args.title) || str(args.content));
@@ -60,6 +61,7 @@ export function finishedStep(id: number, tool: string, domain: string, args: unk
     }
     case "create_folder": return { ...base, label: "Criou pasta" };
     case "delete_path": return { ...base, label: "Mandou para a Lixeira" };
+    case "open_in_browser": return { ...base, label: "Abriu" };
     case "run_command": {
       const ok = d.sucesso === true;
       const seconds = typeof d.duracaoSegundos === "number" ? `${String(d.duracaoSegundos).replace(".", ",")} s` : "";

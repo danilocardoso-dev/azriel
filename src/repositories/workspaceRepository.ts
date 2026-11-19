@@ -18,6 +18,8 @@ export const workspaceRepository = {
   mkdir: (path: string) => invokeDatabase<string>("fs_mkdir", { path }),
   remove: (path: string) => invokeDatabase<string>("fs_delete", { path }),
   run: (command: string, cwd: string, timeoutSeconds?: number | null) => invokeDatabase<CommandResult>("run_command", { command, cwd, timeoutSeconds: timeoutSeconds ?? null }),
+  /** Abre site, localhost ou arquivo no navegador (padrão ou um específico, como o Chrome). */
+  open: (target: string, browser?: string | null) => invokeDatabase<string>("open_in_browser", { target, browser: browser ?? null }),
   /** ESC: para os comandos em andamento (e tudo o que eles abriram). */
   cancel: () => invokeDatabase<number>("cancel_commands"),
   history: (limit = 100) => invokeDatabase<ActionRecord[]>("list_actions", { limit }),

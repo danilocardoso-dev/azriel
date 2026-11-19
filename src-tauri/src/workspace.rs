@@ -355,6 +355,65 @@ fn quote(path: &Path) -> String {
     format!("'{}'", path.display().to_string().replace('\'', "''"))
 }
 
+// ---------- abrir no navegador ----------
+
+/// O que abrir: um endereço web (aceita "localhost:5173" sem http) ou um arquivo/pasta do disco C.
+#[derive(Debug, PartialEq)]
+pub enum OpenTarget { Url(String), Path(PathBuf) }
+
+pub fn open_target(target: &str) -> Result<OpenTarget, String> {
+    let target = target.trim().trim_matches('"');
+    if target.is_empty() { return Err("Diga o que abrir (arquivo, pasta ou endereço).".into()); }
+    let lower = target.to_lowercase();
+    if lower.starts_with("http://") || lower.starts_with("https://") {
+        return if crate::commands::is_web_url(target) { Ok(OpenTarget::Url(target.into())) } else { Err("Endereço inválido".into()) };
+    }
+    if lower.starts_with("localhost") || lower.starts_with("127.0.0.1") {
+        return Ok(OpenTarget::Url(format!("http://{target}")));
+    }
+    let path = resolve(target)?;
+    if !path.exists() { return Err(format!("Não encontrado: {}", path.display())); }
+    Ok(OpenTarget::Path(path))
+}
+
+/// Navegadores conhecidos pelo nome do executável no Windows.
+pub fn browser_exe(browser: &str) -> Option<&'static str> {
+    match browser.trim().to_lowercase().as_str() {
+        "chrome" | "google chrome" => Some("chrome"),
+        "edge" | "microsoft edge" => Some("msedge"),
+        "firefox" => Some("firefox"),
+        "brave" => Some("brave"),
+        "opera" => Some("opera"),
+        _ => None,
+    }
+}
+
+/// Abre um site, o localhost do projeto ou um arquivo (ex.: index.html) no navegador.
+#[tauri::command]
+pub async fn open_in_browser(app: AppHandle, target: String, browser: Option<String>) -> Result<String, String> {
+    use tauri_plugin_opener::OpenerExt;
+    let what = open_target(&target)?;
+    let shown = match &what { OpenTarget::Url(url) => url.clone(), OpenTarget::Path(path) => path.display().to_string() };
+    let result = match browser.as_deref().and_then(browser_exe) {
+        Some(exe) => {
+            let argument = match &what { OpenTarget::Url(url) => url.clone(), OpenTarget::Path(path) => path.display().to_string() };
+            let script = format!("Start-Process {exe} -ArgumentList '\"{}\"'", argument.replace('\'', "''"));
+            let cwd = PathBuf::from("C:\\");
+            match blocking(move || run_powershell(&script, &cwd, Duration::from_secs(30))).await {
+                Ok(done) if done.exit_code == Some(0) => Ok(format!("Aberto no {exe}: {shown}")),
+                Ok(done) => Err(format!("Não consegui abrir no {exe}. {}", done.stderr.trim())),
+                Err(error) => Err(error),
+            }
+        }
+        None => match &what {
+            OpenTarget::Url(url) => app.opener().open_url(url, None::<&str>).map(|_| format!("Aberto no navegador padrão: {shown}")).map_err(|_| "Não foi possível abrir o navegador".to_string()),
+            OpenTarget::Path(path) => app.opener().open_path(path.display().to_string(), None::<&str>).map(|_| format!("Aberto: {shown}")).map_err(|_| "Não foi possível abrir o arquivo".to_string()),
+        },
+    };
+    log(&app, "aberto no navegador", &shown, result.as_ref().err().map(String::as_str).unwrap_or(""), result.is_ok());
+    result
+}
+
 // ---------- comandos Tauri ----------
 
 async fn blocking<T: Send + 'static>(job: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
@@ -520,6 +579,22 @@ mod tests {
         assert!(hits.iter().any(|hit| hit.line == 1 && hit.path.ends_with("app.ts")));
         assert!(hits.iter().all(|hit| !hit.path.contains("node_modules")));
         assert_eq!(search(&dir, "azriel", Some(".ts")).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn open_targets_accept_sites_localhost_and_existing_files() {
+        assert_eq!(open_target("https://example.com").unwrap(), OpenTarget::Url("https://example.com".into()));
+        assert_eq!(open_target("localhost:5173").unwrap(), OpenTarget::Url("http://localhost:5173".into()));
+        let dir = sandbox("open");
+        let file = dir.join("index.html");
+        fs::write(&file, "<p>oi</p>").unwrap();
+        assert_eq!(open_target(&format!("\"{}\"", file.display())).unwrap(), OpenTarget::Path(file.clone()));
+        assert!(open_target("C:\\nao\\existe.html").is_err());
+        assert!(open_target("javascript:alert(1)").is_err());
+        assert!(open_target("").is_err());
+        assert_eq!(browser_exe("Chrome"), Some("chrome"));
+        assert_eq!(browser_exe("edge"), Some("msedge"));
+        assert_eq!(browser_exe("padrão"), None);
     }
 
     #[test]

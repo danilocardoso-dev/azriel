@@ -16,6 +16,7 @@ export interface CodeDependencies {
   mkdir(path: string): Promise<string>;
   remove(path: string): Promise<string>;
   run(command: string, cwd: string, timeoutSeconds?: number | null): Promise<CommandResult>;
+  open?(target: string, browser?: string | null): Promise<string>;
 }
 
 // Cada regra: o que procurar no comando e como explicar ao Senhor. Detector de boa-fé: um script pode
@@ -110,5 +111,14 @@ export function codeTools(deps: CodeDependencies): AzrielTool[] {
         }
         return commandView(await deps.run(command, cwd, num(input.args?.timeoutSeconds)));
       } },
+    ...(deps.open ? [{ name: "open_in_browser" as const, domain: "Programação", readonly: false, autonomous: true, permission: "safe_write" as const,
+      // Ferramenta simples de propósito: modelos pequenos erram o JSON de um Start-Process com aspas e barras.
+      description: "Abre no navegador um arquivo (ex.: C:\\Projetos\\site\\index.html), uma pasta, um site ou o localhost de um projeto (ex.: localhost:5173)",
+      parameters: { type: "object", properties: { target: { type: "string", description: "Caminho no disco C, endereço web ou localhost:porta" }, browser: { type: "string", enum: ["padrão", "chrome", "edge", "firefox"], description: "Opcional: navegador específico" } }, required: ["target"] },
+      execute: async (input: AIToolInput) => {
+        const target = str(input.args?.target).trim();
+        if (!target) return { error: "Diga o que abrir." };
+        return { aberto: await deps.open!(target, str(input.args?.browser) || null) };
+      } } satisfies AzrielTool] : []),
   ];
 }

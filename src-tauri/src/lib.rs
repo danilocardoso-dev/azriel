@@ -68,6 +68,7 @@ pub fn run() {
             workspace::run_command,
             workspace::list_actions,
             workspace::cancel_commands,
+            workspace::open_in_browser,
             daily_commands::list_tasks,
             daily_commands::get_task,
             daily_commands::save_task,

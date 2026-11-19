@@ -585,23 +585,24 @@ pub async fn chat_with_tools(
         .iter()
         .map(|message| message.content.chars().count())
         .sum::<usize>();
+    // As ferramentas também entram no pedido (e são a maior parte dele no Azriel).
+    let tool_characters = serde_json::to_string(&tools).map(|text| text.len()).unwrap_or(0);
     let request_started = std::time::Instant::now();
     let mut request_body = serde_json::json!({
         "model": model.trim(), "messages": messages, "stream": false,
         "think": false,
-        "options": generation_options("agent")?
+        "options": agent_runtime_options(input_characters + tool_characters)?,
+        // Fica carregado entre um pedido e outro (recarregar custa segundos); o "descarregar" manual continua valendo.
+        "keep_alive": if MODEL_MANUALLY_PINNED.load(Ordering::Acquire) { serde_json::json!(-1) } else { serde_json::json!("30m") }
     });
     if !tools.is_empty() {
         request_body["tools"] = serde_json::json!(tools);
-    }
-    if MODEL_MANUALLY_PINNED.load(Ordering::Acquire) {
-        request_body["keep_alive"] = serde_json::json!(-1);
     }
     let response = send_chat(
         &endpoint,
         model,
         &request_body,
-        timeout_seconds,
+        local_agent_timeout(timeout_seconds),
         request_started,
         message_count,
         input_characters,
@@ -670,6 +671,30 @@ async fn send_chat(
         return Err(response_error(status.as_u16(), &detail, model));
     }
     Ok(response)
+}
+
+/// Tempo mínimo de espera do modelo local no modo agente: CPU fraca + pedido grande demoram.
+const LOCAL_AGENT_MIN_TIMEOUT_SECONDS: u64 = 600;
+const LOCAL_MAX_TIMEOUT_SECONDS: u64 = 900;
+
+fn local_agent_timeout(configured: u64) -> u64 {
+    configured.max(LOCAL_AGENT_MIN_TIMEOUT_SECONDS).min(LOCAL_MAX_TIMEOUT_SECONDS)
+}
+
+/// Opções do modo agente local, ajustadas ao tamanho real do pedido.
+/// Sem num_ctx o Ollama usa um contexto pequeno e CORTA o pedido do Azriel (identidade,
+/// memórias e ferramentas), e o modelo fica sem ver as ferramentas.
+pub fn agent_runtime_options(prompt_characters: usize) -> Result<serde_json::Value, String> {
+    let mut options = generation_options("agent")?;
+    // ~3 caracteres por token (português + JSON) e folga para a resposta; múltiplos de 8k, até 32k.
+    let needed = prompt_characters / 3 + 4_096;
+    let num_ctx = needed.div_ceil(8_192).clamp(1, 4) * 8_192;
+    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(1, 16);
+    options["num_ctx"] = serde_json::json!(num_ctx);
+    // 700 tokens não davam para gravar um arquivo inteiro numa chamada de ferramenta.
+    options["num_predict"] = serde_json::json!(4_096);
+    options["num_thread"] = serde_json::json!(threads);
+    Ok(options)
 }
 
 fn generation_options(generation_profile: &str) -> Result<serde_json::Value, String> {
@@ -780,7 +805,7 @@ fn validate_model(model: &str) -> Result<(), String> {
 
 fn client(timeout_seconds: u64) -> Result<Client, String> {
     Client::builder()
-        .timeout(Duration::from_secs(timeout_seconds.clamp(5, 180)))
+        .timeout(Duration::from_secs(timeout_seconds.clamp(5, LOCAL_MAX_TIMEOUT_SECONDS)))
         .build()
         .map_err(|_| "Não foi possível preparar o cliente local do Ollama".into())
 }
@@ -813,6 +838,20 @@ mod tests {
         sync::{Arc, Mutex},
         thread,
     };
+
+    #[test]
+    fn local_agent_gets_enough_context_output_and_time() {
+        // Pedido típico do Azriel: identidade + memórias + 41 ferramentas, ~30 mil caracteres.
+        let options = agent_runtime_options(30_000).unwrap();
+        assert_eq!(options["num_ctx"], 16_384, "o pedido inteiro cabe, sem cortar as ferramentas");
+        assert_eq!(options["num_predict"], 4_096);
+        assert!(options["num_thread"].as_u64().unwrap() >= 1);
+        assert_eq!(options["temperature"], 0.2, "mantém o perfil de agente");
+        assert_eq!(agent_runtime_options(1_000).unwrap()["num_ctx"], 8_192);
+        assert_eq!(agent_runtime_options(500_000).unwrap()["num_ctx"], 32_768, "teto de 32k");
+        assert_eq!(local_agent_timeout(90), 600);
+        assert_eq!(local_agent_timeout(5_000), 900);
+    }
 
     fn mock_ollama(replies: Vec<(u16, &'static str)>) -> (String, Arc<Mutex<Vec<String>>>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
